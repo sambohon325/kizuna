@@ -20,6 +20,8 @@ class Project(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     style_profile: Mapped[StyleProfile | None] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
+    story_brief: Mapped[StoryBrief | None] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
+    characters: Mapped[list[Character]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="Character.id")
     scenes: Mapped[list[Scene]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="Scene.position")
 
 
@@ -36,6 +38,37 @@ class StyleProfile(Base):
     archetypes: Mapped[list[str]] = mapped_column(JSON, default=list)
 
     project: Mapped[Project] = relationship(back_populates="style_profile")
+
+
+class StoryBrief(Base):
+    __tablename__ = "story_briefs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), unique=True)
+    premise: Mapped[str] = mapped_column(Text, default="")
+    format: Mapped[str] = mapped_column(String(32), default="short film")
+    target_duration_minutes: Mapped[int] = mapped_column(default=5)
+    audience: Mapped[str] = mapped_column(String(80), default="general")
+    genre: Mapped[str] = mapped_column(String(80), default="science fantasy")
+    themes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    synopsis: Mapped[str] = mapped_column(Text, default="")
+    beats: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+
+    project: Mapped[Project] = relationship(back_populates="story_brief")
+
+
+class Character(Base):
+    __tablename__ = "characters"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    name: Mapped[str] = mapped_column(String(120))
+    role: Mapped[str] = mapped_column(String(80), default="protagonist")
+    want: Mapped[str] = mapped_column(Text, default="")
+    need: Mapped[str] = mapped_column(Text, default="")
+    contradiction: Mapped[str] = mapped_column(Text, default="")
+
+    project: Mapped[Project] = relationship(back_populates="characters")
 
 
 class Scene(Base):

@@ -32,3 +32,21 @@ def test_style_profile_can_be_mixed(client):
     response = client.put(f"/api/projects/{project_id}/style", json=payload)
     assert response.status_code == 200
     assert response.json()["era_secondary"] == "2020s"
+
+
+def test_writer_room_develops_structured_story_and_character(client):
+    project_id = client.post("/api/projects", json={"title": "Glass Horizon", "logline": "A courier crosses a city that forgets itself each dawn."}).json()["id"]
+    response = client.put(f"/api/projects/{project_id}/story", json={"premise": "A courier must deliver yesterday's final memory before sunrise.", "format": "short film", "target_duration_minutes": 12, "audience": "teen and adult", "genre": "memory mystery", "themes": ["identity", "duty versus freedom"]})
+    assert response.status_code == 200
+    assert len(response.json()["beats"]) == 8
+    assert "memory mystery" in response.json()["synopsis"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Mika", "role": "reluctant protagonist", "want": "Finish the route", "need": "Accept help", "contradiction": "Preserves memories while avoiding her own"})
+    assert character.status_code == 201
+    project = client.get(f"/api/projects/{project_id}").json()
+    assert project["characters"][0]["name"] == "Mika"
+    assert project["story_brief"]["target_duration_minutes"] == 12
+    beats = response.json()["beats"]
+    beats[0]["summary"] = "A silent train crosses an impossible reflection."
+    edited = client.patch(f"/api/projects/{project_id}/story/outline", json={"synopsis": response.json()["synopsis"], "beats": beats})
+    assert edited.status_code == 200
+    assert edited.json()["beats"][0]["summary"].startswith("A silent train")

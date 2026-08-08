@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
 from app.database import Base, engine, get_db
-from app.models import Project, Scene, Shot, StyleProfile
-from app.schemas import ProjectCreate, ProjectRead, SceneCreate, SceneRead, ShotCreate, ShotRead, StyleProfileInput, StyleProfileRead
+from app.models import Character, Project, Scene, Shot, StoryBrief, StyleProfile
+from app.schemas import CharacterInput, CharacterRead, ProjectCreate, ProjectRead, SceneCreate, SceneRead, ShotCreate, ShotRead, StoryBriefInput, StoryBriefRead, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead
 from app.style_catalog import STYLE_CATALOG
+from app.story_development import develop_story
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -19,7 +20,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 def project_query():
-    return select(Project).options(selectinload(Project.style_profile), selectinload(Project.scenes).selectinload(Scene.shots))
+    return select(Project).options(selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters), selectinload(Project.scenes).selectinload(Scene.shots))
 
 
 @app.get("/api/health")
@@ -74,6 +75,48 @@ def update_style(project_id: int, payload: StyleProfileInput, db: Session = Depe
     db.commit()
     db.refresh(profile)
     return profile
+
+
+@app.put("/api/projects/{project_id}/story", response_model=StoryBriefRead)
+def develop_project_story(project_id: int, payload: StoryBriefInput, db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    brief = db.scalar(select(StoryBrief).where(StoryBrief.project_id == project_id))
+    if brief is None:
+        brief = StoryBrief(project_id=project_id)
+        db.add(brief)
+    synopsis, beats = develop_story(project.title, project.logline, payload)
+    for key, value in payload.model_dump().items():
+        setattr(brief, key, value)
+    brief.synopsis = synopsis
+    brief.beats = beats
+    db.commit()
+    db.refresh(brief)
+    return brief
+
+
+@app.patch("/api/projects/{project_id}/story/outline", response_model=StoryBriefRead)
+def update_story_outline(project_id: int, payload: StoryOutlineUpdate, db: Session = Depends(get_db)):
+    brief = db.scalar(select(StoryBrief).where(StoryBrief.project_id == project_id))
+    if brief is None:
+        raise HTTPException(404, "Develop the story before editing its outline")
+    brief.synopsis = payload.synopsis
+    brief.beats = payload.beats
+    db.commit()
+    db.refresh(brief)
+    return brief
+
+
+@app.post("/api/projects/{project_id}/characters", response_model=CharacterRead, status_code=status.HTTP_201_CREATED)
+def create_character(project_id: int, payload: CharacterInput, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    character = Character(project_id=project_id, **payload.model_dump())
+    db.add(character)
+    db.commit()
+    db.refresh(character)
+    return character
 
 
 @app.post("/api/projects/{project_id}/scenes", response_model=SceneRead, status_code=status.HTTP_201_CREATED)

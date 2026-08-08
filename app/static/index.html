@@ -6,6 +6,7 @@
   <title>Kizuna Studio</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/style-lab.css">
+  <link rel="stylesheet" href="/static/writer.css">
 </head>
 <body>
   <header class="topbar">
@@ -16,6 +17,7 @@
   <div class="shell">
     <nav class="rail">
       <button class="active">⌂<span>Productions</span></button>
+      <button id="writer-nav">✎<span>Writer's Room</span></button>
       <button id="style-lab-nav">✦<span>Style Lab</span></button>
       <button>♙<span>Characters</span></button>
       <button>▧<span>Worlds</span></button>
@@ -35,6 +37,7 @@
   </dialog>
   <dialog id="detail-dialog" class="detail"><div id="detail"></div></dialog>
   <dialog id="style-dialog" class="style-dialog"><form id="style-form"><button type="button" class="close" id="style-close">×</button><p class="eyebrow">CREATIVE DNA</p><h2>Style Lab</h2><p class="form-intro">Blend production traditions into an original, reusable direction system.</p><label>Production<select id="style-project" required></select></label><div class="era-pair"><label>Primary era<select name="era_primary"></select></label><label>Secondary era<select name="era_secondary"></select></label></div><div id="style-fields"></div><fieldset><legend>Character archetypes</legend><div id="archetypes" class="chips"></div></fieldset><div class="dna-summary"><b>LIVE DIRECTION</b><span id="dna-summary"></span></div><button class="primary" type="submit">Save Creative DNA</button></form></dialog>
+  <dialog id="writer-dialog" class="writer-dialog"><form id="writer-form"><button type="button" class="close" id="writer-close">×</button><p class="eyebrow">STORY DEVELOPMENT</p><h2>Writer's Room</h2><p class="form-intro">Turn the dramatic idea into a structured, editable production outline.</p><label>Production<select id="writer-project" required></select></label><label>Central premise<textarea name="premise" rows="3" placeholder="What changes, who must act, and what happens if they fail?"></textarea></label><div class="writer-grid"><label>Format<select name="format"><option>short film</option><option>feature film</option><option>episode</option><option>limited series</option></select></label><label>Target minutes<input name="target_duration_minutes" type="number" min="1" max="240" value="5"></label><label>Genre<input name="genre" value="science fantasy"></label><label>Audience<input name="audience" value="general"></label></div><label>Themes<input name="themes" placeholder="identity, found family, memory"></label><button class="primary" type="submit">Develop story</button><div id="story-result" class="story-result"></div></form></dialog>
   <script src="/static/app.js"></script>
 </body>
 </html>

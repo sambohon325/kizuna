@@ -2,6 +2,7 @@ const projectsEl = document.querySelector('#projects');
 const projectDialog = document.querySelector('#project-dialog');
 const detailDialog = document.querySelector('#detail-dialog');
 const styleDialog = document.querySelector('#style-dialog');
+const writerDialog = document.querySelector('#writer-dialog');
 let projects = [];
 let catalog = null;
 
@@ -27,12 +28,13 @@ async function openProject(id) {
   const project = await api(`/api/projects/${id}`);
   const style = project.style_profile;
   document.querySelector('#detail').innerHTML = `
-    <div class="detail-head"><div><p class="eyebrow" style="color:#e84b38">${safe(project.status.toUpperCase())}</p><h2>${safe(project.title)}</h2><p>${safe(project.logline)}</p><button class="style-launch" data-style-id="${project.id}">Edit Creative DNA</button></div><button class="close" data-close-detail>×</button></div>
+    <div class="detail-head"><div><p class="eyebrow" style="color:#e84b38">${safe(project.status.toUpperCase())}</p><h2>${safe(project.title)}</h2><p>${safe(project.logline)}</p><button class="style-launch" data-style-id="${project.id}">Edit Creative DNA</button><button class="writer-launch" data-writer-id="${project.id}">Develop Story</button></div><button class="close" data-close-detail>×</button></div>
     <div class="style-grid"><div class="style-card"><b>ERA BLEND</b>${safe(style.era_primary)} × ${safe(style.era_secondary)}</div><div class="style-card"><b>VISUAL DNA</b>${safe(Object.values(style.visual).join(' · '))}</div><div class="style-card"><b>STORY DNA</b>${safe(Object.values(style.narrative).join(' · '))}</div></div>
     <h3>Scenes</h3>${project.scenes.length ? project.scenes.map(scene => `<div class="scene"><strong>${scene.position}. ${safe(scene.title)}</strong><br><small>${safe(scene.summary)} · ${scene.shots.length} shots</small></div>`).join('') : '<div class="empty">Scene planning will appear here.</div>'}`;
   detailDialog.showModal();
   document.querySelector('[data-close-detail]').onclick = () => detailDialog.close();
   document.querySelector('[data-style-id]').onclick = event => { detailDialog.close(); openStyleLab(Number(event.currentTarget.dataset.styleId)); };
+  document.querySelector('[data-writer-id]').onclick = event => { detailDialog.close(); openWriterRoom(Number(event.currentTarget.dataset.writerId)); };
 }
 
 function options(items, selected) {
@@ -86,10 +88,55 @@ function collectStyle(form) {
   return payload;
 }
 
+async function openWriterRoom(projectId) {
+  if (!projects.length) await loadProjects();
+  if (!projects.length) { projectDialog.showModal(); return; }
+  const projectSelect = document.querySelector('#writer-project');
+  projectSelect.innerHTML = options(projects.map(p => ({id:String(p.id), label:p.title})), String(projectId || projects[0].id));
+  projectSelect.onchange = () => fillStory(Number(projectSelect.value));
+  fillStory(Number(projectSelect.value));
+  writerDialog.showModal();
+}
+
+function fillStory(projectId) {
+  const brief = projects.find(project => project.id === projectId)?.story_brief;
+  const form = document.querySelector('#writer-form');
+  form.elements.premise.value = brief?.premise || '';
+  form.elements.format.value = brief?.format || 'short film';
+  form.elements.target_duration_minutes.value = brief?.target_duration_minutes || 5;
+  form.elements.genre.value = brief?.genre || 'science fantasy';
+  form.elements.audience.value = brief?.audience || 'general';
+  form.elements.themes.value = (brief?.themes || []).join(', ');
+  renderStory(brief);
+}
+
+function renderStory(brief) {
+  const result = document.querySelector('#story-result');
+  if (!brief?.synopsis) { result.innerHTML = ''; return; }
+  result.innerHTML = `<div class="synopsis"><b>WORKING SYNOPSIS</b><div data-synopsis>${safe(brief.synopsis)}</div></div><div class="beats">${brief.beats.map(beat => `<div class="beat" data-position="${safe(beat.position)}" data-name="${safe(beat.name)}"><b>${safe(beat.position)} · ${safe(beat.name)}</b><textarea aria-label="${safe(beat.name)} summary">${safe(beat.summary)}</textarea></div>`).join('')}</div><div class="outline-actions"><button type="button" id="save-outline">Save outline edits</button></div>`;
+  document.querySelector('#save-outline').onclick = saveOutline;
+}
+
+async function saveOutline() {
+  const projectId = Number(document.querySelector('#writer-project').value);
+  const beats = [...document.querySelectorAll('.beat')].map(beat => ({position:beat.dataset.position, name:beat.dataset.name, summary:beat.querySelector('textarea').value}));
+  const synopsis = document.querySelector('[data-synopsis]').textContent;
+  const brief = await api(`/api/projects/${projectId}/story/outline`, {method:'PATCH', body:JSON.stringify({synopsis, beats})});
+  await loadProjects();
+  renderStory(brief);
+}
+
+function collectStory(form) {
+  return {premise:form.elements.premise.value, format:form.elements.format.value, target_duration_minutes:Number(form.elements.target_duration_minutes.value), genre:form.elements.genre.value, audience:form.elements.audience.value, themes:form.elements.themes.value.split(',').map(value => value.trim()).filter(Boolean)};
+}
+
 document.querySelector('#new-project').onclick = () => projectDialog.showModal();
 document.querySelector('#style-lab-nav').onclick = () => openStyleLab();
+document.querySelector('#writer-nav').onclick = () => openWriterRoom();
 document.querySelector('.close').onclick = () => projectDialog.close();
 document.querySelector('#style-close').onclick = () => styleDialog.close();
+document.querySelector('#writer-close').onclick = () => writerDialog.close();
 document.querySelector('#project-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); await api('/api/projects', {method:'POST', body:JSON.stringify(data)}); event.target.reset(); projectDialog.close(); await loadProjects(); };
 document.querySelector('#style-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#style-project').value); await api(`/api/projects/${projectId}/style`, {method:'PUT', body:JSON.stringify(collectStyle(event.target))}); styleDialog.close(); await loadProjects(); openProject(projectId); };
+document.querySelector('#writer-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#writer-project').value); const brief = await api(`/api/projects/${projectId}/story`, {method:'PUT', body:JSON.stringify(collectStory(event.target))}); await loadProjects(); renderStory(brief); };
 loadProjects().catch(error => projectsEl.innerHTML = `<div class="empty">Could not load the studio: ${safe(error.message)}</div>`);

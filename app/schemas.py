@@ -19,6 +19,42 @@ class StyleProfileRead(StyleProfileInput):
     project_id: int
 
 
+class StoryBriefInput(BaseModel):
+    premise: str = ""
+    format: str = "short film"
+    target_duration_minutes: int = Field(default=5, ge=1, le=240)
+    audience: str = "general"
+    genre: str = "science fantasy"
+    themes: list[str] = Field(default_factory=list)
+
+
+class StoryBriefRead(StoryBriefInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    synopsis: str
+    beats: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class StoryOutlineUpdate(BaseModel):
+    synopsis: str
+    beats: list[dict[str, Any]]
+
+
+class CharacterInput(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    role: str = "protagonist"
+    want: str = ""
+    need: str = ""
+    contradiction: str = ""
+
+
+class CharacterRead(CharacterInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+
+
 class ShotCreate(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     description: str = ""
@@ -57,4 +93,6 @@ class ProjectRead(ProjectCreate):
     status: str
     created_at: datetime
     style_profile: StyleProfileRead | None = None
+    story_brief: StoryBriefRead | None = None
+    characters: list[CharacterRead] = Field(default_factory=list)
     scenes: list[SceneRead] = Field(default_factory=list)

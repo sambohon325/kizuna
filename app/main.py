@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
 from app.database import Base, engine, get_db
-from app.models import Character, Project, Scene, Shot, StoryBrief, StyleProfile
-from app.schemas import CharacterInput, CharacterRead, ProjectCreate, ProjectRead, SceneCreate, SceneRead, ShotCreate, ShotRead, StoryBriefInput, StoryBriefRead, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead
+from app.character_development import compile_reference_brief
+from app.models import Character, CharacterDesign, Project, Scene, Shot, StoryBrief, StyleProfile
+from app.schemas import CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, ProjectCreate, ProjectRead, SceneCreate, SceneRead, ShotCreate, ShotRead, StoryBriefInput, StoryBriefRead, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
 
@@ -20,7 +21,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 def project_query():
-    return select(Project).options(selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters), selectinload(Project.scenes).selectinload(Scene.shots))
+    return select(Project).options(selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters).selectinload(Character.design), selectinload(Project.scenes).selectinload(Scene.shots))
 
 
 @app.get("/api/health")
@@ -117,6 +118,37 @@ def create_character(project_id: int, payload: CharacterInput, db: Session = Dep
     db.commit()
     db.refresh(character)
     return character
+
+
+@app.put("/api/characters/{character_id}", response_model=CharacterRead)
+def update_character(character_id: int, payload: CharacterInput, db: Session = Depends(get_db)):
+    character = db.get(Character, character_id)
+    if not character:
+        raise HTTPException(404, "Character not found")
+    for key, value in payload.model_dump().items():
+        setattr(character, key, value)
+    db.commit()
+    return db.scalars(select(Character).options(selectinload(Character.design)).where(Character.id == character_id)).one()
+
+
+@app.put("/api/characters/{character_id}/design", response_model=CharacterDesignRead)
+def update_character_design(character_id: int, payload: CharacterDesignInput, db: Session = Depends(get_db)):
+    character = db.get(Character, character_id)
+    if not character:
+        raise HTTPException(404, "Character not found")
+    style = db.scalar(select(StyleProfile).where(StyleProfile.project_id == character.project_id))
+    design = db.scalar(select(CharacterDesign).where(CharacterDesign.character_id == character_id))
+    if design is None:
+        design = CharacterDesign(character_id=character_id)
+        db.add(design)
+    else:
+        design.version += 1
+    for key, value in payload.model_dump().items():
+        setattr(design, key, value)
+    design.reference_brief = compile_reference_brief(character, payload, style)
+    db.commit()
+    db.refresh(design)
+    return design
 
 
 @app.post("/api/projects/{project_id}/scenes", response_model=SceneRead, status_code=status.HTTP_201_CREATED)

@@ -69,6 +69,22 @@ class Character(Base):
     contradiction: Mapped[str] = mapped_column(Text, default="")
 
     project: Mapped[Project] = relationship(back_populates="characters")
+    design: Mapped[CharacterDesign | None] = relationship(back_populates="character", cascade="all, delete-orphan", uselist=False)
+
+
+class CharacterDesign(Base):
+    __tablename__ = "character_designs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"), unique=True)
+    appearance: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    palette: Mapped[list[str]] = mapped_column(JSON, default=list)
+    wardrobe: Mapped[list[str]] = mapped_column(JSON, default=list)
+    consistency_anchors: Mapped[list[str]] = mapped_column(JSON, default=list)
+    reference_brief: Mapped[str] = mapped_column(Text, default="")
+    version: Mapped[int] = mapped_column(default=1)
+
+    character: Mapped[Character] = relationship(back_populates="design")
 
 
 class Scene(Base):

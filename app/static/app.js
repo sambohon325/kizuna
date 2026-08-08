@@ -3,8 +3,10 @@ const projectDialog = document.querySelector('#project-dialog');
 const detailDialog = document.querySelector('#detail-dialog');
 const styleDialog = document.querySelector('#style-dialog');
 const writerDialog = document.querySelector('#writer-dialog');
+const characterDialog = document.querySelector('#character-dialog');
 let projects = [];
 let catalog = null;
+let activeCharacterId = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {headers: {'Content-Type': 'application/json'}, ...options});
@@ -126,6 +128,62 @@ async function saveOutline() {
   renderStory(brief);
 }
 
+async function openCharacterStudio(projectId) {
+  if (!projects.length) await loadProjects();
+  if (!projects.length) { projectDialog.showModal(); return; }
+  const projectSelect = document.querySelector('#character-project');
+  projectSelect.innerHTML = options(projects.map(p => ({id:String(p.id), label:p.title})), String(projectId || projects[0].id));
+  projectSelect.onchange = () => { activeCharacterId = null; clearCharacterForm(); renderCharacterRoster(Number(projectSelect.value)); };
+  renderCharacterRoster(Number(projectSelect.value));
+  document.querySelector('#character-result').innerHTML = '';
+  characterDialog.showModal();
+}
+
+function renderCharacterRoster(projectId) {
+  const roster = projects.find(project => project.id === projectId)?.characters || [];
+  document.querySelector('#character-roster').innerHTML = `<button type="button" class="character-pill ${activeCharacterId === null ? 'active' : ''}" data-new-character>＋ New</button>${roster.map(character => `<button type="button" class="character-pill ${activeCharacterId === character.id ? 'active' : ''}" data-character-id="${character.id}"><b>${safe(character.name)}</b> · ${safe(character.role)}${character.design ? ` · sheet v${character.design.version}` : ''}</button>`).join('')}`;
+  document.querySelector('[data-new-character]').onclick = () => { activeCharacterId = null; clearCharacterForm(); renderCharacterRoster(projectId); };
+  document.querySelectorAll('[data-character-id]').forEach(button => button.onclick = () => selectCharacter(projectId, Number(button.dataset.characterId)));
+}
+
+function clearCharacterForm() {
+  const form = document.querySelector('#character-form');
+  ['name','want','need','contradiction','silhouette','body_language','face','hair','eyes','signature_detail','palette','wardrobe','anchors'].forEach(name => form.elements[name].value = '');
+  form.elements.role.value = 'protagonist';
+  document.querySelector('#character-result').innerHTML = '';
+}
+
+function selectCharacter(projectId, characterId) {
+  const character = projects.find(project => project.id === projectId)?.characters.find(item => item.id === characterId);
+  if (!character) return;
+  activeCharacterId = characterId;
+  const form = document.querySelector('#character-form');
+  ['name','role','want','need','contradiction'].forEach(name => form.elements[name].value = character[name] || '');
+  const appearance = character.design?.appearance || {};
+  ['silhouette','body_language','face','hair','eyes','signature_detail'].forEach(name => form.elements[name].value = appearance[name] || '');
+  form.elements.palette.value = (character.design?.palette || []).join(', ');
+  form.elements.wardrobe.value = (character.design?.wardrobe || []).join(', ');
+  form.elements.anchors.value = (character.design?.consistency_anchors || []).join(', ');
+  renderCharacterRoster(projectId);
+  if (character.design) renderCharacterDesign(character, character.design); else document.querySelector('#character-result').innerHTML = '';
+}
+
+function listValue(form, name) {
+  return form.elements[name].value.split(',').map(value => value.trim()).filter(Boolean);
+}
+
+function collectCharacter(form) {
+  return {name:form.elements.name.value, role:form.elements.role.value, want:form.elements.want.value, need:form.elements.need.value, contradiction:form.elements.contradiction.value};
+}
+
+function collectCharacterDesign(form) {
+  return {appearance:{silhouette:form.elements.silhouette.value, body_language:form.elements.body_language.value, face:form.elements.face.value, hair:form.elements.hair.value, eyes:form.elements.eyes.value, signature_detail:form.elements.signature_detail.value}, palette:listValue(form,'palette'), wardrobe:listValue(form,'wardrobe'), consistency_anchors:listValue(form,'anchors')};
+}
+
+function renderCharacterDesign(character, design) {
+  document.querySelector('#character-result').innerHTML = `<div class="reference-brief"><b>GENERATION-READY REFERENCE BRIEF · V${design.version}</b>${safe(design.reference_brief)}</div><div class="anchor-list">${design.consistency_anchors.map(anchor => `<span>LOCK · ${safe(anchor)}</span>`).join('')}</div>`;
+}
+
 function collectStory(form) {
   return {premise:form.elements.premise.value, format:form.elements.format.value, target_duration_minutes:Number(form.elements.target_duration_minutes.value), genre:form.elements.genre.value, audience:form.elements.audience.value, themes:form.elements.themes.value.split(',').map(value => value.trim()).filter(Boolean)};
 }
@@ -133,10 +191,13 @@ function collectStory(form) {
 document.querySelector('#new-project').onclick = () => projectDialog.showModal();
 document.querySelector('#style-lab-nav').onclick = () => openStyleLab();
 document.querySelector('#writer-nav').onclick = () => openWriterRoom();
+document.querySelector('#characters-nav').onclick = () => openCharacterStudio();
 document.querySelector('.close').onclick = () => projectDialog.close();
 document.querySelector('#style-close').onclick = () => styleDialog.close();
 document.querySelector('#writer-close').onclick = () => writerDialog.close();
+document.querySelector('#character-close').onclick = () => characterDialog.close();
 document.querySelector('#project-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); await api('/api/projects', {method:'POST', body:JSON.stringify(data)}); event.target.reset(); projectDialog.close(); await loadProjects(); };
 document.querySelector('#style-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#style-project').value); await api(`/api/projects/${projectId}/style`, {method:'PUT', body:JSON.stringify(collectStyle(event.target))}); styleDialog.close(); await loadProjects(); openProject(projectId); };
 document.querySelector('#writer-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#writer-project').value); const brief = await api(`/api/projects/${projectId}/story`, {method:'PUT', body:JSON.stringify(collectStory(event.target))}); await loadProjects(); renderStory(brief); };
+document.querySelector('#character-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#character-project').value); const character = activeCharacterId ? await api(`/api/characters/${activeCharacterId}`, {method:'PUT', body:JSON.stringify(collectCharacter(event.target))}) : await api(`/api/projects/${projectId}/characters`, {method:'POST', body:JSON.stringify(collectCharacter(event.target))}); activeCharacterId = character.id; const design = await api(`/api/characters/${character.id}/design`, {method:'PUT', body:JSON.stringify(collectCharacterDesign(event.target))}); await loadProjects(); renderCharacterRoster(projectId); renderCharacterDesign(character, design); };
 loadProjects().catch(error => projectsEl.innerHTML = `<div class="empty">Could not load the studio: ${safe(error.message)}</div>`);

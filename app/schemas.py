@@ -49,10 +49,26 @@ class CharacterInput(BaseModel):
     contradiction: str = ""
 
 
+class CharacterDesignInput(BaseModel):
+    appearance: dict[str, Any] = Field(default_factory=dict)
+    palette: list[str] = Field(default_factory=list)
+    wardrobe: list[str] = Field(default_factory=list)
+    consistency_anchors: list[str] = Field(default_factory=list)
+
+
+class CharacterDesignRead(CharacterDesignInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    character_id: int
+    reference_brief: str
+    version: int
+
+
 class CharacterRead(CharacterInput):
     model_config = ConfigDict(from_attributes=True)
     id: int
     project_id: int
+    design: CharacterDesignRead | None = None
 
 
 class ShotCreate(BaseModel):

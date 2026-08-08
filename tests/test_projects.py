@@ -50,3 +50,21 @@ def test_writer_room_develops_structured_story_and_character(client):
     edited = client.patch(f"/api/projects/{project_id}/story/outline", json={"synopsis": response.json()["synopsis"], "beats": beats})
     assert edited.status_code == 200
     assert edited.json()["beats"][0]["summary"].startswith("A silent train")
+
+
+def test_character_design_compiles_style_aware_reference_brief(client):
+    project_id = client.post("/api/projects", json={"title": "Red Current"}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "quiet protector", "want": "Keep the crew alive", "need": "Trust their judgment", "contradiction": "Protects everyone while refusing care"}).json()
+    design_payload = {"appearance": {"silhouette": "long asymmetrical coat", "hair": "short silver undercut", "eyes": "amber, heavy upper lid"}, "palette": ["charcoal", "oxide red", "warm amber"], "wardrobe": ["weathered flight coat", "utility boots"], "consistency_anchors": ["split left eyebrow", "red collar tab", "triangular earring"]}
+    response = client.put(f"/api/characters/{character['id']}/design", json=design_payload)
+    assert response.status_code == 200
+    design = response.json()
+    assert "1990s blended with 2020s" in design["reference_brief"]
+    assert "triangular earring" in design["reference_brief"]
+    project = client.get(f"/api/projects/{project_id}").json()
+    assert project["characters"][0]["design"]["palette"][1] == "oxide red"
+    updated = client.put(f"/api/characters/{character['id']}", json={"name": "Ari", "role": "quiet protector", "want": "Save the entire station", "need": "Trust their judgment", "contradiction": "Protects everyone while refusing care"})
+    assert updated.status_code == 200
+    assert updated.json()["want"] == "Save the entire station"
+    versioned = client.put(f"/api/characters/{character['id']}/design", json=design_payload)
+    assert versioned.json()["version"] == 2

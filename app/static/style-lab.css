@@ -1,0 +1,19 @@
+.style-dialog{width:min(760px,94vw);max-height:92vh}
+.style-dialog form{width:auto;padding:38px}
+.style-dialog select{display:block;width:100%;margin-top:7px;border:1px solid var(--line);border-radius:10px;background:#f7f4ee;padding:13px;font:inherit}
+.form-intro{color:var(--muted);margin-top:8px}
+.era-pair,.trait-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.trait-section{border-top:1px solid var(--line);margin-top:22px;padding-top:18px}
+.trait-section h3{margin:0 0 4px}
+.trait-section p{margin:0 0 12px;color:var(--muted);font-size:12px}
+fieldset{border:0;border-top:1px solid var(--line);padding:18px 0;margin:20px 0}
+legend{font-weight:700;padding:18px 0 0}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{position:relative}
+.chip input{position:absolute;opacity:0}
+.chip span{display:block;padding:8px 11px;border:1px solid var(--line);border-radius:30px;font-size:11px;cursor:pointer}
+.chip input:checked+span{background:var(--purple);color:white;border-color:var(--purple)}
+.dna-summary{background:#211c29;color:#ddd2ea;border-radius:12px;padding:16px;margin:14px 0 18px;font-size:12px;line-height:1.5}
+.dna-summary b{display:block;color:#f39c87;font-size:9px;letter-spacing:.15em;margin-bottom:6px}
+.style-launch{margin-top:16px;background:transparent;color:var(--purple);border:1px solid #cfc3dc;border-radius:9px;padding:8px 11px;font-weight:700;cursor:pointer}
+@media(max-width:700px){.era-pair,.trait-grid{grid-template-columns:1fr}}

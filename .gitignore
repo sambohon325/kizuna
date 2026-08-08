@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.env
+anime_studio.db
+test_anime_studio.db
+data/
+renders/
+node_modules/

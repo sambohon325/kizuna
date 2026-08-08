@@ -1,0 +1,27 @@
+[project]
+name = "kizuna-studio"
+version = "0.1.0"
+description = "AI-assisted anime pre-production and rendering studio"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.116,<1",
+  "uvicorn[standard]>=0.35,<1",
+  "sqlalchemy>=2.0,<3",
+  "pydantic-settings>=2.10,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28,<1",
+  "pytest>=8.4,<9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["work*", "outputs*", "tests*"]
+
+[tool.setuptools.package-data]
+app = ["static/*"]

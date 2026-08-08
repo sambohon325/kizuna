@@ -1,0 +1,37 @@
+services:
+  web:
+    build: .
+    environment:
+      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
+      KIZUNA_ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - render_data:/app/renders
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kizuna}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kizuna}
+      POSTGRES_DB: ${POSTGRES_DB:-kizuna}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kizuna}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+  render_data:
+

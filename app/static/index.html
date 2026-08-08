@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kizuna Studio</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style-lab.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="mark">K</span><span>Kizuna Studio<small>Anime production workspace</small></span></a>
+    <div class="status"><i></i> Local studio</div>
+    <button class="primary" id="new-project">New production</button>
+  </header>
+  <div class="shell">
+    <nav class="rail">
+      <button class="active">⌂<span>Productions</span></button>
+      <button id="style-lab-nav">✦<span>Style Lab</span></button>
+      <button>♙<span>Characters</span></button>
+      <button>▧<span>Worlds</span></button>
+      <button>▶<span>Render</span></button>
+    </nav>
+    <main>
+      <section class="hero">
+        <div><p class="eyebrow">PRODUCTION DESK</p><h1>Shape a story.<br><em>Direct every frame.</em></h1><p>Build an original anime from script to final master with a creative system that stays under your direction.</p></div>
+        <div class="orb"><span>60s</span><span>→</span><span>NOW</span></div>
+      </section>
+      <section class="section-head"><div><p class="eyebrow">YOUR WORK</p><h2>Productions</h2></div><span id="project-count">0 projects</span></section>
+      <div id="projects" class="projects"></div>
+    </main>
+  </div>
+  <dialog id="project-dialog">
+    <form id="project-form"><button type="button" class="close">×</button><p class="eyebrow">NEW PRODUCTION</p><h2>What are we making?</h2><label>Title<input name="title" required maxlength="160" placeholder="The Last Signal"></label><label>Logline<textarea name="logline" rows="4" placeholder="A disgraced orbital cartographer discovers..."></textarea></label><button class="primary" type="submit">Create production</button></form>
+  </dialog>
+  <dialog id="detail-dialog" class="detail"><div id="detail"></div></dialog>
+  <dialog id="style-dialog" class="style-dialog"><form id="style-form"><button type="button" class="close" id="style-close">×</button><p class="eyebrow">CREATIVE DNA</p><h2>Style Lab</h2><p class="form-intro">Blend production traditions into an original, reusable direction system.</p><label>Production<select id="style-project" required></select></label><div class="era-pair"><label>Primary era<select name="era_primary"></select></label><label>Secondary era<select name="era_secondary"></select></label></div><div id="style-fields"></div><fieldset><legend>Character archetypes</legend><div id="archetypes" class="chips"></div></fieldset><div class="dna-summary"><b>LIVE DIRECTION</b><span id="dna-summary"></span></div><button class="primary" type="submit">Save Creative DNA</button></form></dialog>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import secrets
 import shutil
@@ -22,9 +23,10 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, IntegrationProfile, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AIProviderRoute, AnimaticRender, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, IntegrationProfile, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AIRoutingSettingsRead, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
+from app.ai_router import AI_TASKS, AIRouterError, generate_text, provider_readiness, resolve_provider
 from app.storage import LocalProductionStorage
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
@@ -164,6 +166,47 @@ def get_integration_settings(db: Session = Depends(get_db)):
     profiles = {item.key: item for item in db.scalars(select(IntegrationProfile).order_by(IntegrationProfile.id)).all()}
     keys = [*INTEGRATION_CATALOG, *(key for key in profiles if key not in INTEGRATION_CATALOG)]
     return {"categories": CATEGORY_LABELS, "integrations": [integration_response(key, profiles.get(key)) for key in keys]}
+
+
+def ai_route_response(task: str, route: AIProviderRoute | None, profiles: dict[str, IntegrationProfile]) -> dict:
+    provider_key = route.provider_key if route else "local"
+    model_override = route.model_override if route else ""
+    profile = profiles.get(provider_key)
+    ready, note = provider_readiness(provider_key, profile, model_override)
+    provider_name = "Kizuna local" if provider_key == "local" else (profile.display_name if profile and profile.display_name else INTEGRATION_CATALOG.get(provider_key, {}).get("name", provider_key))
+    definition = AI_TASKS[task]
+    return {"id": route.id if route else None, "task": task, "label": definition["label"], "description": definition["description"], "provider_key": provider_key, "model_override": model_override, "provider_name": provider_name, "ready": ready, "readiness_note": note}
+
+
+@app.get("/api/settings/ai-routing", response_model=AIRoutingSettingsRead)
+def get_ai_routing(db: Session = Depends(get_db)):
+    profiles = {item.key: item for item in db.scalars(select(IntegrationProfile).where(IntegrationProfile.category == "ai").order_by(IntegrationProfile.id)).all()}
+    routes = {item.task: item for item in db.scalars(select(AIProviderRoute).order_by(AIProviderRoute.id)).all()}
+    providers = [{"key": "local", "name": "Kizuna local", "ready": True, "note": "Built-in private guidance"}]
+    for key, profile in profiles.items():
+        ready, note = provider_readiness(key, profile)
+        providers.append({"key": key, "name": profile.display_name or INTEGRATION_CATALOG.get(key, {}).get("name", key), "ready": ready, "note": note})
+    return {"routes": [ai_route_response(task, routes.get(task), profiles) for task in AI_TASKS], "providers": providers}
+
+
+@app.put("/api/settings/ai-routing/{task}", response_model=AIProviderRouteRead)
+def update_ai_routing(task: str, payload: AIProviderRouteInput, db: Session = Depends(get_db)):
+    if task not in AI_TASKS:
+        raise HTTPException(404, "AI role not found")
+    profile = None
+    if payload.provider_key != "local":
+        profile = db.scalar(select(IntegrationProfile).where(IntegrationProfile.key == payload.provider_key, IntegrationProfile.category == "ai"))
+        if profile is None:
+            raise HTTPException(400, "Choose a configured AI engine")
+    route = db.scalar(select(AIProviderRoute).where(AIProviderRoute.task == task))
+    if route is None:
+        route = AIProviderRoute(task=task)
+        db.add(route)
+    route.provider_key = payload.provider_key
+    route.model_override = payload.model_override.strip()
+    db.commit(); db.refresh(route)
+    profiles = {profile.key: profile} if profile else {}
+    return ai_route_response(task, route, profiles)
 
 
 @app.put("/api/settings/integrations/{integration_key}", response_model=IntegrationProfileRead)
@@ -349,6 +392,23 @@ def local_assistant_reply(project: Project, scope: ProductionScope | None, reque
     return response, actions
 
 
+def routed_assistant_reply(project: Project, scope: ProductionScope | None, request: AssistantRequest, db: Session) -> tuple[str, list[dict[str, str]], dict]:
+    page = request.page if request.page in ASSISTANT_PAGE_GUIDANCE else "productions"
+    actions = ASSISTANT_PAGE_GUIDANCE[page][1]
+    provider = resolve_provider(db, "assistant")
+    if provider is None:
+        content, actions = local_assistant_reply(project, scope, request)
+        return content, actions, {"provider": "local", "provider_name": "Kizuna local"}
+    summary = assistant_project_summary(project, scope)
+    scope_guidance = scope_response(scope)["writing_guidance"] if scope else []
+    recent = db.scalars(select(AssistantMessage).where(AssistantMessage.project_id == project.id).order_by(AssistantMessage.id.desc()).limit(10)).all()[::-1]
+    conversation = [{"role": item.role, "content": item.content} for item in recent]
+    system = """You are Kizuna's embedded anime production assistant. You understand the full workflow from scope and writing through visual development, animation, sound, edit, render, and delivery. Give concise, concrete, professional guidance based only on the supplied project state and current screen. Collaborate at the creator's level, explain unfamiliar craft terms plainly, preserve approved work, and clearly distinguish suggestions from known project facts. Never claim that work is complete unless the project state says it is. When discussing style, describe transferable craft traits and original art direction rather than imitating a living artist."""
+    prompt = json.dumps({"project": summary, "scope_guidance": scope_guidance, "current_workspace": page, "screen": request.screen_context, "recent_conversation": conversation, "creator_request": request.message}, ensure_ascii=False)
+    content = generate_text(provider, system=system, prompt=prompt)
+    return content, actions, {"provider": provider.key, "provider_name": provider.name, "model": provider.model}
+
+
 @app.get("/api/projects/{project_id}/assistant/messages", response_model=list[AssistantMessageRead])
 def assistant_history(project_id: int, db: Session = Depends(get_db)):
     if not db.get(Project, project_id):
@@ -364,8 +424,12 @@ def ask_project_assistant(project_id: int, request: AssistantRequest, db: Sessio
     scope = db.scalar(select(ProductionScope).where(ProductionScope.project_id == project_id))
     user_message = AssistantMessage(project_id=project_id, page=request.page, role="user", content=request.message, context=request.screen_context)
     db.add(user_message)
-    content, actions = local_assistant_reply(project, scope, request)
-    assistant_message = AssistantMessage(project_id=project_id, page=request.page, role="assistant", content=content, context={"actions": actions})
+    try:
+        content, actions, engine = routed_assistant_reply(project, scope, request, db)
+    except AIRouterError as exc:
+        content, actions = local_assistant_reply(project, scope, request)
+        engine = {"provider": "local", "provider_name": "Kizuna local", "fallback_from": "configured provider", "fallback_reason": str(exc)[:500]}
+    assistant_message = AssistantMessage(project_id=project_id, page=request.page, role="assistant", content=content, context={"actions": actions, **engine})
     db.add(assistant_message); db.commit(); db.refresh(assistant_message)
     return {"message": assistant_message, "actions": actions, "project_summary": assistant_project_summary(project, scope)}
 

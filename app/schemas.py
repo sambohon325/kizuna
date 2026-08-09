@@ -868,6 +868,7 @@ class AssistantMessageRead(BaseModel):
     page: str
     role: str
     content: str
+    context: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
 
@@ -964,3 +965,23 @@ class IntegrationProfileRead(IntegrationProfileInput):
 class IntegrationSettingsRead(BaseModel):
     categories: dict[str, str] = Field(default_factory=dict)
     integrations: list[IntegrationProfileRead] = Field(default_factory=list)
+
+
+class AIProviderRouteInput(BaseModel):
+    provider_key: str = Field(default="local", min_length=1, max_length=120)
+    model_override: str = Field(default="", max_length=255)
+
+
+class AIProviderRouteRead(AIProviderRouteInput):
+    id: int | None = None
+    task: str
+    label: str
+    description: str
+    provider_name: str
+    ready: bool
+    readiness_note: str
+
+
+class AIRoutingSettingsRead(BaseModel):
+    routes: list[AIProviderRouteRead] = Field(default_factory=list)
+    providers: list[dict[str, Any]] = Field(default_factory=list)

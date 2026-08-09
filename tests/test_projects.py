@@ -24,6 +24,38 @@ def test_integration_settings_support_builtin_and_custom_tools(client):
     assert client.delete("/api/settings/integrations/openai").status_code == 400
 
 
+def test_ai_role_routing_drives_the_contextual_assistant(client, monkeypatch):
+    routing = client.get("/api/settings/ai-routing")
+    assert routing.status_code == 200
+    assert len(routing.json()["routes"]) == 9
+    assert all(route["provider_key"] == "local" for route in routing.json()["routes"])
+
+    connected = client.put("/api/settings/integrations/custom-story-brain", json={"display_name": "Story Brain", "category": "ai", "mode": "api", "endpoint": "http://studio-ai:9000/v1", "model": "story-v2", "secret_env_var": "", "configuration": {"protocol": "openai-compatible"}})
+    assert connected.status_code == 200
+    routed = client.put("/api/settings/ai-routing/assistant", json={"provider_key": "custom-story-brain", "model_override": "story-v3"})
+    assert routed.status_code == 200
+    assert routed.json()["ready"] is True
+    assert routed.json()["model_override"] == "story-v3"
+
+    monkeypatch.setattr("app.main.generate_text", lambda provider, **kwargs: f"Routed through {provider.name} using {provider.model}.")
+    project = client.post("/api/projects", json={"title": "Router Test", "logline": "A director finds the right creative partner."}).json()
+    response = client.post(f"/api/projects/{project['id']}/assistant", json={"message": "What should I do next?", "page": "productions", "screen_context": {"heading": "Productions"}})
+    assert response.status_code == 200
+    assert response.json()["message"]["content"] == "Routed through Story Brain using story-v3."
+    assert response.json()["message"]["context"]["provider"] == "custom-story-brain"
+    assert response.json()["message"]["context"]["model"] == "story-v3"
+
+    from app.ai_router import AIRouterError
+    monkeypatch.setattr("app.main.generate_text", lambda provider, **kwargs: (_ for _ in ()).throw(AIRouterError("engine offline")))
+    fallback = client.post(f"/api/projects/{project['id']}/assistant", json={"message": "Can you still help?", "page": "writer", "screen_context": {"heading": "Writer's Room"}})
+    assert fallback.status_code == 200
+    assert fallback.json()["message"]["context"]["provider"] == "local"
+    assert fallback.json()["message"]["context"]["fallback_reason"] == "engine offline"
+    assert "Router Test" in fallback.json()["message"]["content"]
+
+    assert client.put("/api/settings/ai-routing/not-a-role", json={"provider_key": "local"}).status_code == 404
+
+
 def test_production_scope_changes_story_shape_and_assistant_context(client):
     project = client.post("/api/projects", json={"title": "Pocket Signal", "logline": "A courier receives one impossible message.", "scope": {"distribution_channel": "TikTok", "release_format": "ongoing_series", "aspect_ratio": "9:16", "width": 1080, "height": 1920, "target_duration_seconds": 60, "installment_count": 24, "season_count": 2, "notes": "Weekly vertical episodes"}})
     assert project.status_code == 201

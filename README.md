@@ -66,6 +66,7 @@ pytest
 5. Add automated continuity and technical quality-control passes before master export
 
 See [AI Crew and voice setup](docs/AI_CREW.md) for autonomy behavior and optional hosted speech configuration.
+See [AI provider routing](docs/AI_PROVIDER_ROUTING.md) for assigning OpenAI, Claude, Gemini, Ollama, or custom engines to studio roles.
 See [asset review and rollback](docs/ASSET_REVIEW.md) for the production-version workflow.
 See [character story development](docs/CHARACTER_STORY.md) for histories, arcs, and relationship records.
 See [multi-window workspaces](docs/MULTI_WINDOW.md) for multi-monitor usage and direct workspace links.

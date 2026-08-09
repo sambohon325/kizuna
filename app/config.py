@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     session_days: int = 7
     invitation_days: int = 7
     trial_days: int = 7
+    trial_signup_enabled: bool = False
     trial_export_seconds: int = 60
     trial_watermark: str = "KIZUNA TRIAL | kizuna.technology"
     cookie_secure: bool = False

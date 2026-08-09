@@ -13,6 +13,7 @@ def setup_admin(client, monkeypatch):
     monkeypatch.setattr("app.main.settings.auth_required", True)
     monkeypatch.setattr("app.main.settings.bootstrap_admin_key", "one-time-studio-key")
     monkeypatch.setattr("app.main.settings.cookie_secure", False)
+    monkeypatch.setattr("app.main.settings.trial_signup_enabled", True)
     response = client.post("/api/auth/setup", json={"email": "owner@example.com", "display_name": "Studio Owner", "password": "long-secure-password", "bootstrap_key": "one-time-studio-key"})
     assert response.status_code == 200
     return client.cookies.get("kizuna_csrf")

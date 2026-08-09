@@ -260,13 +260,15 @@ def health():
 
 @app.get("/api/auth/status")
 def auth_status(db: Session = Depends(get_db)):
-    return {"auth_required": settings.auth_required, "setup_required": settings.auth_required and db.scalar(select(User.id).limit(1)) is None, "trial_signup_available": settings.auth_required and db.scalar(select(User.id).where(User.role == "admin").limit(1)) is not None, "trial_days": settings.trial_days, "trial_export_seconds": settings.trial_export_seconds, "public_url": settings.public_url, "marketing_url": settings.marketing_url}
+    return {"auth_required": settings.auth_required, "setup_required": settings.auth_required and db.scalar(select(User.id).limit(1)) is None, "trial_signup_available": settings.auth_required and settings.trial_signup_enabled and db.scalar(select(User.id).where(User.role == "admin").limit(1)) is not None, "trial_days": settings.trial_days, "trial_export_seconds": settings.trial_export_seconds, "public_url": settings.public_url, "marketing_url": settings.marketing_url}
 
 
 @app.post("/api/auth/trial", status_code=status.HTTP_201_CREATED)
 def create_trial_account(payload: TrialSignupInput, response: Response, db: Session = Depends(get_db)):
     if not settings.auth_required:
         raise HTTPException(409, "Trial accounts are only available on the hosted Kizuna studio")
+    if not settings.trial_signup_enabled:
+        raise HTTPException(403, "Trial signup is not open yet")
     if db.scalar(select(User.id).where(User.role == "admin").limit(1)) is None:
         raise HTTPException(503, "Kizuna is finishing studio setup. Please try again shortly.")
     email = normalize_email(payload.email)

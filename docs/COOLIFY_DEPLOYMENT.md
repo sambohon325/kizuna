@@ -27,6 +27,7 @@ Set these before the first deployment. Mark all secrets as secret/masked and nev
 - `KIZUNA_SCANNER_ADMIN_KEY` — separate unique random scanner-administration secret
 - `KIZUNA_GENERATION_PROVIDER=mock` for the first staging smoke test; change routing only after workers/providers are connected
 - `KIZUNA_TRIAL_DAYS=7`
+- `KIZUNA_TRIAL_SIGNUP_ENABLED=false` while staging is private
 - `KIZUNA_TRIAL_EXPORT_SECONDS=60`
 - `KIZUNA_TRIAL_WATERMARK=KIZUNA TRIAL | kizuna.technology`
 
@@ -48,4 +49,4 @@ Run it separately for each secret. Keep the values in a password manager.
 6. Sign in, create a staging production, sign out, and sign back in.
 7. Confirm named volumes exist for Postgres, Redis, renders, storage, and the scanner corpus before uploading irreplaceable media.
 
-Keep self-service trial signup private until verified email, password recovery, abuse controls, billing upgrades, and a restore drill are complete.
+Keep `KIZUNA_TRIAL_SIGNUP_ENABLED=false` until verified email, password recovery, abuse controls, billing upgrades, and a restore drill are complete. Change it to `true` and redeploy only when public self-service signup is ready.

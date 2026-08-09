@@ -61,10 +61,12 @@ pytest
 
 ## Next milestones
 
-1. Add Redis-backed crew/render scheduling, concurrency controls, and worker scaling
-2. Add delivery presets for festival, streaming, broadcast, captions, and archival masters
-3. Add team review pages, timecoded notes, and approval gates
-4. Add automated continuity and technical quality-control passes before master export
+1. Automate media registration, editing proxies, replica verification, and creator-reviewed cleanup
+2. Move long-running work onto a unified Redis-backed job contract with restart recovery
+3. Add Alembic migrations and production PostgreSQL verification
+4. Add health checks, job diagnostics, backup restore verification, and the guarded Coolify deployment path
+
+See [the phased Kizuna roadmap](docs/ROADMAP.md) for how Anime Studio becomes the shared foundation for Express, Paper, Hero, Motion, CineReal, AdForge, collaboration, integrations, and the future creator ecosystem.
 
 See [AI Crew and voice setup](docs/AI_CREW.md) for autonomy behavior and optional hosted speech configuration.
 See [AI provider routing](docs/AI_PROVIDER_ROUTING.md) for assigning OpenAI, Claude, Gemini, Ollama, or custom engines to studio roles.

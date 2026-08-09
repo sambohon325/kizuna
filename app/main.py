@@ -1,4 +1,5 @@
 import hashlib
+import os
 import secrets
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -21,8 +22,9 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AssetReview, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AnimaticRender, AssetReview, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, IntegrationProfile, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.storage import LocalProductionStorage
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
@@ -140,6 +142,54 @@ def style_catalog():
 def generation_providers():
     workflow_ready = bool(settings.comfyui_workflow_path and Path(settings.comfyui_workflow_path).exists())
     return {"active": settings.generation_provider, "providers": [{"id": "mock", "label": "Simulation", "ready": True}, {"id": "farm", "label": "Render farm", "ready": True}, {"id": "comfyui", "label": "Local ComfyUI", "ready": workflow_ready, "base_url": settings.comfyui_url}]}
+
+
+def integration_response(key: str, profile: IntegrationProfile | None) -> dict:
+    definition = INTEGRATION_CATALOG.get(key, {})
+    display_name = profile.display_name if profile and profile.display_name else definition.get("name", key.replace("-", " ").title())
+    category = profile.category if profile else definition.get("category", "ai")
+    mode = profile.mode if profile else "disabled"
+    endpoint = profile.endpoint if profile and profile.endpoint else definition.get("default_endpoint", "")
+    model = profile.model if profile and profile.model else definition.get("default_model", "")
+    secret_env_var = profile.secret_env_var if profile else definition.get("secret_env_var", "")
+    secret_available = bool(secret_env_var and os.getenv(secret_env_var))
+    if key == "openai" and settings.openai_api_key:
+        secret_available = True
+    configured = mode != "disabled" and (mode == "handoff" or bool(endpoint))
+    return {"id": profile.id if profile else None, "key": key, "display_name": display_name, "category": category, "mode": mode, "endpoint": endpoint, "model": model, "secret_env_var": secret_env_var, "configuration": profile.configuration if profile else {}, "description": definition.get("description", profile.configuration.get("description", "") if profile else ""), "capabilities": definition.get("capabilities", profile.configuration.get("capabilities", []) if profile else []), "modes": definition.get("modes", ["api", "handoff", "disabled"]), "configured": configured, "secret_available": secret_available, "custom": key not in INTEGRATION_CATALOG}
+
+
+@app.get("/api/settings/integrations", response_model=IntegrationSettingsRead)
+def get_integration_settings(db: Session = Depends(get_db)):
+    profiles = {item.key: item for item in db.scalars(select(IntegrationProfile).order_by(IntegrationProfile.id)).all()}
+    keys = [*INTEGRATION_CATALOG, *(key for key in profiles if key not in INTEGRATION_CATALOG)]
+    return {"categories": CATEGORY_LABELS, "integrations": [integration_response(key, profiles.get(key)) for key in keys]}
+
+
+@app.put("/api/settings/integrations/{integration_key}", response_model=IntegrationProfileRead)
+def update_integration(integration_key: str, payload: IntegrationProfileInput, db: Session = Depends(get_db)):
+    if integration_key not in INTEGRATION_CATALOG and not integration_key.startswith("custom-"):
+        raise HTTPException(400, "Custom integration keys must begin with custom-")
+    if integration_key not in INTEGRATION_CATALOG and not payload.display_name.strip():
+        raise HTTPException(400, "Custom integrations need a display name")
+    profile = db.scalar(select(IntegrationProfile).where(IntegrationProfile.key == integration_key))
+    if profile is None:
+        profile = IntegrationProfile(key=integration_key)
+        db.add(profile)
+    for field, value in payload.model_dump().items():
+        setattr(profile, field, value)
+    db.commit(); db.refresh(profile)
+    return integration_response(integration_key, profile)
+
+
+@app.delete("/api/settings/integrations/{integration_key}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_custom_integration(integration_key: str, db: Session = Depends(get_db)):
+    if integration_key in INTEGRATION_CATALOG:
+        raise HTTPException(400, "Built-in integrations can be disabled but not removed")
+    profile = db.scalar(select(IntegrationProfile).where(IntegrationProfile.key == integration_key))
+    if not profile:
+        raise HTTPException(404, "Integration not found")
+    db.delete(profile); db.commit()
 
 
 @app.get("/api/projects", response_model=list[ProjectRead])

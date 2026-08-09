@@ -664,3 +664,19 @@ class DeliveryLink(Base):
     download_count: Mapped[int] = mapped_column(default=0)
     revoked: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class IntegrationProfile(Base):
+    __tablename__ = "integration_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(120), unique=True)
+    display_name: Mapped[str] = mapped_column(String(160), default="")
+    category: Mapped[str] = mapped_column(String(40), default="ai")
+    mode: Mapped[str] = mapped_column(String(32), default="disabled")
+    endpoint: Mapped[str] = mapped_column(Text, default="")
+    model: Mapped[str] = mapped_column(String(255), default="")
+    secret_env_var: Mapped[str] = mapped_column(String(160), default="")
+    configuration: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

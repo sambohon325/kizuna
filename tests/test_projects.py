@@ -4,6 +4,26 @@ def test_health(client):
     assert response.json()["status"] == "ok"
 
 
+def test_integration_settings_support_builtin_and_custom_tools(client):
+    settings_response = client.get("/api/settings/integrations")
+    assert settings_response.status_code == 200
+    integrations = {item["key"]: item for item in settings_response.json()["integrations"]}
+    assert {"openai", "anthropic", "google", "ollama", "comfyui", "adobe", "corel", "gimp"}.issubset(integrations)
+    assert integrations["openai"]["configured"] is False
+
+    configured = client.put("/api/settings/integrations/ollama", json={"display_name": "Ollama", "category": "ai", "mode": "api", "endpoint": "http://render-box:11434", "model": "studio-model", "secret_env_var": "", "configuration": {}})
+    assert configured.status_code == 200
+    assert configured.json()["configured"] is True
+    assert configured.json()["endpoint"] == "http://render-box:11434"
+
+    custom = client.put("/api/settings/integrations/custom-house-engine", json={"display_name": "House Engine", "category": "generation", "mode": "api", "endpoint": "http://studio-ai:9000/v1", "model": "anime-v2", "secret_env_var": "KIZUNA_HOUSE_AI_KEY", "configuration": {"description": "Private studio engine", "capabilities": ["image", "animation"]}})
+    assert custom.status_code == 200
+    assert custom.json()["custom"] is True
+    assert custom.json()["secret_available"] is False
+    assert client.delete("/api/settings/integrations/custom-house-engine").status_code == 204
+    assert client.delete("/api/settings/integrations/openai").status_code == 400
+
+
 def test_style_catalog_has_eras_and_directing_traits(client):
     response = client.get("/api/style-catalog")
     assert response.status_code == 200

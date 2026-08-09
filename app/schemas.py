@@ -893,3 +893,29 @@ class DeliveryLinkRead(BaseModel):
     revoked: bool
     url: str = ""
     created_at: datetime
+
+
+class IntegrationProfileInput(BaseModel):
+    display_name: str = Field(default="", max_length=160)
+    category: str = Field(default="ai", pattern="^(ai|generation|creative)$")
+    mode: str = Field(default="disabled", pattern="^(api|handoff|disabled)$")
+    endpoint: str = Field(default="", max_length=2000)
+    model: str = Field(default="", max_length=255)
+    secret_env_var: str = Field(default="", max_length=160, pattern="^[A-Za-z_][A-Za-z0-9_]*$|^$")
+    configuration: dict[str, Any] = Field(default_factory=dict)
+
+
+class IntegrationProfileRead(IntegrationProfileInput):
+    id: int | None = None
+    key: str
+    description: str = ""
+    capabilities: list[str] = Field(default_factory=list)
+    modes: list[str] = Field(default_factory=list)
+    configured: bool = False
+    secret_available: bool = False
+    custom: bool = False
+
+
+class IntegrationSettingsRead(BaseModel):
+    categories: dict[str, str] = Field(default_factory=dict)
+    integrations: list[IntegrationProfileRead] = Field(default_factory=list)

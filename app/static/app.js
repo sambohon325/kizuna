@@ -11,17 +11,18 @@ const shotDialog = document.querySelector('#shot-dialog');
 const timelineDialog = document.querySelector('#timeline-dialog');
 const audioDialog = document.querySelector('#audio-dialog');
 const compositorDialog = document.querySelector('#compositor-dialog');
+const settingsDialog = document.querySelector('#settings-dialog');
 const workspaceMain = document.querySelector('#workspace-main');
 const dashboardHome = document.querySelector('#dashboard-home');
-const workspaceDialogs = [detailDialog, crewDialog, styleDialog, writerDialog, characterDialog, renderDialog, worldDialog, shotDialog, timelineDialog, audioDialog, compositorDialog];
+const workspaceDialogs = [detailDialog, crewDialog, styleDialog, writerDialog, characterDialog, renderDialog, worldDialog, shotDialog, timelineDialog, audioDialog, compositorDialog, settingsDialog];
 const workspaceNav = new Map([
   [detailDialog, 'productions-nav'], [crewDialog, 'crew-nav'], [styleDialog, 'style-lab-nav'], [writerDialog, 'writer-nav'],
   [characterDialog, 'characters-nav'], [renderDialog, 'render-nav'], [worldDialog, 'worlds-nav'],
   [shotDialog, 'shots-nav'], [timelineDialog, 'timeline-nav'], [audioDialog, 'audio-nav'],
-  [compositorDialog, 'compositor-nav'],
+  [compositorDialog, 'compositor-nav'], [settingsDialog, 'settings-nav'],
 ]);
 const workspaceKeys = new Map([
-  [crewDialog,'crew'],[styleDialog,'style'],[writerDialog,'writer'],[characterDialog,'characters'],[worldDialog,'worlds'],[shotDialog,'shots'],[timelineDialog,'timeline'],[audioDialog,'audio'],[compositorDialog,'compositor'],[renderDialog,'render'],
+  [crewDialog,'crew'],[styleDialog,'style'],[writerDialog,'writer'],[characterDialog,'characters'],[worldDialog,'worlds'],[shotDialog,'shots'],[timelineDialog,'timeline'],[audioDialog,'audio'],[compositorDialog,'compositor'],[renderDialog,'render'],[settingsDialog,'settings'],
 ]);
 
 function setActiveNavigation(navId = 'productions-nav') {
@@ -42,6 +43,7 @@ function openWorkspace(dialog) {
   });
   dashboardHome.hidden = true;
   workspaceMain.classList.add('tool-open');
+  workspaceMain.classList.toggle('settings-open',dialog===settingsDialog);
   workspaceMain.appendChild(dialog);
   dialog.classList.add('workspace-view');
   dialog.setAttribute('open', '');
@@ -69,7 +71,7 @@ function openWorkspaceWindow(key,dialog) {
 }
 
 async function openRequestedWorkspace() {
-  const params=new URLSearchParams(location.search),key=params.get('workspace'),projectId=Number(params.get('project'))||undefined;if(params.get('popout')==='1')document.body.classList.add('popout-mode');const openers={crew:openCrewStudio,style:openStyleLab,writer:openWriterRoom,characters:openCharacterStudio,worlds:openWorldStudio,shots:openShotPlanner,timeline:openTimeline,audio:openAudioStudio,compositor:openCompositor,render:openRenderFarm};if(key&&openers[key])await openers[key](projectId);
+  const params=new URLSearchParams(location.search),key=params.get('workspace'),projectId=Number(params.get('project'))||undefined;if(params.get('popout')==='1')document.body.classList.add('popout-mode');const openers={crew:openCrewStudio,style:openStyleLab,writer:openWriterRoom,characters:openCharacterStudio,worlds:openWorldStudio,shots:openShotPlanner,timeline:openTimeline,audio:openAudioStudio,compositor:openCompositor,render:openRenderFarm,settings:openSettings};if(key&&openers[key])await openers[key](projectId);
 }
 
 function showDashboard() {
@@ -80,6 +82,7 @@ function showDashboard() {
   });
   dashboardHome.hidden = false;
   workspaceMain.classList.remove('tool-open');
+  workspaceMain.classList.remove('settings-open');
   setActiveNavigation();
   renderProductionFlow();
   window.scrollTo({top: 0, left: 0, behavior: 'auto'});
@@ -1123,6 +1126,43 @@ async function duplicateSelectedAudioRegion() { if(!activeAudioCueId)return;cons
 
 async function deleteSelectedAudioRegion() { if(!activeAudioCueId)return;await api(`/api/audio-cues/${activeAudioCueId}`,{method:'DELETE'});activeAudioCueId=null;activeAudioStudio=await api(`/api/projects/${activeAudioStudio.project_id}/audio-studio`);document.querySelector('#cue-form').style.display='none';document.querySelector('#cue-empty').style.display='block';renderAudioStudio(activeAudioStudio.project_id); }
 
+let integrationSettings=null;
+
+async function openSettings() {
+  openWorkspace(settingsDialog);
+  const host=document.querySelector('#integration-settings');host.innerHTML='<div class="settings-loading">Loading studio connections...</div>';
+  try{integrationSettings=await api('/api/settings/integrations');renderIntegrationSettings();}catch(error){host.innerHTML=`<div class="job-error">${safe(error.message)}</div>`;}
+}
+
+function integrationModeLabel(mode) {
+  return {api:'Connect by API',handoff:'File handoff',disabled:'Not in use'}[mode]||mode;
+}
+
+function renderIntegrationSettings() {
+  const host=document.querySelector('#integration-settings'),active=integrationSettings.integrations.filter(item=>item.configured).length,groups=Object.entries(integrationSettings.categories);
+  host.innerHTML=`<header class="integration-summary"><div><b>${active} connected</b><span>${integrationSettings.integrations.length} available engines and tools</span></div><details class="custom-integration"><summary>Add a custom connection</summary><form id="custom-integration-form"><div class="integration-fields"><label>Name<input name="display_name" required placeholder="Studio inference server"></label><label>Type<select name="category"><option value="ai">AI engine</option><option value="generation">Generation tool</option><option value="creative">Creative application</option></select></label><label>Connection<select name="mode"><option value="api">Connect by API</option><option value="handoff">File handoff</option></select></label><label>Endpoint<input name="endpoint" placeholder="http://render-box:8000/v1"></label><label>Default model<input name="model" placeholder="Optional model name"></label><label>Secret environment variable<input name="secret_env_var" placeholder="KIZUNA_STUDIO_AI_KEY"></label><label class="wide">Capabilities<input name="capabilities" placeholder="text, image, animation"></label></div><button class="primary" type="submit">Add connection</button></form></details></header>${groups.map(([category,label])=>{const items=integrationSettings.integrations.filter(item=>item.category===category);return`<section class="integration-group"><header><div><p class="eyebrow">${safe(label)}</p><h3>${category==='ai'?'Choose how Kizuna thinks':category==='generation'?'Connect the render engines':'Keep working in familiar apps'}</h3></div><span>${items.filter(item=>item.configured).length}/${items.length} connected</span></header><div class="integration-grid">${items.map(renderIntegrationCard).join('')}</div></section>`;}).join('')}`;
+  host.querySelectorAll('[data-integration-form]').forEach(form=>form.onsubmit=event=>saveIntegration(event,form.dataset.integrationForm));host.querySelectorAll('[data-delete-integration]').forEach(button=>button.onclick=()=>deleteIntegration(button.dataset.deleteIntegration));document.querySelector('#custom-integration-form').onsubmit=addCustomIntegration;
+}
+
+function renderIntegrationCard(item) {
+  const state=item.configured?(item.mode==='handoff'?'Handoff ready':'Connected'):'Available',modes=item.modes.length?item.modes:['api','handoff','disabled'];
+  return `<article class="integration-card ${item.configured?'connected':''}"><header><i>${safe(item.display_name.slice(0,2).toUpperCase())}</i><div><h4>${safe(item.display_name)}</h4><span class="integration-state">${safe(state)}</span></div></header><p>${safe(item.description||'Custom studio connection.')}</p><div class="integration-capabilities">${item.capabilities.map(capability=>`<span>${safe(capability)}</span>`).join('')}</div><details><summary>${item.configured?'Connection settings':'Set up'}</summary><form data-integration-form="${safe(item.key)}"><div class="integration-fields"><label>Use it through<select name="mode">${modes.map(mode=>`<option value="${safe(mode)}" ${item.mode===mode?'selected':''}>${safe(integrationModeLabel(mode))}</option>`).join('')}</select></label><label>Endpoint<input name="endpoint" value="${safe(item.endpoint)}" placeholder="Local or hosted API address"></label><label>Default model<input name="model" value="${safe(item.model)}" placeholder="Optional model or workflow"></label><label>Secret environment variable<input name="secret_env_var" value="${safe(item.secret_env_var)}" placeholder="No secret required"></label></div><div class="integration-secret-note">${item.secret_env_var?(item.secret_available?'Secret detected on the server.':'Add this variable to the server before using the connection.'):'No API secret is currently required.'}</div><div class="integration-actions"><button class="primary" type="submit">Save connection</button>${item.custom?`<button type="button" data-delete-integration="${safe(item.key)}">Remove</button>`:''}</div></form></details></article>`;
+}
+
+async function saveIntegration(event,key) {
+  event.preventDefault();const form=event.currentTarget,item=integrationSettings.integrations.find(entry=>entry.key===key),button=form.querySelector('button[type="submit"]');button.disabled=true;button.textContent='Saving...';
+  try{await api(`/api/settings/integrations/${encodeURIComponent(key)}`,{method:'PUT',body:JSON.stringify({display_name:item.display_name,category:item.category,mode:form.elements.mode.value,endpoint:form.elements.endpoint.value.trim(),model:form.elements.model.value.trim(),secret_env_var:form.elements.secret_env_var.value.trim(),configuration:item.configuration||{}})});integrationSettings=await api('/api/settings/integrations');renderIntegrationSettings();}catch(error){button.disabled=false;button.textContent='Save connection';form.insertAdjacentHTML('beforeend',`<div class="job-error">${safe(error.message)}</div>`);}
+}
+
+async function addCustomIntegration(event) {
+  event.preventDefault();const form=event.currentTarget,name=form.elements.display_name.value.trim(),key=`custom-${name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}-${Date.now().toString(36)}`,capabilities=form.elements.capabilities.value.split(',').map(value=>value.trim()).filter(Boolean);
+  await api(`/api/settings/integrations/${key}`,{method:'PUT',body:JSON.stringify({display_name:name,category:form.elements.category.value,mode:form.elements.mode.value,endpoint:form.elements.endpoint.value.trim(),model:form.elements.model.value.trim(),secret_env_var:form.elements.secret_env_var.value.trim(),configuration:{description:'Custom connection managed by this studio.',capabilities}})});integrationSettings=await api('/api/settings/integrations');renderIntegrationSettings();
+}
+
+async function deleteIntegration(key) {
+  await api(`/api/settings/integrations/${encodeURIComponent(key)}`,{method:'DELETE'});integrationSettings=await api('/api/settings/integrations');renderIntegrationSettings();
+}
+
 function collectStory(form) {
   return {premise:form.elements.premise.value, format:form.elements.format.value, target_duration_minutes:Number(form.elements.target_duration_minutes.value), genre:form.elements.genre.value, audience:form.elements.audience.value, themes:form.elements.themes.value.split(',').map(value => value.trim()).filter(Boolean)};
 }
@@ -1140,6 +1180,7 @@ document.querySelector('#shots-nav').onclick = () => openShotPlanner();
 document.querySelector('#timeline-nav').onclick = () => openTimeline();
 document.querySelector('#audio-nav').onclick = () => openAudioStudio();
 document.querySelector('#compositor-nav').onclick = () => openCompositor();
+document.querySelector('#settings-nav').onclick = openSettings;
 document.querySelector('.close').onclick = () => projectDialog.close();
 document.querySelector('#style-close').onclick = closeWorkspace;
 document.querySelector('#crew-close').onclick = closeWorkspace;
@@ -1151,6 +1192,7 @@ document.querySelector('#shot-close').onclick = closeWorkspace;
 document.querySelector('#timeline-close').onclick = closeWorkspace;
 document.querySelector('#audio-close').onclick = closeWorkspace;
 document.querySelector('#compositor-close').onclick = closeWorkspace;
+document.querySelector('#settings-close').onclick = closeWorkspace;
 document.querySelector('#deploy-crew').onclick = deploySelectedCrew;
 document.querySelector('#start-producer').onclick = saveProducerWorkflow;
 document.querySelector('#advance-producer').onclick = advanceProducerWorkflow;

@@ -89,19 +89,19 @@ function currentFlowStage() {
   return productionStages.find(stage=>stage.nav===nav)?.key||'';
 }
 
-function productionReadiness(project) {
-  const shots=project?.scenes?.flatMap(scene=>scene.shots||[])||[];
-  return {
-    story:Boolean(project?.story_brief?.synopsis), style:Boolean(project?.style_profile), characters:Boolean(project?.characters?.length),
-    worlds:Boolean(project?.locations?.length), shots:Boolean(shots.length), timeline:Boolean(activeTimeline?.project_id===project?.id),
-    audio:Boolean(activeAudioStudio?.project_id===project?.id), composite:Boolean(activeCompositorStudio?.project_id===project?.id&&activeCompositorStudio.shots?.some(shot=>shot.composition_id)), render:false
-  };
+const productionStatusCache=new Map(),productionStatusRequests=new Map();
+
+async function refreshProductionStatus(projectId,force=false) {
+  if(!projectId)return;if(force)productionStatusCache.delete(projectId);if(productionStatusRequests.has(projectId))return productionStatusRequests.get(projectId);
+  const request=api(`/api/projects/${projectId}/production-status`).then(status=>{productionStatusCache.set(projectId,status);productionStatusRequests.delete(projectId);if(currentFlowProject()?.id===projectId)renderProductionFlow();return status;}).catch(()=>{productionStatusRequests.delete(projectId);});productionStatusRequests.set(projectId,request);return request;
 }
 
 function renderProductionFlow() {
-  const host=document.querySelector('#production-flow');if(!host)return;const project=currentFlowProject(),ready=productionReadiness(project),current=currentFlowStage();
-  host.innerHTML=`<span class="flow-label">${project?safe(project.title):'PRODUCTION FLOW'}</span>${productionStages.map((stage,index)=>`<button type="button" class="flow-node ${ready[stage.key]?'ready':''} ${current===stage.key?'current':''}" data-flow-nav="${stage.nav}" title="Open ${stage.label}"><i>${ready[stage.key]?'&#10003;':String(index+1).padStart(2,'0')}</i>${stage.label}</button>`).join('')}`;
-  host.querySelectorAll('[data-flow-nav]').forEach(button=>button.onclick=()=>document.querySelector(`#${button.dataset.flowNav}`)?.click());
+  const host=document.querySelector('#production-flow');if(!host)return;const project=currentFlowProject(),status=project?productionStatusCache.get(project.id):null,current=currentFlowStage();
+  if(!project){host.innerHTML='<span class="flow-label">PRODUCTION STATUS</span><span class="flow-next">Create a production to begin.</span>';return;}
+  if(!status){host.innerHTML=`<span class="flow-label">${safe(project.title)}</span><span class="flow-next">Checking production status...</span>`;refreshProductionStatus(project.id);return;}
+  const byKey=new Map(status.stages.map(stage=>[stage.key,stage])),next=status.stages.find(stage=>stage.key===status.next_key);
+  host.innerHTML=`<span class="flow-label"><b>${safe(project.title)}</b><small>${status.complete_count}/${status.total_count} complete</small></span><div class="flow-track" aria-label="Production milestones">${productionStages.map((definition,index)=>{const stage=byKey.get(definition.key)||{state:'blocked',summary:'Status unavailable',label:definition.label};return `<div class="flow-node ${safe(stage.state)} ${current===definition.key?'viewing':''}" title="${safe(stage.summary)}" aria-label="${safe(stage.label)}: ${safe(stage.summary)}"><i>${stage.state==='complete'?'&#10003;':String(index+1).padStart(2,'0')}</i><span>${safe(definition.label)}</span></div>`;}).join('')}</div><span class="flow-next"><b>${next?'Next: '+safe(next.label):'Production complete'}</b><small>${safe(next?.summary||'Every milestone is complete.')}</small></span>`;
 }
 
 function setupCraftWorkspaces() {
@@ -176,6 +176,7 @@ function safe(value = '') {
 
 async function loadProjects() {
   projects = await api('/api/projects');
+  productionStatusCache.clear();
   document.querySelector('#project-count').textContent = `${projects.length} production${projects.length === 1 ? '' : 's'}`;
   projectsEl.innerHTML = projects.length ? projects.map(project => `
     <article class="project" data-id="${project.id}"><span class="tag">${safe(project.status)}</span><h3>${safe(project.title)}</h3><p>${safe(project.logline || 'Your story is waiting for its first scene.')}</p><footer><span class="era">${safe(project.style_profile?.era_primary || 'Style open')}</span><span>${project.scenes.length} scenes</span></footer></article>`).join('') : '<div class="empty">No productions yet. Start with a title and logline—everything else can evolve.</div>';

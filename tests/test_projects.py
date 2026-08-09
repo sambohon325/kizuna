@@ -34,6 +34,32 @@ def test_style_profile_can_be_mixed(client):
     assert response.json()["era_secondary"] == "2020s"
 
 
+def test_production_status_uses_saved_milestones_not_screen_visits(client):
+    project_id = client.post("/api/projects", json={"title": "Honest Progress"}).json()["id"]
+    initial = client.get(f"/api/projects/{project_id}/production-status")
+    assert initial.status_code == 200
+    stages = {item["key"]: item for item in initial.json()["stages"]}
+    assert initial.json()["complete_count"] == 0
+    assert stages["story"]["state"] == "ready"
+    assert stages["style"]["state"] == "ready"
+    assert stages["characters"]["state"] == "blocked"
+
+    client.put(
+        f"/api/projects/{project_id}/style",
+        json={"era_primary": "1970s", "era_secondary": "2020s", "visual": {}, "direction": {}, "narrative": {}, "archetypes": []},
+    )
+    client.put(
+        f"/api/projects/{project_id}/story",
+        json={"premise": "A signal changes the city.", "format": "short film", "target_duration_minutes": 8, "audience": "general", "genre": "science fiction", "themes": ["connection"]},
+    )
+    updated = client.get(f"/api/projects/{project_id}/production-status").json()
+    stages = {item["key"]: item for item in updated["stages"]}
+    assert updated["complete_count"] == 2
+    assert stages["story"]["state"] == "complete"
+    assert stages["style"]["state"] == "complete"
+    assert stages["characters"]["state"] == "ready"
+
+
 def test_writer_room_develops_structured_story_and_character(client):
     project_id = client.post("/api/projects", json={"title": "Glass Horizon", "logline": "A courier crosses a city that forgets itself each dawn."}).json()["id"]
     response = client.put(f"/api/projects/{project_id}/story", json={"premise": "A courier must deliver yesterday's final memory before sunrise.", "format": "short film", "target_duration_minutes": 12, "audience": "teen and adult", "genre": "memory mystery", "themes": ["identity", "duty versus freedom"]})

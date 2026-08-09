@@ -21,8 +21,8 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AssetReview, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, ProjectBackup, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AnimaticRender, AssetReview, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.storage import LocalProductionStorage
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
@@ -168,6 +168,64 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(404, "Project not found")
     return project
+
+
+def mark_project_milestone(project_id: int, key: str, db: Session) -> None:
+    if not db.scalar(select(ProjectMilestone).where(ProjectMilestone.project_id == project_id, ProjectMilestone.key == key)):
+        db.add(ProjectMilestone(project_id=project_id, key=key))
+
+
+@app.get("/api/projects/{project_id}/production-status", response_model=ProductionStatusRead)
+def get_production_status(project_id: int, db: Session = Depends(get_db)):
+    project = db.scalars(project_query().where(Project.id == project_id)).one_or_none()
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    shots = [shot for scene in project.scenes for shot in scene.shots]
+    shot_ids = [shot.id for shot in shots]
+    story_complete = bool(project.story_brief and project.story_brief.synopsis and project.story_brief.beats)
+    style_complete = bool(db.scalar(select(ProjectMilestone).where(ProjectMilestone.project_id == project_id, ProjectMilestone.key == "style")))
+    cast_complete = bool(project.characters) and all(character.design and character.design.reference_brief for character in project.characters)
+    worlds_complete = bool(project.locations) and all(location.design and location.design.reference_brief for location in project.locations)
+    shots_complete = bool(shots) and all(shot.plan and shot.plan.action and shot.plan.camera for shot in shots)
+
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == project_id))
+    clips = db.scalars(select(TimelineClip).where(TimelineClip.timeline_id == timeline.id)).all() if timeline else []
+    edit_complete = bool(timeline and clips and timeline.status in {"edit-ready", "master-ready"})
+    tracks = db.scalars(select(AudioTrack).where(AudioTrack.timeline_id == timeline.id)).all() if timeline else []
+    cues = db.scalars(select(AudioCue).join(AudioTrack).where(AudioTrack.timeline_id == timeline.id)).all() if timeline else []
+    sound_complete = bool(tracks and cues) and all(cue.uri for cue in cues)
+
+    compositions = db.scalars(select(ShotComposition).where(ShotComposition.shot_id.in_(shot_ids))).all() if shot_ids else []
+    finished_compositions = set()
+    if compositions:
+        composition_ids = [composition.id for composition in compositions]
+        finished_compositions.update(db.scalars(select(CompositeRender.composition_id).where(CompositeRender.composition_id.in_(composition_ids), CompositeRender.status == "completed")).all())
+        finished_compositions.update(db.scalars(select(ShotMotionRender.composition_id).where(ShotMotionRender.composition_id.in_(composition_ids), ShotMotionRender.status == "completed")).all())
+    finish_complete = bool(shots) and len(compositions) == len(shots) and all(composition.id in finished_compositions for composition in compositions)
+    completed_masters = db.scalars(select(AnimaticRender).where(AnimaticRender.timeline_id == timeline.id, AnimaticRender.status == "completed")).all() if timeline else []
+    production_master_exists = any(render.render_settings.get("kind") == "production_master" and render.uri for render in completed_masters)
+    master_complete = production_master_exists and edit_complete and sound_complete and finish_complete
+
+    def stage(key: str, label: str, nav: str, complete: bool, started: bool, available: bool, done: str, underway: str, next_action: str, blocked: str) -> dict:
+        state = "complete" if complete else "in_progress" if started else "ready" if available else "blocked"
+        summary = done if complete else underway if started else next_action if available else blocked
+        return {"key": key, "label": label, "state": state, "summary": summary, "nav": nav}
+
+    stages = [
+        stage("story", "Story", "writer-nav", story_complete, bool(project.story_brief), True, "Outline and beats are saved.", "The story foundation still needs work.", "Develop the story foundation.", "Start the production."),
+        stage("style", "Creative DNA", "style-lab-nav", style_complete, False, True, "Creative direction is confirmed.", "Review the creative direction.", "Review and save the starter Creative DNA.", "Start the production."),
+        stage("characters", "Characters", "characters-nav", cast_complete, bool(project.characters), story_complete, "Every character has a model bible.", "Some character bibles are incomplete.", "Build the principal cast.", "Complete the story foundation first."),
+        stage("worlds", "Worlds", "worlds-nav", worlds_complete, bool(project.locations), story_complete, "Every location has an environment bible.", "Some environment bibles are incomplete.", "Design the recurring locations.", "Complete the story foundation first."),
+        stage("shots", "Shots", "shots-nav", shots_complete, bool(shots), story_complete and cast_complete and worlds_complete, "Every shot has a saved camera plan.", "Some shots still need camera plans.", "Create the scene and shot plan.", "Finish story, characters, and worlds first."),
+        stage("timeline", "Edit", "timeline-nav", edit_complete, bool(timeline), shots_complete, "The picture edit is approved.", "A timeline exists but is not edit-ready.", "Assemble and approve the picture edit.", "Finish shot planning first."),
+        stage("audio", "Sound", "audio-nav", sound_complete, bool(tracks or cues), bool(timeline), "Every planned cue has produced audio.", "Sound work exists but is incomplete.", "Initialize sound and add cues.", "Build the timeline first."),
+        stage("composite", "Finish", "compositor-nav", finish_complete, bool(compositions), shots_complete, "Every shot has a finished render.", "Some shots still need composition or renders.", "Composite and render every shot.", "Finish shot planning first."),
+        stage("render", "Master", "render-nav", master_complete, bool(completed_masters), edit_complete and sound_complete and finish_complete, "A production master is ready.", "A review render exists; the final master is not ready.", "Export the production master.", "Complete picture, sound, and shot finishing first."),
+    ]
+    complete_count = sum(item["state"] == "complete" for item in stages)
+    next_stage = next((item for item in stages if item["state"] in {"in_progress", "ready"}), None)
+    return {"project_id": project_id, "complete_count": complete_count, "total_count": len(stages), "next_key": next_stage["key"] if next_stage else None, "stages": stages}
 
 
 def storage_policy_for(project_id: int, db: Session) -> StoragePolicy:
@@ -323,6 +381,7 @@ def update_style(project_id: int, payload: StyleProfileInput, db: Session = Depe
         db.add(profile)
     for key, value in payload.model_dump().items():
         setattr(profile, key, value)
+    mark_project_milestone(project_id, "style", db)
     db.commit()
     db.refresh(profile)
     return profile

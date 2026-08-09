@@ -450,6 +450,16 @@ class ProductionWorkflow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class ProjectMilestone(Base):
+    __tablename__ = "project_milestones"
+    __table_args__ = (UniqueConstraint("project_id", "key", name="uq_project_milestone_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    key: Mapped[str] = mapped_column(String(48))
+    completed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class VoiceConsent(Base):
     __tablename__ = "voice_consents"
 

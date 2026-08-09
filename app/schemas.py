@@ -797,6 +797,22 @@ class ProjectRead(ProjectCreate):
     scenes: list[SceneRead] = Field(default_factory=list)
 
 
+class ProductionStageRead(BaseModel):
+    key: str
+    label: str
+    state: str
+    summary: str
+    nav: str
+
+
+class ProductionStatusRead(BaseModel):
+    project_id: int
+    complete_count: int
+    total_count: int
+    next_key: str | None = None
+    stages: list[ProductionStageRead] = Field(default_factory=list)
+
+
 class StoragePolicyUpdate(BaseModel):
     retention_days: int = Field(default=30, ge=1, le=3650)
     max_backups: int = Field(default=10, ge=1, le=100)

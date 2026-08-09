@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     app_name: str = "Kizuna Studio"
     environment: str = "development"
     public_url: str = "http://127.0.0.1:8000"
+    auth_required: bool = False
+    bootstrap_admin_key: str = ""
+    session_days: int = 7
+    cookie_secure: bool = False
     database_url: str = "sqlite:///./anime_studio.db"
     generation_provider: str = "mock"
     comfyui_url: str = "http://127.0.0.1:8188"

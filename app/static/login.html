@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · Kizuna Studio</title>
+  <link rel="icon" type="image/png" href="/static/assets/kizuna-icon.png">
+  <link rel="stylesheet" href="/static/login.css">
+</head>
+<body>
+  <main class="auth-shell">
+    <section class="auth-brand">
+      <img src="/static/assets/kizuna-wordmark.png" alt="Kizuna">
+      <p>Your private production workspace for original stories.</p>
+    </section>
+    <section class="auth-card">
+      <p class="eyebrow" id="auth-eyebrow">STUDIO ACCESS</p>
+      <h1 id="auth-title">Sign in</h1>
+      <p id="auth-intro">Continue to your productions and creative tools.</p>
+      <form id="auth-form">
+        <label id="name-field" hidden>Your name<input name="display_name" autocomplete="name" maxlength="160"></label>
+        <label>Email<input name="email" type="email" autocomplete="email" required maxlength="320"></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="12" maxlength="256"></label>
+        <label id="key-field" hidden>Studio setup key<input name="bootstrap_key" type="password" autocomplete="off" maxlength="512"></label>
+        <button type="submit">Continue</button>
+        <p id="auth-error" role="alert"></p>
+      </form>
+      <small>Secure sessions use encrypted transport and HttpOnly cookies in production.</small>
+    </section>
+  </main>
+  <script src="/static/login.js"></script>
+</body>
+</html>

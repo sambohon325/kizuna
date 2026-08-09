@@ -21,11 +21,11 @@ from app.compositor import render_composite
 from app.motion import render_motion_video
 from app.mastering import render_timeline_master
 from app.segmented_export import assemble_segments, clip_start_times, segment_clip_ranges, sha256_file
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.schema_migrations import database_revision, migrate_database
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
 from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
@@ -44,9 +44,62 @@ from app.director_agent import DirectorAgentError, create_director_proposal
 from app.visual_agents import VisualAgentError, create_background_design_proposal, create_character_design_proposal
 from app.animator_agent import AnimatorAgentError, create_animator_proposal
 from app.editor_agent import EditorAgentError, create_editor_proposal
+from app.auth import CSRF_COOKIE, SESSION_COOKIE, create_session, has_membership, hash_password, normalize_email, project_for_path, project_for_render_uri, public_path, request_identity, safe_render_path, token_hash, user_project_ids, utcnow as auth_utcnow, verify_password
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 
 migrate_database()
 app = FastAPI(title=settings.app_name, version="0.1.0")
+
+
+class AuthSetupInput(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    display_name: str = Field(min_length=1, max_length=160)
+    password: str = Field(min_length=12, max_length=256)
+    bootstrap_key: str = Field(default="", max_length=512)
+
+
+class AuthLoginInput(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=256)
+
+
+def set_auth_cookies(response: Response, session_token: str, csrf_token: str) -> None:
+    max_age = max(1, settings.session_days) * 86400
+    response.set_cookie(SESSION_COOKIE, session_token, max_age=max_age, httponly=True, secure=settings.cookie_secure, samesite="strict", path="/")
+    response.set_cookie(CSRF_COOKIE, csrf_token, max_age=max_age, httponly=False, secure=settings.cookie_secure, samesite="strict", path="/")
+
+
+@app.middleware("http")
+async def authenticate_and_authorize(request: Request, call_next):
+    if not settings.auth_required:
+        request.state.user = None
+        return await call_next(request)
+    path = request.url.path
+    if public_path(path):
+        return await call_next(request)
+    with SessionLocal() as db:
+        user, session = request_identity(request, db)
+        if not user or not session:
+            if path.startswith("/api/") or path.startswith("/renders/"):
+                return JSONResponse(status_code=401, content={"detail": "Sign in required"})
+            destination = "/setup" if db.scalar(select(User.id).limit(1)) is None else "/login"
+            return RedirectResponse(destination, status_code=303)
+        request.state.user = user
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            csrf = request.headers.get("X-Kizuna-CSRF", "")
+            if not csrf or not secrets.compare_digest(token_hash(csrf), session.csrf_hash):
+                return JSONResponse(status_code=403, content={"detail": "Security token missing or expired. Refresh the page and try again."})
+        if (path.startswith("/api/settings/") or path == "/api/render-farm/status") and user.role != "admin":
+            return JSONResponse(status_code=403, content={"detail": "Studio administrator access required"})
+        project_id = project_for_path(db, path)
+        if path.startswith("/renders/"):
+            project_id = project_for_render_uri(db, path)
+            if project_id is None:
+                return JSONResponse(status_code=404, content={"detail": "Media not found"})
+        if project_id is not None and not has_membership(db, user.id, project_id):
+            return JSONResponse(status_code=404, content={"detail": "Production not found"})
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -79,7 +132,6 @@ thumbnail_dir.mkdir(parents=True, exist_ok=True)
 proxy_dir = (Path(settings.storage_directory) / "proxies").resolve()
 proxy_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
-app.mount("/renders", StaticFiles(directory=render_dir), name="renders")
 
 CREW_ROLES = {
     "writer": {"name": "Writer", "description": "Develops premise, structure, scenes, dialogue, and revisions.", "capabilities": ["story outline", "scene draft", "dialogue pass"]},
@@ -166,6 +218,79 @@ def timeline_response(timeline: Timeline, db: Session):
 @app.get("/api/health")
 def health():
     return {"status": "ok", "environment": settings.environment, "database_revision": database_revision()}
+
+
+@app.get("/api/auth/status")
+def auth_status(db: Session = Depends(get_db)):
+    return {"auth_required": settings.auth_required, "setup_required": settings.auth_required and db.scalar(select(User.id).limit(1)) is None, "public_url": settings.public_url}
+
+
+@app.post("/api/auth/setup")
+def setup_first_admin(payload: AuthSetupInput, response: Response, db: Session = Depends(get_db)):
+    if not settings.auth_required:
+        raise HTTPException(409, "Account security is disabled in this local environment")
+    if db.scalar(select(User.id).limit(1)) is not None:
+        raise HTTPException(409, "Studio setup is already complete")
+    if settings.bootstrap_admin_key and not secrets.compare_digest(payload.bootstrap_key, settings.bootstrap_admin_key):
+        raise HTTPException(403, "The studio setup key is incorrect")
+    email = normalize_email(payload.email)
+    if "@" not in email or email.startswith("@") or email.endswith("@"):
+        raise HTTPException(422, "Enter a valid email address")
+    user = User(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="admin")
+    db.add(user)
+    try:
+        db.flush()
+        for project_id in db.scalars(select(Project.id)).all():
+            db.add(ProjectMembership(project_id=project_id, user_id=user.id, role="owner"))
+        session_token, csrf_token, _ = create_session(user, db)
+        user.last_sign_in_at = auth_utcnow()
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Studio setup was completed by another request")
+    set_auth_cookies(response, session_token, csrf_token)
+    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role}
+
+
+@app.post("/api/auth/login")
+def sign_in(payload: AuthLoginInput, response: Response, db: Session = Depends(get_db)):
+    user = db.scalar(select(User).where(User.email == normalize_email(payload.email)))
+    now = auth_utcnow()
+    if user and user.locked_until and user.locked_until > now:
+        raise HTTPException(429, "Too many failed attempts. Try again later.")
+    valid = bool(user and user.active and verify_password(payload.password, user.password_hash))
+    if not valid:
+        if user:
+            user.failed_sign_in_count += 1
+            if user.failed_sign_in_count >= 5:
+                user.locked_until = now + timedelta(minutes=15)
+                user.failed_sign_in_count = 0
+            db.commit()
+        else:
+            hash_password(payload.password)
+        raise HTTPException(401, "Email or password is incorrect")
+    user.failed_sign_in_count, user.locked_until, user.last_sign_in_at = 0, None, now
+    session_token, csrf_token, _ = create_session(user, db)
+    db.commit()
+    set_auth_cookies(response, session_token, csrf_token)
+    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role}
+
+
+@app.get("/api/auth/me")
+def current_account(request: Request):
+    user = request.state.user
+    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role}
+
+
+@app.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def sign_out(request: Request, response: Response, db: Session = Depends(get_db)):
+    raw = request.cookies.get(SESSION_COOKIE, "")
+    if raw:
+        session = db.scalar(select(UserSession).where(UserSession.token_hash == token_hash(raw)))
+        if session:
+            db.delete(session); db.commit()
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(CSRF_COOKIE, path="/")
 
 
 @app.get("/api/style-catalog")
@@ -515,8 +640,11 @@ def review_professional_work_claim(claim_id: int, payload: ProfessionalVerificat
 
 
 @app.get("/api/projects", response_model=list[ProjectRead])
-def list_projects(db: Session = Depends(get_db)):
-    return db.scalars(project_query().order_by(Project.updated_at.desc())).unique().all()
+def list_projects(request: Request, db: Session = Depends(get_db)):
+    query = project_query().order_by(Project.updated_at.desc())
+    if settings.auth_required:
+        query = query.join(ProjectMembership, ProjectMembership.project_id == Project.id).where(ProjectMembership.user_id == request.state.user.id)
+    return db.scalars(query).unique().all()
 
 
 RELEASE_FORMAT_LABELS = {"one_off": "One-off", "trailer": "Trailer", "feature_film": "Feature film", "ongoing_series": "Ongoing series", "limited_series": "Limited series"}
@@ -551,7 +679,7 @@ def scope_response(scope: ProductionScope) -> dict:
 
 
 @app.post("/api/projects", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
-def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
+def create_project(payload: ProjectCreate, request: Request, db: Session = Depends(get_db)):
     project = Project(title=payload.title, logline=payload.logline)
     if payload.scope:
         project.scope = ProductionScope(**payload.scope.model_dump())
@@ -563,6 +691,9 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
         archetypes=["reluctant protagonist", "ideological rival"],
     )
     db.add(project)
+    db.flush()
+    if settings.auth_required:
+        db.add(ProjectMembership(project_id=project.id, user_id=request.state.user.id, role="owner"))
     db.commit()
     return db.scalars(project_query().where(Project.id == project.id)).one()
 
@@ -1969,8 +2100,10 @@ def build_media_index(project_id: int, db: Session) -> dict:
 
 
 @app.get("/api/jobs", response_model=list[DurableJobRead])
-def list_durable_jobs(project_id: int | None = None, job_status: str = Query("", alias="status"), kind: str = "", db: Session = Depends(get_db)):
+def list_durable_jobs(request: Request, project_id: int | None = None, job_status: str = Query("", alias="status"), kind: str = "", db: Session = Depends(get_db)):
     query = select(DurableJob)
+    if settings.auth_required:
+        query = query.where(DurableJob.project_id.in_(user_project_ids(db, request.state.user.id)))
     if project_id is not None: query = query.where(DurableJob.project_id == project_id)
     if job_status: query = query.where(DurableJob.status == job_status)
     if kind: query = query.where(DurableJob.kind == kind)
@@ -3812,3 +3945,21 @@ async def upload_master_segment(worker_id: int, segment_id: int, request: Reques
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(static_dir / "index.html")
+
+
+@app.get("/login", include_in_schema=False)
+def login_page():
+    return FileResponse(static_dir / "login.html")
+
+
+@app.get("/setup", include_in_schema=False)
+def setup_page():
+    return FileResponse(static_dir / "login.html")
+
+
+@app.get("/renders/{file_path:path}", include_in_schema=False)
+def protected_render(file_path: str):
+    path = safe_render_path(f"/renders/{file_path}", render_dir)
+    if path is None:
+        raise HTTPException(404, "Media not found")
+    return FileResponse(path)

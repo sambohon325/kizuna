@@ -16,6 +16,9 @@ services:
       KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
       KIZUNA_ENVIRONMENT: production
       KIZUNA_PUBLIC_URL: ${KIZUNA_PUBLIC_URL:-https://kizuna.technology}
+      KIZUNA_AUTH_REQUIRED: "true"
+      KIZUNA_COOKIE_SECURE: "true"
+      KIZUNA_BOOTSTRAP_ADMIN_KEY: ${KIZUNA_BOOTSTRAP_ADMIN_KEY:?Set a strong first-run studio setup key}
       KIZUNA_GENERATION_PROVIDER: ${KIZUNA_GENERATION_PROVIDER:-farm}
       KIZUNA_WORKER_ENROLLMENT_SECRET: ${WORKER_ENROLLMENT_SECRET:?Set a strong worker enrollment secret}
       KIZUNA_RENDER_DIRECTORY: /app/renders

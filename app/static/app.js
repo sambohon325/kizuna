@@ -207,7 +207,11 @@ let draggedTimelineClipId = null;
 let audioDragState = null;
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {headers: {'Content-Type': 'application/json'}, ...options});
+  const csrf=(document.cookie.match(/(?:^|; )kizuna_csrf=([^;]+)/)||[])[1]||'';
+  const headers={'Content-Type':'application/json',...(options.headers||{})};
+  if(csrf)headers['X-Kizuna-CSRF']=decodeURIComponent(csrf);
+  const response = await fetch(path, {...options,headers});
+  if(response.status===401){location.href='/login';throw new Error('Sign in required');}
   if (!response.ok) { const text=await response.text();try{const detail=JSON.parse(text).detail;throw new Error(typeof detail==='string'?detail:detail?.message||text);}catch(error){if(error instanceof SyntaxError)throw new Error(text);throw error;} }
   if (response.status === 204) return null;
   return response.json();
@@ -215,6 +219,12 @@ async function api(path, options = {}) {
 
 function safe(value = '') {
   return String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+}
+
+async function loadAccountIdentity(){
+  const status=await fetch('/api/auth/status').then(response=>response.json());if(!status.auth_required)return;
+  const user=await api('/api/auth/me');document.querySelector('#studio-identity').textContent=user.display_name;
+  const button=document.querySelector('#sign-out');button.hidden=false;button.onclick=async()=>{await api('/api/auth/logout',{method:'POST'});location.href='/login';};
 }
 
 function scopeDisplay(scope) {
@@ -1121,7 +1131,7 @@ function renderCueResult(cue) {
 async function generateScratchAudio() { if(!activeAudioCueId)return; const cue=await api(`/api/audio-cues/${activeAudioCueId}/generate-scratch`,{method:'POST'}); await refreshAudioAndSelect(cue.id); }
 async function askSoundProducer() { if(!activeAudioCueId)return; const result=document.querySelector('#sound-producer-result');result.innerHTML='<div class="render-progress">Sound Producer is preparing the performance…</div>';try{const action=await api(`/api/audio-cues/${activeAudioCueId}/crew/generate-voice`,{method:'POST',body:JSON.stringify({provider:document.querySelector('#voice-provider').value,voice:document.querySelector('#voice-provider-id').value||null})});renderSoundAction(action);}catch(error){result.innerHTML=`<div class="job-error">${safe(error.message)}</div>`;} }
 function renderSoundAction(action) { const result=document.querySelector('#sound-producer-result');if(action.status==='proposed'){result.innerHTML=`<div class="crew-action"><div><b>${safe(action.title)}</b><small>${safe(action.summary)}</small><div class="crew-action-buttons"><button id="approve-sound-action" class="primary">Approve performance</button></div></div><span class="status">proposed</span></div>`;document.querySelector('#approve-sound-action').onclick=async()=>{const updated=await api(`/api/crew-actions/${action.id}/approve`,{method:'POST'});renderSoundAction(updated);if(updated.status==='completed')await refreshAudioAndSelect(activeAudioCueId);};}else if(action.status==='completed'){result.innerHTML='<div class="sound-ready">Sound Producer completed and placed the performance.</div>';}else{result.innerHTML=`<div class="job-error">${safe(action.error||action.status)}</div>`;} }
-async function uploadCueAudio(event) { const file=event.target.files[0];if(!file||!activeAudioCueId)return; const response=await fetch(`/api/audio-cues/${activeAudioCueId}/upload?filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file}); if(!response.ok)throw new Error(await response.text()); const cue=await response.json(); await refreshAudioAndSelect(cue.id); }
+async function uploadCueAudio(event) { const file=event.target.files[0];if(!file||!activeAudioCueId)return; const csrf=(document.cookie.match(/(?:^|; )kizuna_csrf=([^;]+)/)||[])[1]||'';const response=await fetch(`/api/audio-cues/${activeAudioCueId}/upload?filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream','X-Kizuna-CSRF':decodeURIComponent(csrf)},body:file}); if(!response.ok)throw new Error(await response.text()); const cue=await response.json(); await refreshAudioAndSelect(cue.id); }
 async function refreshAudioAndSelect(cueId) { activeAudioStudio=await api(`/api/projects/${activeAudioStudio.project_id}/audio-studio`); renderAudioStudio(activeAudioStudio.project_id); selectAudioCue(cueId); }
 
 async function openCompositor(projectId) {
@@ -1433,4 +1443,5 @@ document.querySelector('#assistant-form').onsubmit=askAssistant;
 document.querySelectorAll('.assistant-prompts button').forEach(button=>button.onclick=()=>{document.querySelector('#assistant-input').value=button.textContent;document.querySelector('#assistant-input').focus();});
 setupCraftWorkspaces();
 setupWorkspacePopouts();
+loadAccountIdentity().catch(()=>{});
 loadProjects().then(openRequestedWorkspace).catch(error => projectsEl.innerHTML = `<div class="empty">Could not load the studio: ${safe(error.message)}</div>`);

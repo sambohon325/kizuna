@@ -85,3 +85,4 @@ See [originality, rights, and release compliance](docs/COMPLIANCE.md) for enforc
 See [picture and audio editing](docs/EDITING.md) for tactile edit controls.
 See [database migrations](docs/DATABASE_MIGRATIONS.md) for local upgrades, existing-database adoption, and Coolify startup behavior.
 See [self-hosted compliance scanners](docs/COMPLIANCE_SCANNERS.md) for lawful corpus ingestion and scanner protocol details, and [production domain and access](docs/DEPLOYMENT_DOMAIN.md) for `kizuna.technology` deployment guidance.
+See [accounts and production isolation](docs/AUTHENTICATION.md) before exposing any Kizuna deployment to the internet.

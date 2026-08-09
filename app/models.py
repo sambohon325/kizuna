@@ -265,6 +265,7 @@ class Shot(Base):
 
     scene: Mapped[Scene] = relationship(back_populates="shots")
     plan: Mapped[ShotPlan | None] = relationship(back_populates="shot", cascade="all, delete-orphan", uselist=False)
+    composition: Mapped[ShotComposition | None] = relationship(back_populates="shot", cascade="all, delete-orphan", uselist=False)
 
 
 class ShotPlan(Base):
@@ -383,3 +384,56 @@ class AudioCue(Base):
     mime_type: Mapped[str] = mapped_column(String(80), default="")
 
     track: Mapped[AudioTrack] = relationship(back_populates="cues")
+
+
+class ShotComposition(Base):
+    __tablename__ = "shot_compositions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shot_id: Mapped[int] = mapped_column(ForeignKey("shots.id"), unique=True)
+    width: Mapped[int] = mapped_column(default=1920)
+    height: Mapped[int] = mapped_column(default=1080)
+    camera: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    color_grade: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    version: Mapped[int] = mapped_column(default=1)
+
+    shot: Mapped[Shot] = relationship(back_populates="composition")
+    layers: Mapped[list[CompositionLayer]] = relationship(back_populates="composition", cascade="all, delete-orphan", order_by="CompositionLayer.z_index")
+    renders: Mapped[list[CompositeRender]] = relationship(back_populates="composition", cascade="all, delete-orphan")
+
+
+class CompositionLayer(Base):
+    __tablename__ = "composition_layers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    composition_id: Mapped[int] = mapped_column(ForeignKey("shot_compositions.id"))
+    name: Mapped[str] = mapped_column(String(160))
+    kind: Mapped[str] = mapped_column(String(32), default="character")
+    source_kind: Mapped[str] = mapped_column(String(48), default="custom")
+    source_asset_id: Mapped[int | None] = mapped_column(nullable=True)
+    source_uri: Mapped[str] = mapped_column(Text, default="")
+    z_index: Mapped[int] = mapped_column(default=1)
+    visible: Mapped[bool] = mapped_column(default=True)
+    opacity: Mapped[float] = mapped_column(default=1.0)
+    blend_mode: Mapped[str] = mapped_column(String(32), default="normal")
+    transform: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    animation: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    composition: Mapped[ShotComposition] = relationship(back_populates="layers")
+
+
+class CompositeRender(Base):
+    __tablename__ = "composite_renders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    composition_id: Mapped[int] = mapped_column(ForeignKey("shot_compositions.id"))
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    uri: Mapped[str] = mapped_column(Text, default="")
+    mime_type: Mapped[str] = mapped_column(String(80), default="image/png")
+    error: Mapped[str] = mapped_column(Text, default="")
+    render_settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    composition: Mapped[ShotComposition] = relationship(back_populates="renders")

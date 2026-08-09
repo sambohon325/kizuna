@@ -14,11 +14,12 @@ from sqlalchemy.orm import Session, selectinload
 from app.config import settings
 from app.animatic import render_animatic
 from app.audio import generate_timing_slate
+from app.compositor import render_composite
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCreate, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
+from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, ShotComposition, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCompositionRead, ShotCreate, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -44,11 +45,12 @@ def timeline_response(timeline: Timeline, db: Session):
         shot = db.get(Shot, clip.shot_id)
         scene = db.get(Scene, shot.scene_id)
         asset = db.scalar(select(StoryboardAsset).where(StoryboardAsset.shot_id == shot.id).order_by(StoryboardAsset.version.desc(), StoryboardAsset.id.desc()))
+        composite = db.scalar(select(CompositeRender).join(ShotComposition).where(ShotComposition.shot_id == shot.id, CompositeRender.status == "completed").order_by(CompositeRender.id.desc()))
         output.append({
             "id": clip.id, "timeline_id": clip.timeline_id, "shot_id": clip.shot_id, "position": clip.position,
             "duration_seconds": clip.duration_seconds, "transition": clip.transition,
             "transition_duration": clip.transition_duration, "audio_cue": clip.audio_cue,
-            "shot_title": shot.title, "scene_title": scene.title, "storyboard_uri": asset.uri if asset else "",
+            "shot_title": shot.title, "scene_title": scene.title, "storyboard_uri": composite.uri if composite else (asset.uri if asset else ""),
         })
     total = sum(clip["duration_seconds"] for clip in output)
     total -= sum(min(clip["transition_duration"], clip["duration_seconds"] / 2) for clip in output[1:] if clip["transition"] != "cut")
@@ -732,6 +734,130 @@ def reorder_timeline(timeline_id: int, payload: TimelineOrderUpdate, db: Session
         by_id[clip_id].position = position
     db.commit()
     return timeline_response(timeline, db)
+
+
+def composition_response(composition: ShotComposition, db: Session):
+    shot = db.get(Shot, composition.shot_id)
+    scene = db.get(Scene, shot.scene_id)
+    layers = db.scalars(select(CompositionLayer).where(CompositionLayer.composition_id == composition.id).order_by(CompositionLayer.z_index)).all()
+    latest = db.scalar(select(CompositeRender).where(CompositeRender.composition_id == composition.id, CompositeRender.status == "completed").order_by(CompositeRender.id.desc()))
+    return {"id": composition.id, "shot_id": composition.shot_id, "width": composition.width, "height": composition.height, "camera": composition.camera, "color_grade": composition.color_grade, "status": composition.status, "version": composition.version, "shot_title": shot.title, "scene_title": scene.title, "layers": layers, "latest_render_uri": latest.uri if latest else ""}
+
+
+def project_asset_library(project_id: int, db: Session):
+    assets = []
+    backgrounds = db.execute(select(BackgroundAsset, WorldLocation).join(WorldLocation, BackgroundAsset.location_id == WorldLocation.id).where(WorldLocation.project_id == project_id).order_by(BackgroundAsset.id.desc())).all()
+    for asset, location in backgrounds:
+        assets.append({"id": asset.id, "source_kind": "background_asset", "kind": "background", "name": location.name, "uri": asset.uri, "version": asset.version})
+    characters = {character.id: character for character in db.scalars(select(Character).where(Character.project_id == project_id)).all()}
+    for asset in db.scalars(select(MediaAsset).where(MediaAsset.project_id == project_id, MediaAsset.character_id.is_not(None)).order_by(MediaAsset.id.desc())).all():
+        assets.append({"id": asset.id, "source_kind": "media_asset", "kind": "character", "name": characters[asset.character_id].name, "uri": asset.uri, "version": asset.version})
+    storyboard_rows = db.execute(select(StoryboardAsset, Shot).join(Shot, StoryboardAsset.shot_id == Shot.id).join(Scene, Shot.scene_id == Scene.id).where(Scene.project_id == project_id).order_by(StoryboardAsset.id.desc())).all()
+    for asset, shot in storyboard_rows:
+        assets.append({"id": asset.id, "source_kind": "storyboard_asset", "kind": "reference", "name": f"Storyboard · {shot.title}", "uri": asset.uri, "version": asset.version})
+    return assets
+
+
+@app.get("/api/projects/{project_id}/compositor", response_model=CompositorStudioRead)
+def get_compositor_studio(project_id: int, db: Session = Depends(get_db)):
+    project = db.scalars(project_query().where(Project.id == project_id)).one_or_none()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    compositions = {item.shot_id: item for item in db.scalars(select(ShotComposition).join(Shot).join(Scene).where(Scene.project_id == project_id)).all()}
+    shots = [{"id": shot.id, "title": shot.title, "scene_title": scene.title, "duration_seconds": shot.duration_seconds, "composition_id": compositions[shot.id].id if shot.id in compositions else None, "composition_status": compositions[shot.id].status if shot.id in compositions else "unbuilt"} for scene in project.scenes for shot in scene.shots]
+    return {"project_id": project_id, "shots": shots, "assets": project_asset_library(project_id, db)}
+
+
+@app.post("/api/shots/{shot_id}/composition/build", response_model=ShotCompositionRead)
+def build_shot_composition(shot_id: int, db: Session = Depends(get_db)):
+    shot = db.scalars(select(Shot).options(selectinload(Shot.plan)).where(Shot.id == shot_id)).one_or_none()
+    if not shot:
+        raise HTTPException(404, "Shot not found")
+    existing = db.scalar(select(ShotComposition).where(ShotComposition.shot_id == shot_id))
+    if existing:
+        return composition_response(existing, db)
+    scene = db.get(Scene, shot.scene_id)
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == scene.project_id))
+    camera_plan = shot.plan.camera if shot.plan else {}
+    composition = ShotComposition(shot_id=shot.id, width=timeline.width if timeline else 1920, height=timeline.height if timeline else 1080, camera={"move": camera_plan.get("movement", "locked"), "start_scale": 1, "end_scale": 1.08 if "push" in camera_plan.get("movement", "") else 1, "pan_x": 0, "pan_y": 0}, color_grade={"exposure": 1, "contrast": 1, "saturation": 1})
+    db.add(composition); db.flush()
+    z_index = 0
+    location = db.get(WorldLocation, shot.plan.location_id) if shot.plan and shot.plan.location_id else None
+    background = db.scalar(select(BackgroundAsset).where(BackgroundAsset.location_id == location.id).order_by(BackgroundAsset.version.desc(), BackgroundAsset.id.desc())) if location else None
+    db.add(CompositionLayer(composition_id=composition.id, name=location.name if location else "Background plate", kind="background", source_kind="background_asset" if background else "placeholder", source_asset_id=background.id if background else None, source_uri=background.uri if background else "", z_index=z_index, transform={"x": .5, "y": .5, "scale": 1, "rotation": 0}))
+    z_index += 10
+    for character_id in (shot.plan.character_ids if shot.plan else []):
+        character = db.get(Character, character_id)
+        asset = db.scalar(select(MediaAsset).where(MediaAsset.character_id == character_id).order_by(MediaAsset.version.desc(), MediaAsset.id.desc()))
+        db.add(CompositionLayer(composition_id=composition.id, name=character.name, kind="character", source_kind="media_asset" if asset else "placeholder", source_asset_id=asset.id if asset else None, source_uri=asset.uri if asset else "", z_index=z_index, transform={"x": .5, "y": .58, "scale": 1, "rotation": 0}, animation={"entrance": "hold", "exit": "hold"}))
+        z_index += 10
+    db.commit()
+    return composition_response(composition, db)
+
+
+@app.get("/api/shots/{shot_id}/composition", response_model=ShotCompositionRead)
+def get_shot_composition(shot_id: int, db: Session = Depends(get_db)):
+    composition = db.scalar(select(ShotComposition).where(ShotComposition.shot_id == shot_id))
+    if not composition:
+        raise HTTPException(404, "Composition not built")
+    return composition_response(composition, db)
+
+
+@app.put("/api/compositions/{composition_id}", response_model=ShotCompositionRead)
+def update_composition(composition_id: int, payload: CompositionInput, db: Session = Depends(get_db)):
+    composition = db.get(ShotComposition, composition_id)
+    if not composition:
+        raise HTTPException(404, "Composition not found")
+    composition.camera, composition.color_grade = payload.camera, payload.color_grade
+    composition.version += 1
+    db.commit()
+    return composition_response(composition, db)
+
+
+@app.post("/api/compositions/{composition_id}/layers", response_model=CompositionLayerRead, status_code=status.HTTP_201_CREATED)
+def create_composition_layer(composition_id: int, payload: CompositionLayerInput, db: Session = Depends(get_db)):
+    composition = db.get(ShotComposition, composition_id)
+    if not composition:
+        raise HTTPException(404, "Composition not found")
+    layer = CompositionLayer(composition_id=composition_id, **payload.model_dump())
+    composition.version += 1
+    composition.status = "draft"
+    db.add(layer); db.commit(); db.refresh(layer)
+    return layer
+
+
+@app.put("/api/composition-layers/{layer_id}", response_model=CompositionLayerRead)
+def update_composition_layer(layer_id: int, payload: CompositionLayerInput, db: Session = Depends(get_db)):
+    layer = db.get(CompositionLayer, layer_id)
+    if not layer:
+        raise HTTPException(404, "Composition layer not found")
+    for key, value in payload.model_dump().items():
+        setattr(layer, key, value)
+    composition = db.get(ShotComposition, layer.composition_id)
+    composition.version += 1
+    composition.status = "draft"
+    db.commit(); db.refresh(layer)
+    return layer
+
+
+@app.post("/api/compositions/{composition_id}/render", response_model=CompositeRenderRead, status_code=status.HTTP_201_CREATED)
+def render_shot_composition(composition_id: int, db: Session = Depends(get_db)):
+    composition = db.get(ShotComposition, composition_id)
+    if not composition:
+        raise HTTPException(404, "Composition not found")
+    render = CompositeRender(composition_id=composition_id, status="rendering", render_settings={"width": composition.width, "height": composition.height, "version": composition.version})
+    db.add(render); db.commit(); db.refresh(render)
+    try:
+        layers = db.scalars(select(CompositionLayer).where(CompositionLayer.composition_id == composition_id).order_by(CompositionLayer.z_index)).all()
+        prepared = [{"name": layer.name, "kind": layer.kind, "source": render_dir / Path(layer.source_uri).name if layer.source_uri else None, "z_index": layer.z_index, "visible": layer.visible, "opacity": layer.opacity, "blend_mode": layer.blend_mode, "transform": layer.transform} for layer in layers]
+        render.filename = f"composite-{composition.id}-v{composition.version}-{render.id}.png"
+        render_composite(prepared, render_dir / render.filename, composition.width, composition.height, composition.color_grade)
+        render.uri, render.status = f"/renders/{render.filename}", "completed"
+        composition.status = "preview-ready"
+    except Exception as exc:
+        render.status, render.error = "failed", str(exc)
+    db.commit(); db.refresh(render)
+    return render
 
 
 def audio_studio_response(timeline: Timeline, db: Session):

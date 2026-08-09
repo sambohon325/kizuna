@@ -9,6 +9,7 @@ const worldDialog = document.querySelector('#world-dialog');
 const shotDialog = document.querySelector('#shot-dialog');
 const timelineDialog = document.querySelector('#timeline-dialog');
 const audioDialog = document.querySelector('#audio-dialog');
+const compositorDialog = document.querySelector('#compositor-dialog');
 let projects = [];
 let catalog = null;
 let activeCharacterId = null;
@@ -19,6 +20,10 @@ let activeClipId = null;
 let activeAudioStudio = null;
 let activeAudioTimeline = null;
 let activeAudioCueId = null;
+let activeCompositorStudio = null;
+let activeComposition = null;
+let activeCompositorShotId = null;
+let activeCompositionLayerId = null;
 let generationProviders = [];
 
 async function api(path, options = {}) {
@@ -502,6 +507,40 @@ async function generateScratchAudio() { if(!activeAudioCueId)return; const cue=a
 async function uploadCueAudio(event) { const file=event.target.files[0];if(!file||!activeAudioCueId)return; const response=await fetch(`/api/audio-cues/${activeAudioCueId}/upload?filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file}); if(!response.ok)throw new Error(await response.text()); const cue=await response.json(); await refreshAudioAndSelect(cue.id); }
 async function refreshAudioAndSelect(cueId) { activeAudioStudio=await api(`/api/projects/${activeAudioStudio.project_id}/audio-studio`); renderAudioStudio(activeAudioStudio.project_id); selectAudioCue(cueId); }
 
+async function openCompositor(projectId) {
+  if(!projects.length)await loadProjects();if(!projects.length){projectDialog.showModal();return;} const select=document.querySelector('#compositor-project');select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(projectId||projects[0].id));select.onchange=()=>loadCompositorStudio(Number(select.value));compositorDialog.showModal();await loadCompositorStudio(Number(select.value));
+}
+
+async function loadCompositorStudio(projectId) {
+  activeCompositorStudio=await api(`/api/projects/${projectId}/compositor`);activeComposition=null;activeCompositionLayerId=null;renderCompositorShots();document.querySelector('#composition-editor').style.display='none';document.querySelector('#composition-empty').style.display='block';document.querySelector('#layer-form').style.display='none';document.querySelector('#layer-empty').style.display='block';if(activeCompositorStudio.shots.length)await selectCompositorShot(activeCompositorStudio.shots[0].id);
+}
+
+function renderCompositorShots() {
+  document.querySelector('#compositor-shots').innerHTML=activeCompositorStudio.shots.length?activeCompositorStudio.shots.map(shot=>`<button type="button" class="compositor-shot ${shot.id===activeCompositorShotId?'active':''}" data-compositor-shot="${shot.id}"><b>${safe(shot.title)}</b><small>${safe(shot.scene_title)} · ${shot.duration_seconds.toFixed(1)}s · ${safe(shot.composition_status)}</small></button>`).join(''):'<div class="empty">Build shots before compositing.</div>';document.querySelectorAll('[data-compositor-shot]').forEach(button=>button.onclick=()=>selectCompositorShot(Number(button.dataset.compositorShot)));
+}
+
+async function selectCompositorShot(shotId) {
+  activeCompositorShotId=shotId;activeCompositionLayerId=null;renderCompositorShots();const shot=activeCompositorStudio.shots.find(item=>item.id===shotId);if(!shot?.composition_id){activeComposition=null;document.querySelector('#composition-editor').style.display='none';document.querySelector('#composition-empty').style.display='block';document.querySelector('#composition-empty').textContent='Build this shot to create its background and character layer stack.';return;} activeComposition=await api(`/api/shots/${shotId}/composition`);renderCompositionEditor();
+}
+
+function stageLayer(layer) {
+  const transform=layer.transform||{};const translateX=(Number(transform.x??.5)-.5)*100;const translateY=(Number(transform.y??.5)-.5)*100;const style=`z-index:${layer.z_index};opacity:${layer.visible?layer.opacity:0};transform:translate(${translateX}%,${translateY}%) scale(${Number(transform.scale||1)}) rotate(${Number(transform.rotation||0)}deg);mix-blend-mode:${layer.blend_mode}`;
+  return layer.source_uri?`<img class="stage-layer ${safe(layer.kind)}" src="${safe(layer.source_uri)}" style="${style}" alt="${safe(layer.name)} layer">`:`<div class="stage-layer stage-placeholder ${safe(layer.kind)}" style="${style}">${safe(layer.name)}</div>`;
+}
+
+function renderCompositionEditor() {
+  const editor=document.querySelector('#composition-editor');document.querySelector('#composition-empty').style.display='none';editor.style.display='block';document.querySelector('#composition-stage').innerHTML=activeComposition.layers.map(stageLayer).join('');document.querySelector('#composition-layers').innerHTML=activeComposition.layers.map(layer=>`<button type="button" class="layer-pill ${layer.id===activeCompositionLayerId?'active':''}" data-layer-id="${layer.id}">${layer.z_index} · ${safe(layer.name)}</button>`).join('');document.querySelectorAll('[data-layer-id]').forEach(button=>button.onclick=()=>selectCompositionLayer(Number(button.dataset.layerId)));
+  const camera=activeComposition.camera||{},grade=activeComposition.color_grade||{};document.querySelector('#comp-camera-move').value=camera.move||'locked';document.querySelector('#comp-start-scale').value=camera.start_scale??1;document.querySelector('#comp-end-scale').value=camera.end_scale??1;document.querySelector('#comp-exposure').value=grade.exposure??1;document.querySelector('#comp-contrast').value=grade.contrast??1;document.querySelector('#comp-saturation').value=grade.saturation??1;
+  const assets=activeCompositorStudio.assets;document.querySelector('#composition-asset').innerHTML=assets.length?assets.map((asset,index)=>`<option value="${index}">${safe(asset.kind)} · ${safe(asset.name)} · v${asset.version}</option>`).join(''):'<option value="">Generate assets in Characters or Worlds first</option>';document.querySelector('#add-composition-layer').disabled=!assets.length;
+  document.querySelector('#composite-result').innerHTML=activeComposition.latest_render_uri?`<div class="composite-preview"><img src="${safe(activeComposition.latest_render_uri)}" alt="Rendered composite preview"><div class="composite-ready">Preview ready · automatically available in Timeline</div></div>`:'';
+}
+
+function selectCompositionLayer(layerId) {
+  const layer=activeComposition.layers.find(item=>item.id===layerId);if(!layer)return;activeCompositionLayerId=layerId;const form=document.querySelector('#layer-form'),transform=layer.transform||{};document.querySelector('#layer-empty').style.display='none';form.style.display='block';document.querySelector('#layer-title').textContent=layer.name;form.elements.layer_name.value=layer.name;form.elements.layer_z.value=layer.z_index;form.elements.layer_opacity.value=layer.opacity;form.elements.layer_blend.value=layer.blend_mode;form.elements.layer_visible.value=String(layer.visible);form.elements.layer_x.value=transform.x??.5;form.elements.layer_y.value=transform.y??.5;form.elements.layer_scale.value=transform.scale??1;form.elements.layer_rotation.value=transform.rotation??0;form.elements.layer_animation.value=layer.animation?.intent||layer.animation?.entrance||'';renderCompositionEditor();
+}
+
+async function refreshComposition() { activeComposition=await api(`/api/shots/${activeCompositorShotId}/composition`);activeCompositorStudio=await api(`/api/projects/${activeCompositorStudio.project_id}/compositor`);renderCompositorShots();renderCompositionEditor();if(activeCompositionLayerId)selectCompositionLayer(activeCompositionLayerId); }
+
 function collectStory(form) {
   return {premise:form.elements.premise.value, format:form.elements.format.value, target_duration_minutes:Number(form.elements.target_duration_minutes.value), genre:form.elements.genre.value, audience:form.elements.audience.value, themes:form.elements.themes.value.split(',').map(value => value.trim()).filter(Boolean)};
 }
@@ -515,6 +554,7 @@ document.querySelector('#worlds-nav').onclick = () => openWorldStudio();
 document.querySelector('#shots-nav').onclick = () => openShotPlanner();
 document.querySelector('#timeline-nav').onclick = () => openTimeline();
 document.querySelector('#audio-nav').onclick = () => openAudioStudio();
+document.querySelector('#compositor-nav').onclick = () => openCompositor();
 document.querySelector('.close').onclick = () => projectDialog.close();
 document.querySelector('#style-close').onclick = () => styleDialog.close();
 document.querySelector('#writer-close').onclick = () => writerDialog.close();
@@ -524,6 +564,12 @@ document.querySelector('#world-close').onclick = () => worldDialog.close();
 document.querySelector('#shot-close').onclick = () => shotDialog.close();
 document.querySelector('#timeline-close').onclick = () => timelineDialog.close();
 document.querySelector('#audio-close').onclick = () => audioDialog.close();
+document.querySelector('#compositor-close').onclick = () => compositorDialog.close();
+document.querySelector('#build-composition').onclick = async () => { if(!activeCompositorShotId)return;activeComposition=await api(`/api/shots/${activeCompositorShotId}/composition/build`,{method:'POST'});activeCompositorStudio=await api(`/api/projects/${activeCompositorStudio.project_id}/compositor`);renderCompositorShots();renderCompositionEditor();if(activeComposition.layers.length)selectCompositionLayer(activeComposition.layers[0].id); };
+document.querySelector('#save-composition').onclick = async () => { if(!activeComposition)return;activeComposition=await api(`/api/compositions/${activeComposition.id}`,{method:'PUT',body:JSON.stringify({camera:{...activeComposition.camera,move:document.querySelector('#comp-camera-move').value,start_scale:Number(document.querySelector('#comp-start-scale').value),end_scale:Number(document.querySelector('#comp-end-scale').value)},color_grade:{exposure:Number(document.querySelector('#comp-exposure').value),contrast:Number(document.querySelector('#comp-contrast').value),saturation:Number(document.querySelector('#comp-saturation').value)}})});renderCompositionEditor(); };
+document.querySelector('#add-composition-layer').onclick = async () => { if(!activeComposition)return;const asset=activeCompositorStudio.assets[Number(document.querySelector('#composition-asset').value)];if(!asset)return;const z=Math.max(0,...activeComposition.layers.map(layer=>layer.z_index))+10;const layer=await api(`/api/compositions/${activeComposition.id}/layers`,{method:'POST',body:JSON.stringify({name:asset.name,kind:asset.kind,source_kind:asset.source_kind,source_asset_id:asset.id,source_uri:asset.uri,z_index:z,visible:true,opacity:1,blend_mode:'normal',transform:{x:.5,y:.5,scale:1,rotation:0},animation:{intent:'hold'}})});activeCompositionLayerId=layer.id;await refreshComposition(); };
+document.querySelector('#layer-form').onsubmit = async event => { event.preventDefault();const layer=activeComposition.layers.find(item=>item.id===activeCompositionLayerId);if(!layer)return;const form=event.target;await api(`/api/composition-layers/${layer.id}`,{method:'PUT',body:JSON.stringify({name:form.elements.layer_name.value,kind:layer.kind,source_kind:layer.source_kind,source_asset_id:layer.source_asset_id,source_uri:layer.source_uri,z_index:Number(form.elements.layer_z.value),visible:form.elements.layer_visible.value==='true',opacity:Number(form.elements.layer_opacity.value),blend_mode:form.elements.layer_blend.value,transform:{x:Number(form.elements.layer_x.value),y:Number(form.elements.layer_y.value),scale:Number(form.elements.layer_scale.value),rotation:Number(form.elements.layer_rotation.value)},animation:{intent:form.elements.layer_animation.value}})});await refreshComposition(); };
+document.querySelector('#render-composition').onclick = async () => { if(!activeComposition)return;const button=document.querySelector('#render-composition');button.disabled=true;button.textContent='Rendering…';try{const result=await api(`/api/compositions/${activeComposition.id}/render`,{method:'POST'});if(result.status==='failed')document.querySelector('#composite-result').innerHTML=`<div class="job-error">${safe(result.error)}</div>`;else await refreshComposition();}finally{button.disabled=false;button.textContent='Render preview';} };
 document.querySelector('#build-audio').onclick = async () => { const projectId=Number(document.querySelector('#audio-project').value); try { if(!activeAudioTimeline)activeAudioTimeline=await api(`/api/projects/${projectId}/timeline`); activeAudioStudio=await api(`/api/timelines/${activeAudioTimeline.id}/audio/build`,{method:'POST'}); renderAudioStudio(projectId); } catch(error) { document.querySelector('#audio-tracks').innerHTML=`<div class="job-error">${safe(error.message)}</div>`; } };
 document.querySelector('#save-voice').onclick = async () => { const characterId=Number(document.querySelector('#voice-character').value);if(!characterId)return; const existing=activeAudioStudio?.voice_profiles.find(item=>item.character_id===characterId); await api(`/api/characters/${characterId}/voice`,{method:'PUT',body:JSON.stringify({vocal_age:existing?.vocal_age||'young adult',texture:document.querySelector('#voice-texture').value,energy:document.querySelector('#voice-energy').value,accent:existing?.accent||'neutral',language:existing?.language||'English',pace:Number(document.querySelector('#voice-pace').value),pitch:Number(document.querySelector('#voice-pitch').value),provider:existing?.provider||'simulation',provider_voice_id:existing?.provider_voice_id||'',direction_notes:document.querySelector('#voice-direction').value})}); if(activeAudioStudio){activeAudioStudio=await api(`/api/projects/${activeAudioStudio.project_id}/audio-studio`);renderAudioStudio(activeAudioStudio.project_id);} };
 document.querySelector('#cue-form').onsubmit = async event => { event.preventDefault(); const form=event.target; const payload={clip_id:null,character_id:form.elements.cue_character.value?Number(form.elements.cue_character.value):null,start_seconds:Number(form.elements.cue_start.value),duration_seconds:Number(form.elements.cue_duration.value),text:form.elements.cue_text.value,direction:form.elements.cue_direction.value}; const cue=activeAudioCueId?await api(`/api/audio-cues/${activeAudioCueId}`,{method:'PUT',body:JSON.stringify(payload)}):await api(`/api/audio-tracks/${Number(form.elements.cue_track.value)}/cues`,{method:'POST',body:JSON.stringify(payload)}); await refreshAudioAndSelect(cue.id); };

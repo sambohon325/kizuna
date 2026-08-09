@@ -225,3 +225,33 @@ def test_audio_studio_builds_voice_cues_and_mixes_animatic(client):
     rendered = client.post(f"/api/timelines/{timeline['id']}/render")
     assert rendered.json()["status"] == "completed", rendered.json().get("error")
     assert rendered.json()["render_settings"]["audio_cues"] == 1
+
+
+def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):
+    project_id = client.post("/api/projects", json={"title": "Layer Test"}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "pilot"}).json()
+    location = client.post(f"/api/projects/{project_id}/locations", json={"name": "Listening Hall"}).json()
+    scene_id = client.post(f"/api/projects/{project_id}/scenes", json={"title": "Contact", "position": 1}).json()["id"]
+    shot = client.post(f"/api/scenes/{scene_id}/shots", json={"title": "Ari enters", "position": 1, "duration_seconds": 1}).json()
+    client.put(f"/api/shots/{shot['id']}/plan", json={"location_id": location["id"], "character_ids": [character["id"]], "action": "Ari enters.", "camera": {"movement": "slow push"}})
+    timeline = client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 12, "width": 320, "height": 180}).json()
+
+    composition_response = client.post(f"/api/shots/{shot['id']}/composition/build")
+    assert composition_response.status_code == 200
+    composition = composition_response.json()
+    assert [layer["kind"] for layer in composition["layers"]] == ["background", "character"]
+    assert composition["camera"]["move"] == "slow push"
+    character_layer = composition["layers"][1]
+    layer_payload = {key: character_layer[key] for key in ("name", "kind", "source_kind", "source_asset_id", "source_uri", "z_index", "visible", "opacity", "blend_mode", "transform", "animation")}
+    layer_payload["transform"] = {"x": 0.35, "y": 0.6, "scale": 0.85, "rotation": -2}
+    edited = client.put(f"/api/composition-layers/{character_layer['id']}", json=layer_payload)
+    assert edited.json()["transform"]["x"] == 0.35
+
+    rendered = client.post(f"/api/compositions/{composition['id']}/render")
+    assert rendered.status_code == 201
+    assert rendered.json()["status"] == "completed", rendered.json().get("error")
+    preview = client.get(rendered.json()["uri"])
+    assert preview.status_code == 200
+    assert preview.headers["content-type"] == "image/png"
+    updated_timeline = client.get(f"/api/projects/{project_id}/timeline").json()
+    assert updated_timeline["clips"][0]["storyboard_uri"] == rendered.json()["uri"]

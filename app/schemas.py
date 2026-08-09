@@ -385,6 +385,62 @@ class AudioStudioRead(BaseModel):
     tracks: list[AudioTrackRead] = Field(default_factory=list)
 
 
+class CompositionInput(BaseModel):
+    camera: dict[str, Any] = Field(default_factory=dict)
+    color_grade: dict[str, Any] = Field(default_factory=dict)
+
+
+class CompositionLayerInput(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    kind: str = Field(default="character", pattern="^(background|character|prop|effect|reference|custom)$")
+    source_kind: str = "custom"
+    source_asset_id: int | None = None
+    source_uri: str = ""
+    z_index: int = Field(default=1, ge=-100, le=100)
+    visible: bool = True
+    opacity: float = Field(default=1, ge=0, le=1)
+    blend_mode: str = Field(default="normal", pattern="^(normal|multiply|screen|overlay)$")
+    transform: dict[str, Any] = Field(default_factory=dict)
+    animation: dict[str, Any] = Field(default_factory=dict)
+
+
+class CompositionLayerRead(CompositionLayerInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    composition_id: int
+
+
+class ShotCompositionRead(CompositionInput):
+    id: int
+    shot_id: int
+    width: int
+    height: int
+    status: str
+    version: int
+    shot_title: str = ""
+    scene_title: str = ""
+    layers: list[CompositionLayerRead] = Field(default_factory=list)
+    latest_render_uri: str = ""
+
+
+class CompositeRenderRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    composition_id: int
+    status: str
+    filename: str
+    uri: str
+    mime_type: str
+    error: str
+    render_settings: dict[str, Any]
+
+
+class CompositorStudioRead(BaseModel):
+    project_id: int
+    shots: list[dict[str, Any]] = Field(default_factory=list)
+    assets: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class ProjectCreate(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     logline: str = ""

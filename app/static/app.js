@@ -20,6 +20,9 @@ const workspaceNav = new Map([
   [shotDialog, 'shots-nav'], [timelineDialog, 'timeline-nav'], [audioDialog, 'audio-nav'],
   [compositorDialog, 'compositor-nav'],
 ]);
+const workspaceKeys = new Map([
+  [crewDialog,'crew'],[styleDialog,'style'],[writerDialog,'writer'],[characterDialog,'characters'],[worldDialog,'worlds'],[shotDialog,'shots'],[timelineDialog,'timeline'],[audioDialog,'audio'],[compositorDialog,'compositor'],[renderDialog,'render'],
+]);
 
 function setActiveNavigation(navId = 'productions-nav') {
   document.querySelectorAll('.rail button').forEach(button => {
@@ -48,12 +51,25 @@ function openWorkspace(dialog) {
   const back = dialog.querySelector('.close');
   if (back) {
     back.textContent = '← Productions';
-    back.title = 'Back to productions';
-    back.setAttribute('aria-label', 'Back to productions');
+    const popout=document.body.classList.contains('popout-mode');if(popout)back.textContent='Close window';
+    back.title = popout?'Close this workspace window':'Back to productions';
+    back.setAttribute('aria-label', back.title);
   }
   setActiveNavigation(workspaceNav.get(dialog));
   renderProductionFlow();
   window.scrollTo({top: 0, left: 0, behavior: 'auto'});
+}
+
+function setupWorkspacePopouts() {
+  workspaceKeys.forEach((key,dialog)=>{const root=dialog.firstElementChild;if(!root||root.querySelector('.workspace-popout'))return;const button=document.createElement('button');button.type='button';button.className='workspace-popout';button.innerHTML='<span aria-hidden="true">\u2197</span> Open in new window';button.setAttribute('aria-label',`Open ${dialog.querySelector('h2')?.textContent||key} in a new window`);button.onclick=()=>openWorkspaceWindow(key,dialog);root.appendChild(button);});
+}
+
+function openWorkspaceWindow(key,dialog) {
+  const selected=dialog.querySelector('select[id$="-project"]')?.value||currentFlowProject()?.id,url=new URL(location.href);url.search='';url.searchParams.set('workspace',key);if(selected)url.searchParams.set('project',selected);url.searchParams.set('popout','1');window.open(url,`kizuna-${key}-${selected||'studio'}`,'popup=yes,width=1440,height=960,resizable=yes,scrollbars=yes');
+}
+
+async function openRequestedWorkspace() {
+  const params=new URLSearchParams(location.search),key=params.get('workspace'),projectId=Number(params.get('project'))||undefined;if(params.get('popout')==='1')document.body.classList.add('popout-mode');const openers={crew:openCrewStudio,style:openStyleLab,writer:openWriterRoom,characters:openCharacterStudio,worlds:openWorldStudio,shots:openShotPlanner,timeline:openTimeline,audio:openAudioStudio,compositor:openCompositor,render:openRenderFarm};if(key&&openers[key])await openers[key](projectId);
 }
 
 function showDashboard() {
@@ -67,6 +83,10 @@ function showDashboard() {
   setActiveNavigation();
   renderProductionFlow();
   window.scrollTo({top: 0, left: 0, behavior: 'auto'});
+}
+
+function closeWorkspace() {
+  if(document.body.classList.contains('popout-mode'))window.close();else showDashboard();
 }
 
 const productionStages = [
@@ -1092,7 +1112,7 @@ function collectStory(form) {
 document.querySelector('#new-project').onclick = () => projectDialog.showModal();
 document.querySelector('#productions-nav').onclick = showDashboard;
 document.querySelector('#crew-nav').onclick = () => openCrewStudio();
-document.querySelector('.brand').onclick = event => { event.preventDefault(); showDashboard(); };
+document.querySelector('.brand').onclick = event => { event.preventDefault(); if(document.body.classList.contains('popout-mode'))window.close();else showDashboard(); };
 document.querySelector('#style-lab-nav').onclick = () => openStyleLab();
 document.querySelector('#writer-nav').onclick = () => openWriterRoom();
 document.querySelector('#characters-nav').onclick = () => openCharacterStudio();
@@ -1103,16 +1123,16 @@ document.querySelector('#timeline-nav').onclick = () => openTimeline();
 document.querySelector('#audio-nav').onclick = () => openAudioStudio();
 document.querySelector('#compositor-nav').onclick = () => openCompositor();
 document.querySelector('.close').onclick = () => projectDialog.close();
-document.querySelector('#style-close').onclick = showDashboard;
-document.querySelector('#crew-close').onclick = showDashboard;
-document.querySelector('#writer-close').onclick = showDashboard;
-document.querySelector('#character-close').onclick = showDashboard;
-document.querySelector('#render-close').onclick = showDashboard;
-document.querySelector('#world-close').onclick = showDashboard;
-document.querySelector('#shot-close').onclick = showDashboard;
-document.querySelector('#timeline-close').onclick = showDashboard;
-document.querySelector('#audio-close').onclick = showDashboard;
-document.querySelector('#compositor-close').onclick = showDashboard;
+document.querySelector('#style-close').onclick = closeWorkspace;
+document.querySelector('#crew-close').onclick = closeWorkspace;
+document.querySelector('#writer-close').onclick = closeWorkspace;
+document.querySelector('#character-close').onclick = closeWorkspace;
+document.querySelector('#render-close').onclick = closeWorkspace;
+document.querySelector('#world-close').onclick = closeWorkspace;
+document.querySelector('#shot-close').onclick = closeWorkspace;
+document.querySelector('#timeline-close').onclick = closeWorkspace;
+document.querySelector('#audio-close').onclick = closeWorkspace;
+document.querySelector('#compositor-close').onclick = closeWorkspace;
 document.querySelector('#deploy-crew').onclick = deploySelectedCrew;
 document.querySelector('#start-producer').onclick = saveProducerWorkflow;
 document.querySelector('#advance-producer').onclick = advanceProducerWorkflow;
@@ -1156,4 +1176,5 @@ document.querySelector('#split-audio-region').onclick=splitSelectedAudioRegion;
 document.querySelector('#duplicate-audio-region').onclick=duplicateSelectedAudioRegion;
 document.querySelector('#delete-audio-region').onclick=deleteSelectedAudioRegion;
 setupCraftWorkspaces();
-loadProjects().catch(error => projectsEl.innerHTML = `<div class="empty">Could not load the studio: ${safe(error.message)}</div>`);
+setupWorkspacePopouts();
+loadProjects().then(openRequestedWorkspace).catch(error => projectsEl.innerHTML = `<div class="empty">Could not load the studio: ${safe(error.message)}</div>`);

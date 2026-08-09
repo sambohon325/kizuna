@@ -815,9 +815,31 @@ class CompositorStudioRead(BaseModel):
     assets: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ProductionScopeInput(BaseModel):
+    distribution_channel: str = Field(default="web", max_length=80)
+    release_format: str = Field(default="one_off", pattern="^(one_off|trailer|feature_film|ongoing_series|limited_series)$")
+    aspect_ratio: str = Field(default="16:9", pattern="^(16:9|9:16|1:1|4:3|2.39:1|custom)$")
+    width: int = Field(default=1920, ge=240, le=16384)
+    height: int = Field(default=1080, ge=240, le=16384)
+    target_duration_seconds: int = Field(default=300, ge=5, le=21600)
+    installment_count: int = Field(default=1, ge=1, le=1000)
+    season_count: int = Field(default=1, ge=1, le=100)
+    notes: str = Field(default="", max_length=4000)
+
+
+class ProductionScopeRead(ProductionScopeInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    story_status: str
+    summary: str = ""
+    writing_guidance: list[str] = Field(default_factory=list)
+
+
 class ProjectCreate(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     logline: str = ""
+    scope: ProductionScopeInput | None = None
 
 
 class ProjectRead(ProjectCreate):
@@ -830,6 +852,29 @@ class ProjectRead(ProjectCreate):
     characters: list[CharacterRead] = Field(default_factory=list)
     locations: list[WorldLocationRead] = Field(default_factory=list)
     scenes: list[SceneRead] = Field(default_factory=list)
+    scope: ProductionScopeRead | None = None
+
+
+class AssistantRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+    page: str = Field(default="productions", max_length=80)
+    screen_context: dict[str, Any] = Field(default_factory=dict)
+
+
+class AssistantMessageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    page: str
+    role: str
+    content: str
+    created_at: datetime
+
+
+class AssistantReply(BaseModel):
+    message: AssistantMessageRead
+    actions: list[dict[str, str]] = Field(default_factory=list)
+    project_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProductionStageRead(BaseModel):

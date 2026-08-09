@@ -25,6 +25,8 @@ class Project(Base):
     locations: Mapped[list[WorldLocation]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="WorldLocation.id")
     scenes: Mapped[list[Scene]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="Scene.position")
     timeline: Mapped[Timeline | None] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
+    scope: Mapped[ProductionScope | None] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
+    assistant_messages: Mapped[list[AssistantMessage]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="AssistantMessage.id")
 
 
 class StyleProfile(Base):
@@ -40,6 +42,41 @@ class StyleProfile(Base):
     archetypes: Mapped[list[str]] = mapped_column(JSON, default=list)
 
     project: Mapped[Project] = relationship(back_populates="style_profile")
+
+
+class ProductionScope(Base):
+    __tablename__ = "production_scopes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), unique=True)
+    distribution_channel: Mapped[str] = mapped_column(String(80), default="web")
+    release_format: Mapped[str] = mapped_column(String(40), default="one_off")
+    aspect_ratio: Mapped[str] = mapped_column(String(20), default="16:9")
+    width: Mapped[int] = mapped_column(default=1920)
+    height: Mapped[int] = mapped_column(default=1080)
+    target_duration_seconds: Mapped[int] = mapped_column(default=300)
+    installment_count: Mapped[int] = mapped_column(default=1)
+    season_count: Mapped[int] = mapped_column(default=1)
+    story_status: Mapped[str] = mapped_column(String(32), default="not_started")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    project: Mapped[Project] = relationship(back_populates="scope")
+
+
+class AssistantMessage(Base):
+    __tablename__ = "assistant_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    page: Mapped[str] = mapped_column(String(80), default="productions")
+    role: Mapped[str] = mapped_column(String(20))
+    content: Mapped[str] = mapped_column(Text)
+    context: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    project: Mapped[Project] = relationship(back_populates="assistant_messages")
 
 
 class StoryBrief(Base):

@@ -47,6 +47,8 @@ pytest
 - A three-view Character Studio for narrative identity, versioned history and emotional arcs, character relationships, and visual model development without combining every craft into one form
 - Full-canvas craft dashboards with glass surfaces instead of modal-style outer boxes, plus dedicated multi-monitor windows that retain the selected production
 - A studio-wide Connections & Tools hub for OpenAI, Claude, Gemini, Ollama, custom AI APIs, generation engines, and handoffs to Adobe, Corel, GIMP, Krita, OpenToonz, Blender, and Resolve; secret values remain server-side
+- Production scope shared across creation, dashboard, writing, timelines, mastering, and AI context: distribution channel, one-off/trailer/feature/series format, aspect ratio, target runtime, installments, and seasons can evolve without deleting existing work
+- A persistent floating Kizuna Assistant that follows the active craft workspace, reads backend production progress and scope, remembers project conversations, and links creators to relevant next actions
 - Provider-neutral dialogue generation with a safe local timing-slate mode, optional OpenAI speech adapter, voice-rights records, required AI disclosure metadata, and per-character pronunciation entries
 - Scene Compositor with shot-specific layer stacks, asset-library reuse, transforms, visibility, opacity, blend modes, virtual camera/grade plans, and flattened preview renders
 - Keyframed layer motion with linear/eased interpolation, animated opacity and transforms, virtual-camera motion, versioned H.264 shot previews, and an Animator bot that proposes or applies editable acting/camera passes before optionally rendering a preview

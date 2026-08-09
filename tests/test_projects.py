@@ -24,6 +24,36 @@ def test_integration_settings_support_builtin_and_custom_tools(client):
     assert client.delete("/api/settings/integrations/openai").status_code == 400
 
 
+def test_production_scope_changes_story_shape_and_assistant_context(client):
+    project = client.post("/api/projects", json={"title": "Pocket Signal", "logline": "A courier receives one impossible message.", "scope": {"distribution_channel": "TikTok", "release_format": "ongoing_series", "aspect_ratio": "9:16", "width": 1080, "height": 1920, "target_duration_seconds": 60, "installment_count": 24, "season_count": 2, "notes": "Weekly vertical episodes"}})
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+    scope = client.get(f"/api/projects/{project_id}/scope").json()
+    assert scope["summary"].startswith("Ongoing series · TikTok · 9:16 vertical · 1 min")
+    assert any("vertical frame" in item for item in scope["writing_guidance"])
+
+    story = client.put(f"/api/projects/{project_id}/story", json={"premise": "The message predicts the next sixty seconds.", "format": "feature film", "target_duration_minutes": 90, "audience": "general", "genre": "thriller", "themes": ["choice"]})
+    assert story.status_code == 200
+    assert story.json()["format"] == "episode"
+    assert story.json()["target_duration_minutes"] == 1
+    assert len(story.json()["beats"]) == 5
+    assert client.get(f"/api/projects/{project_id}/scope").json()["story_status"] == "aligned"
+
+    changed = client.put(f"/api/projects/{project_id}/scope", json={"distribution_channel": "Theatrical / festival", "release_format": "feature_film", "aspect_ratio": "2.39:1", "width": 3840, "height": 1608, "target_duration_seconds": 6600, "installment_count": 1, "season_count": 1, "notes": "Expanded feature version"})
+    assert changed.status_code == 200
+    assert changed.json()["story_status"] == "review_needed"
+    assert client.get(f"/api/projects/{project_id}").json()["story_brief"]["target_duration_minutes"] == 110
+
+    assistant = client.post(f"/api/projects/{project_id}/assistant", json={"message": "How should I adapt this into a feature?", "page": "writer", "screen_context": {"heading": "Writer's Room", "selection": "Story Map"}})
+    assert assistant.status_code == 200
+    assert "Theatrical / festival" in assistant.json()["message"]["content"]
+    assert "outline needs a deliberate adaptation pass" in assistant.json()["message"]["content"]
+    assert len(client.get(f"/api/projects/{project_id}/assistant/messages").json()) == 2
+    from app.main import master_dimensions
+    vertical = type("VerticalTimeline", (), {"width": 1080, "height": 1920})()
+    assert master_dimensions(vertical, "4k") == (2160, 3840)
+
+
 def test_style_catalog_has_eras_and_directing_traits(client):
     response = client.get("/api/style-catalog")
     assert response.status_code == 200
@@ -108,7 +138,7 @@ def test_writer_bot_proposes_auditable_story_before_applying_it(client):
     action = proposed.json()
     assert action["status"] == "proposed"
     assert action["payload"]["proposal"]["target_duration_minutes"] == 96
-    assert len(action["payload"]["proposal"]["beats"]) == 8
+    assert len(action["payload"]["proposal"]["beats"]) == 12
     assert client.get(f"/api/projects/{project_id}").json()["story_brief"] is None
 
     approved = client.post(f"/api/crew-actions/{action['id']}/approve")

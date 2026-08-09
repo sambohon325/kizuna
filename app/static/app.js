@@ -59,6 +59,7 @@ function openWorkspace(dialog) {
   }
   setActiveNavigation(workspaceNav.get(dialog));
   renderProductionFlow();
+  refreshAssistantContext();
   window.scrollTo({top: 0, left: 0, behavior: 'auto'});
 }
 
@@ -85,6 +86,7 @@ function showDashboard() {
   workspaceMain.classList.remove('settings-open');
   setActiveNavigation();
   renderProductionFlow();
+  refreshAssistantContext();
   window.scrollTo({top: 0, left: 0, behavior: 'auto'});
 }
 
@@ -129,9 +131,10 @@ function renderProductionFlow() {
 
 function setupCraftWorkspaces() {
   const form=document.querySelector('#writer-form');if(form&&!form.querySelector('.writer-document-sidebar')){
+    if(![...form.elements.format.options].some(option=>option.value==='trailer'))form.elements.format.add(new Option('trailer','trailer'),1);
     const sidebar=document.createElement('aside'),canvas=document.createElement('section'),page=document.createElement('div');sidebar.className='writer-document-sidebar';canvas.className='writer-document-canvas';page.className='writer-document-page';
     const heading=form.querySelector(':scope > .eyebrow'),title=form.querySelector(':scope > h2'),intro=form.querySelector(':scope > .form-intro'),labels=[...form.querySelectorAll(':scope > label')],agent=form.querySelector(':scope > .writer-agent-panel');
-    [heading,title,intro,labels[0],agent].forEach(node=>node&&sidebar.appendChild(node));[labels[1],form.querySelector(':scope > .writer-grid'),labels[2],form.querySelector(':scope > button.primary'),form.querySelector(':scope > .story-result')].forEach(node=>node&&page.appendChild(node));canvas.innerHTML='<nav class="writer-view-tabs" aria-label="Writer view"><button type="button" class="active" data-writer-view="document">Document</button><button type="button" data-writer-view="map">Story map</button></nav>';canvas.appendChild(page);form.append(sidebar,canvas);form.dataset.writerView='document';canvas.querySelectorAll('[data-writer-view]').forEach(button=>button.onclick=()=>setWriterView(button.dataset.writerView));
+    const scopeCard=document.createElement('section');scopeCard.id='writer-scope-card';scopeCard.className='writer-scope-card';scopeCard.innerHTML='<div class="settings-loading">Loading release plan...</div>';[heading,title,intro,labels[0],scopeCard,agent].forEach(node=>node&&sidebar.appendChild(node));[labels[1],form.querySelector(':scope > .writer-grid'),labels[2],form.querySelector(':scope > button.primary'),form.querySelector(':scope > .story-result')].forEach(node=>node&&page.appendChild(node));canvas.innerHTML='<nav class="writer-view-tabs" aria-label="Writer view"><button type="button" class="active" data-writer-view="document">Document</button><button type="button" data-writer-view="map">Story map</button></nav>';canvas.appendChild(page);form.append(sidebar,canvas);form.dataset.writerView='document';canvas.querySelectorAll('[data-writer-view]').forEach(button=>button.onclick=()=>setWriterView(button.dataset.writerView));
     if(agent){const controls=agent.querySelector('.writer-agent-controls'),details=document.createElement('details'),body=document.createElement('div'),ask=controls.querySelector('#ask-writer');details.className='advanced-settings writer-agent-settings';details.innerHTML='<summary>Writer settings</summary>';[...controls.querySelectorAll('label')].forEach(label=>body.appendChild(label));details.appendChild(body);controls.replaceChildren(ask,details);agent.querySelector('h3').textContent='Help me shape the story';agent.querySelector('div>p:not(.eyebrow)').textContent='The Writer prepares a complete proposal for your review.';ask.textContent='Ask Writer';}
   }
   const shell=document.querySelector('.shell'),toggle=document.querySelector('#rail-toggle'),collapsed=localStorage.getItem('kizuna-rail-collapsed')==='true';toggle.firstChild.nodeValue='\u2039';shell.classList.toggle('rail-collapsed',collapsed);toggle.setAttribute('aria-expanded',String(!collapsed));toggle.setAttribute('aria-label',collapsed?'Expand navigation':'Collapse navigation');
@@ -214,13 +217,22 @@ function safe(value = '') {
   return String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 }
 
+function scopeDisplay(scope) {
+  if(!scope)return'Scope open';const formats={one_off:'One-off',trailer:'Trailer',feature_film:'Feature',ongoing_series:'Ongoing series',limited_series:'Limited series'},duration=scope.target_duration_seconds<60?`${scope.target_duration_seconds}s`:`${Math.round(scope.target_duration_seconds/60)} min`;return`${formats[scope.release_format]||scope.release_format} · ${scope.distribution_channel} · ${scope.aspect_ratio} · ${duration}`;
+}
+
+function aspectDimensions(ratio) {
+  return {'16:9':[1920,1080],'9:16':[1080,1920],'1:1':[1080,1080],'4:3':[1440,1080],'2.39:1':[3840,1608]}[ratio]||[1920,1080];
+}
+
 async function loadProjects() {
   projects = await api('/api/projects');
   productionStatusCache.clear();
   document.querySelector('#project-count').textContent = `${projects.length} production${projects.length === 1 ? '' : 's'}`;
   projectsEl.innerHTML = projects.length ? projects.map(project => `
-    <article class="project" data-id="${project.id}"><span class="tag">${safe(project.status)}</span><h3>${safe(project.title)}</h3><p>${safe(project.logline || 'Your story is waiting for its first scene.')}</p><footer><span class="era">${safe(project.style_profile?.era_primary || 'Style open')}</span><span>${project.scenes.length} scenes</span></footer></article>`).join('') : '<div class="empty">No productions yet. Start with a title and logline—everything else can evolve.</div>';
+    <article class="project" data-id="${project.id}"><span class="tag">${safe(project.status)}</span><h3>${safe(project.title)}</h3><p>${safe(project.logline || 'Your story is waiting for its first scene.')}</p><div class="project-scope-summary">${safe(scopeDisplay(project.scope))}</div><footer><span class="era">${safe(project.style_profile?.era_primary || 'Style open')}</span><span>${project.scenes.length} scenes</span><button type="button" data-project-scope="${project.id}">Change scope</button></footer></article>`).join('') : '<div class="empty">No productions yet. Start with a title and release plan—everything else can evolve.</div>';
   document.querySelectorAll('.project').forEach(el => el.onclick = () => openProject(el.dataset.id));
+  document.querySelectorAll('[data-project-scope]').forEach(button=>button.onclick=event=>{event.stopPropagation();openWriterRoom(Number(button.dataset.projectScope));});
   renderProductionFlow();
 }
 
@@ -228,7 +240,7 @@ async function openProject(id) {
   const project = await api(`/api/projects/${id}`);
   const style = project.style_profile;
   document.querySelector('#detail').innerHTML = `
-    <div class="detail-head"><div><p class="eyebrow" style="color:#e84b38">${safe(project.status.toUpperCase())}</p><h2>${safe(project.title)}</h2><p>${safe(project.logline)}</p><button class="style-launch" data-style-id="${project.id}">Edit Creative DNA</button><button class="writer-launch" data-writer-id="${project.id}">Develop Story</button></div><button class="close" data-close-detail>×</button></div>
+    <div class="detail-head"><div><p class="eyebrow" style="color:#e84b38">${safe(project.status.toUpperCase())}</p><h2>${safe(project.title)}</h2><p>${safe(project.logline)}</p><div class="detail-scope"><b>RELEASE PLAN</b><span>${safe(scopeDisplay(project.scope))}</span></div><button class="style-launch" data-style-id="${project.id}">Edit Creative DNA</button><button class="writer-launch" data-writer-id="${project.id}">Develop story / change scope</button></div><button class="close" data-close-detail>×</button></div>
     <div class="style-grid"><div class="style-card"><b>ERA BLEND</b>${safe(style.era_primary)} × ${safe(style.era_secondary)}</div><div class="style-card"><b>VISUAL DNA</b>${safe(Object.values(style.visual).join(' · '))}</div><div class="style-card"><b>STORY DNA</b>${safe(Object.values(style.narrative).join(' · '))}</div></div>
     <h3>Scenes</h3>${project.scenes.length ? project.scenes.map(scene => `<div class="scene"><strong>${scene.position}. ${safe(scene.title)}</strong><br><small>${safe(scene.summary)} · ${scene.shots.length} shots</small></div>`).join('') : '<div class="empty">Scene planning will appear here.</div>'}`;
   openWorkspace(detailDialog);
@@ -302,13 +314,30 @@ function collectStyle(form) {
   return payload;
 }
 
+async function loadWriterScope(projectId) {
+  const host=document.querySelector('#writer-scope-card');if(!host)return;host.innerHTML='<div class="settings-loading">Loading release plan...</div>';
+  try{const scope=await api(`/api/projects/${projectId}/scope`);renderWriterScope(scope);const brief=projects.find(project=>project.id===projectId)?.story_brief,form=document.querySelector('#writer-form');if(!brief){form.elements.format.value={one_off:'short film',trailer:'trailer',feature_film:'feature film',ongoing_series:'episode',limited_series:'limited series'}[scope.release_format]||'short film';form.elements.target_duration_minutes.value=Math.max(1,Math.ceil(scope.target_duration_seconds/60));}}catch(error){host.innerHTML=`<div class="job-error">${safe(error.message)}</div>`;}
+}
+
+function renderWriterScope(scope) {
+  const host=document.querySelector('#writer-scope-card'),minutes=scope.target_duration_seconds%60===0?scope.target_duration_seconds/60:scope.target_duration_seconds,status=scope.story_status==='review_needed'?'Outline needs adaptation':scope.story_status==='aligned'?'Story aligned':'Story not started',unit=scope.target_duration_seconds%60===0?'minutes':'seconds';
+  host.innerHTML=`<header><div><p class="eyebrow">RELEASE PLAN</p><b>${safe(scope.summary)}</b></div><span class="${safe(scope.story_status)}">${safe(status)}</span></header><div class="scope-guidance">${scope.writing_guidance.map(item=>`<p>${safe(item)}</p>`).join('')}</div><details><summary>Change production scope</summary><div id="writer-scope-editor" class="scope-editor"><label>Production type<select name="release_format"><option value="one_off">One-off</option><option value="trailer">Trailer / teaser</option><option value="feature_film">Feature film</option><option value="ongoing_series">Ongoing series</option><option value="limited_series">Limited series</option></select></label><label>Distribution<select name="distribution_channel"><option>YouTube</option><option>TikTok</option><option>Instagram Reels</option><option>Streaming platform</option><option>Theatrical / festival</option><option>Broadcast</option><option>Web / custom</option></select></label><label>Screen shape<select name="aspect_ratio"><option value="16:9">Landscape 16:9</option><option value="9:16">Tall 9:16</option><option value="1:1">Square 1:1</option><option value="4:3">Classic 4:3</option><option value="2.39:1">Cinema 2.39:1</option></select></label><label>Length per release<span class="duration-pair"><input name="target_length" type="number" min="1" value="${minutes}"><select name="target_unit"><option value="minutes" ${unit==='minutes'?'selected':''}>minutes</option><option value="seconds" ${unit==='seconds'?'selected':''}>seconds</option></select></span></label><div class="scope-counts"><label>Releases<input name="installment_count" type="number" min="1" max="1000" value="${scope.installment_count}"></label><label>Seasons<input name="season_count" type="number" min="1" max="100" value="${scope.season_count}"></label></div><label>Notes<textarea name="notes" rows="2">${safe(scope.notes)}</textarea></label><button class="primary" type="button">Save new scope</button></div></details>`;
+  const editor=host.querySelector('#writer-scope-editor');editor.querySelector('[name="release_format"]').value=scope.release_format;editor.querySelector('[name="distribution_channel"]').value=scope.distribution_channel;editor.querySelector('[name="aspect_ratio"]').value=scope.aspect_ratio;editor.querySelector('button').onclick=()=>saveWriterScope(editor,scope.project_id);
+}
+
+async function saveWriterScope(editor,projectId) {
+  const field=name=>editor.querySelector(`[name="${name}"]`),[width,height]=aspectDimensions(field('aspect_ratio').value),seconds=Math.round(Number(field('target_length').value)*(field('target_unit').value==='minutes'?60:1)),button=editor.querySelector('button');button.disabled=true;button.textContent='Updating production...';
+  try{const scope=await api(`/api/projects/${projectId}/scope`,{method:'PUT',body:JSON.stringify({distribution_channel:field('distribution_channel').value,release_format:field('release_format').value,aspect_ratio:field('aspect_ratio').value,width,height,target_duration_seconds:seconds,installment_count:Number(field('installment_count').value),season_count:Number(field('season_count').value),notes:field('notes').value})});await loadProjects();fillStory(projectId);renderWriterScope(scope);refreshAssistantContext();}catch(error){button.disabled=false;button.textContent='Save new scope';editor.insertAdjacentHTML('beforeend',`<div class="job-error">${safe(error.message)}</div>`);}
+}
+
 async function openWriterRoom(projectId) {
   if (!projects.length) await loadProjects();
   if (!projects.length) { projectDialog.showModal(); return; }
   const projectSelect = document.querySelector('#writer-project');
   projectSelect.innerHTML = options(projects.map(p => ({id:String(p.id), label:p.title})), String(projectId || projects[0].id));
-  projectSelect.onchange = () => fillStory(Number(projectSelect.value));
+  projectSelect.onchange = () => {const id=Number(projectSelect.value);fillStory(id);loadWriterScope(id);};
   fillStory(Number(projectSelect.value));
+  loadWriterScope(Number(projectSelect.value));
   openWorkspace(writerDialog);
 }
 
@@ -1163,8 +1192,48 @@ async function deleteIntegration(key) {
   await api(`/api/settings/integrations/${encodeURIComponent(key)}`,{method:'DELETE'});integrationSettings=await api('/api/settings/integrations');renderIntegrationSettings();
 }
 
+let activeAssistantProjectId=null;
+
+function assistantPage() {
+  const openDialog=workspaceDialogs.find(dialog=>dialog.hasAttribute('open'));return workspaceKeys.get(openDialog)||'productions';
+}
+
+function assistantScreenContext() {
+  const openDialog=workspaceDialogs.find(dialog=>dialog.hasAttribute('open')),root=openDialog||document.querySelector('#dashboard-home'),heading=root?.querySelector('h2,h1')?.textContent?.trim()||'Productions',selection=root?.querySelector('.active h3,.active b,.timeline-clip.active b,.cue-item.active b,.character-pill.active b')?.textContent?.trim()||heading;return{heading,selection,workspace:assistantPage()};
+}
+
+function refreshAssistantContext() {
+  const host=document.querySelector('#assistant-context');if(!host)return;const context=assistantScreenContext(),project=projects.find(item=>item.id===Number(document.querySelector('#assistant-project')?.value))||currentFlowProject();host.innerHTML=`<span>${safe(context.heading)}</span><b>${safe(project?.title||'Choose a production')}</b>`;
+}
+
+async function openAssistant() {
+  const panel=document.querySelector('#assistant-panel'),select=document.querySelector('#assistant-project');panel.hidden=false;document.querySelector('#assistant-launch').setAttribute('aria-expanded','true');if(!projects.length){document.querySelector('#assistant-messages').innerHTML='<div class="assistant-empty">Create a production first so I have story and workflow context to work from.</div>';select.innerHTML='';refreshAssistantContext();return;}const preferred=currentFlowProject()?.id||activeAssistantProjectId||projects[0].id;select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(preferred));activeAssistantProjectId=Number(select.value);select.onchange=()=>{activeAssistantProjectId=Number(select.value);loadAssistantHistory();refreshAssistantContext();};refreshAssistantContext();await loadAssistantHistory();document.querySelector('#assistant-input').focus();
+}
+
+function closeAssistant() { document.querySelector('#assistant-panel').hidden=true;document.querySelector('#assistant-launch').setAttribute('aria-expanded','false'); }
+
+async function loadAssistantHistory() {
+  if(!activeAssistantProjectId)return;const host=document.querySelector('#assistant-messages');host.innerHTML='<div class="assistant-thinking">Reading the production...</div>';try{const messages=await api(`/api/projects/${activeAssistantProjectId}/assistant/messages`);host.innerHTML=messages.length?messages.map(message=>assistantMessageHtml(message)).join(''):`<div class="assistant-welcome"><b>I can see where you are and what this production has completed.</b><span>Ask me to co-write, co-direct, check continuity, explain the workflow, or identify the most useful next step.</span></div>`;host.scrollTop=host.scrollHeight;}catch(error){host.innerHTML=`<div class="job-error">${safe(error.message)}</div>`;}
+}
+
+function assistantMessageHtml(message,actions=[]) {
+  return `<article class="assistant-message ${safe(message.role)}"><small>${message.role==='assistant'?'Kizuna':'You'} · ${safe(message.page.replaceAll('_',' '))}</small><p>${safe(message.content).replaceAll('\n','<br>')}</p>${actions.length?`<div class="assistant-actions">${actions.map(action=>`<button type="button" data-assistant-workspace="${safe(action.workspace)}">${safe(action.label)}</button>`).join('')}</div>`:''}</article>`;
+}
+
+async function askAssistant(event) {
+  event.preventDefault();const input=document.querySelector('#assistant-input'),message=input.value.trim();if(!message||!activeAssistantProjectId)return;const host=document.querySelector('#assistant-messages'),page=assistantPage();host.insertAdjacentHTML('beforeend',assistantMessageHtml({role:'user',page,content:message}));input.value='';host.insertAdjacentHTML('beforeend','<div class="assistant-thinking">Thinking with the production context...</div>');host.scrollTop=host.scrollHeight;try{const reply=await api(`/api/projects/${activeAssistantProjectId}/assistant`,{method:'POST',body:JSON.stringify({message,page,screen_context:assistantScreenContext()})});host.querySelector('.assistant-thinking:last-of-type')?.remove();host.insertAdjacentHTML('beforeend',assistantMessageHtml(reply.message,reply.actions));wireAssistantActions();host.scrollTop=host.scrollHeight;}catch(error){host.querySelector('.assistant-thinking:last-of-type')?.remove();host.insertAdjacentHTML('beforeend',`<div class="job-error">${safe(error.message)}</div>`);}
+}
+
+function wireAssistantActions() {
+  document.querySelectorAll('[data-assistant-workspace]').forEach(button=>button.onclick=()=>{const key=button.dataset.assistantWorkspace,id=activeAssistantProjectId,openers={writer:openWriterRoom,crew:openCrewStudio,style:openStyleLab,characters:openCharacterStudio,worlds:openWorldStudio,shots:openShotPlanner,timeline:openTimeline,audio:openAudioStudio,compositor:openCompositor,render:openRenderFarm,settings:openSettings,productions:showDashboard};openers[key]?.(id);refreshAssistantContext();});
+}
+
 function collectStory(form) {
   return {premise:form.elements.premise.value, format:form.elements.format.value, target_duration_minutes:Number(form.elements.target_duration_minutes.value), genre:form.elements.genre.value, audience:form.elements.audience.value, themes:form.elements.themes.value.split(',').map(value => value.trim()).filter(Boolean)};
+}
+
+function collectNewProduction(form) {
+  const [width,height]=aspectDimensions(form.elements.aspect_ratio.value),seconds=Math.round(Number(form.elements.target_length.value)*(form.elements.target_unit.value==='minutes'?60:1));return{title:form.elements.title.value,logline:form.elements.logline.value,scope:{distribution_channel:form.elements.distribution_channel.value,release_format:form.elements.release_format.value,aspect_ratio:form.elements.aspect_ratio.value,width,height,target_duration_seconds:seconds,installment_count:Number(form.elements.installment_count.value),season_count:Number(form.elements.season_count.value),notes:form.elements.scope_notes.value}};
 }
 
 document.querySelector('#new-project').onclick = () => projectDialog.showModal();
@@ -1213,7 +1282,7 @@ document.querySelector('#save-voice').onclick = async () => { const characterId=
 document.querySelector('#save-voice-rights').onclick = async () => { const characterId=Number(document.querySelector('#voice-character').value);if(!characterId)return;await api(`/api/characters/${characterId}/voice-consent`,{method:'PUT',body:JSON.stringify({source_type:'built_in_ai',subject_name:'',consent_confirmed:document.querySelector('#voice-consent').checked,disclosure_required:true,notes:'Creator confirmed authorized AI voice use.'})}); };
 document.querySelector('#add-pronunciation').onclick = async () => { const term=document.querySelector('#pronunciation-term').value.trim(), pronunciation=document.querySelector('#pronunciation-value').value.trim();if(!term||!pronunciation||!activeAudioStudio)return;await api(`/api/projects/${activeAudioStudio.project_id}/pronunciations`,{method:'POST',body:JSON.stringify({character_id:Number(document.querySelector('#voice-character').value)||null,term,pronunciation,language:'English',notes:''})});document.querySelector('#pronunciation-term').value='';document.querySelector('#pronunciation-value').value=''; };
 document.querySelector('#cue-form').onsubmit = async event => { event.preventDefault(); const form=event.target; const payload={clip_id:null,character_id:form.elements.cue_character.value?Number(form.elements.cue_character.value):null,start_seconds:Number(form.elements.cue_start.value),duration_seconds:Number(form.elements.cue_duration.value),text:form.elements.cue_text.value,direction:form.elements.cue_direction.value}; const cue=activeAudioCueId?await api(`/api/audio-cues/${activeAudioCueId}`,{method:'PUT',body:JSON.stringify(payload)}):await api(`/api/audio-tracks/${Number(form.elements.cue_track.value)}/cues`,{method:'POST',body:JSON.stringify(payload)}); await refreshAudioAndSelect(cue.id); };
-document.querySelector('#build-timeline').onclick = async () => { const projectId=Number(document.querySelector('#timeline-project').value); try { activeTimeline=await api(`/api/projects/${projectId}/timeline/build`,{method:'POST',body:JSON.stringify({fps:24,width:1920,height:1080})}); renderTimeline(); } catch(error) { document.querySelector('#timeline-clips').innerHTML=`<div class="job-error">${safe(error.message)}</div>`; } };
+document.querySelector('#build-timeline').onclick = async () => { const projectId=Number(document.querySelector('#timeline-project').value); try { const scope=await api(`/api/projects/${projectId}/scope`);activeTimeline=await api(`/api/projects/${projectId}/timeline/build`,{method:'POST',body:JSON.stringify({fps:24,width:scope.width,height:scope.height})}); renderTimeline(); } catch(error) { document.querySelector('#timeline-clips').innerHTML=`<div class="job-error">${safe(error.message)}</div>`; } };
 document.querySelector('#clip-form').onsubmit = async event => { event.preventDefault(); const form=event.target; activeTimeline=await api(`/api/timeline-clips/${activeClipId}`,{method:'PUT',body:JSON.stringify({duration_seconds:Number(form.elements.clip_duration.value),transition:form.elements.clip_transition.value,transition_duration:Number(form.elements.clip_transition_duration.value),audio_cue:form.elements.clip_audio_cue.value})}); renderTimeline(); };
 document.querySelector('#clip-earlier').onclick = () => moveClip(-1);
 document.querySelector('#clip-later').onclick = () => moveClip(1);
@@ -1222,7 +1291,7 @@ document.querySelector('#render-master').onclick = async () => { if(!activeTimel
 document.querySelector('#plan-segmented-export').onclick = async () => { if(!activeTimeline)return;const button=document.querySelector('#plan-segmented-export');button.disabled=true;button.textContent='Starting farm…';try{renderSegmentedExport(await api(`/api/timelines/${activeTimeline.id}/master-exports/distributed`,{method:'POST',body:JSON.stringify({profile:document.querySelector('#master-profile').value,segment_size:Number(document.querySelector('#segment-size').value)})}));}catch(error){document.querySelector('#segmented-export-result').innerHTML=`<div class="job-error">${safe(error.message)}</div>`;}finally{button.disabled=false;button.textContent='Start farm export';} };
 document.querySelector('#expand-story').onclick = async () => { const projectId = Number(document.querySelector('#shot-project').value); try { await api(`/api/projects/${projectId}/expand-story`, {method:'POST',body:JSON.stringify({shots_per_beat:Number(document.querySelector('#shots-per-beat').value)})}); await loadProjects(); renderShotTree(projectId); } catch(error) { document.querySelector('#shot-tree').innerHTML = `<div class="job-error">${safe(error.message)}</div>`; } };
 document.querySelector('#refresh-farm').onclick = () => refreshRenderFarm();
-document.querySelector('#project-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); await api('/api/projects', {method:'POST', body:JSON.stringify(data)}); event.target.reset(); projectDialog.close(); await loadProjects(); showDashboard(); };
+document.querySelector('#project-form').onsubmit = async event => { event.preventDefault();await api('/api/projects', {method:'POST', body:JSON.stringify(collectNewProduction(event.target))}); event.target.reset();projectDialog.close();await loadProjects();showDashboard(); };
 document.querySelector('#style-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#style-project').value); await api(`/api/projects/${projectId}/style`, {method:'PUT', body:JSON.stringify(collectStyle(event.target))}); styleDialog.close(); await loadProjects(); openProject(projectId); };
 document.querySelector('#writer-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#writer-project').value); const brief = await api(`/api/projects/${projectId}/story`, {method:'PUT', body:JSON.stringify(collectStory(event.target))}); await loadProjects(); renderStory(brief); };
 document.querySelector('#character-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#character-project').value); const character = activeCharacterId ? await api(`/api/characters/${activeCharacterId}`, {method:'PUT', body:JSON.stringify(collectCharacter(event.target))}) : await api(`/api/projects/${projectId}/characters`, {method:'POST', body:JSON.stringify(collectCharacter(event.target))}); activeCharacterId = character.id; const design = await api(`/api/characters/${character.id}/design`, {method:'PUT', body:JSON.stringify(collectCharacterDesign(event.target))}); await loadProjects(); renderCharacterRoster(projectId); renderCharacterDesign(character, design); loadCharacterStory(projectId,character.id); };
@@ -1235,6 +1304,10 @@ document.querySelector('#audio-playhead').onchange=()=>{if(activeAudioStudio)ren
 document.querySelector('#split-audio-region').onclick=splitSelectedAudioRegion;
 document.querySelector('#duplicate-audio-region').onclick=duplicateSelectedAudioRegion;
 document.querySelector('#delete-audio-region').onclick=deleteSelectedAudioRegion;
+document.querySelector('#assistant-launch').onclick=openAssistant;
+document.querySelector('#assistant-close').onclick=closeAssistant;
+document.querySelector('#assistant-form').onsubmit=askAssistant;
+document.querySelectorAll('.assistant-prompts button').forEach(button=>button.onclick=()=>{document.querySelector('#assistant-input').value=button.textContent;document.querySelector('#assistant-input').focus();});
 setupCraftWorkspaces();
 setupWorkspacePopouts();
 loadProjects().then(openRequestedWorkspace).catch(error => projectsEl.innerHTML = `<div class="empty">Could not load the studio: ${safe(error.message)}</div>`);

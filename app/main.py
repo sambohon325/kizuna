@@ -22,8 +22,8 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AssetReview, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, IntegrationProfile, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AnimaticRender, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, IntegrationProfile, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.storage import LocalProductionStorage
 from app.shot_development import compile_storyboard_prompt
@@ -58,7 +58,7 @@ CREW_ROLES = {
 
 
 def project_query():
-    return select(Project).options(selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters).selectinload(Character.design), selectinload(Project.locations).selectinload(WorldLocation.design), selectinload(Project.scenes).selectinload(Scene.shots).selectinload(Shot.plan))
+    return select(Project).options(selectinload(Project.scope), selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters).selectinload(Character.design), selectinload(Project.locations).selectinload(WorldLocation.design), selectinload(Project.scenes).selectinload(Scene.shots).selectinload(Shot.plan))
 
 
 def asset_group(asset_type: str, asset_id: int, db: Session):
@@ -197,9 +197,42 @@ def list_projects(db: Session = Depends(get_db)):
     return db.scalars(project_query().order_by(Project.updated_at.desc())).unique().all()
 
 
+RELEASE_FORMAT_LABELS = {"one_off": "One-off", "trailer": "Trailer", "feature_film": "Feature film", "ongoing_series": "Ongoing series", "limited_series": "Limited series"}
+
+
+def story_format_for_scope(scope: ProductionScope) -> str:
+    return {"one_off": "short film", "trailer": "trailer", "feature_film": "feature film", "ongoing_series": "episode", "limited_series": "limited series"}.get(scope.release_format, "short film")
+
+
+def scope_response(scope: ProductionScope) -> dict:
+    minutes = scope.target_duration_seconds / 60
+    duration = f"{int(minutes)} min" if minutes.is_integer() else f"{scope.target_duration_seconds} sec"
+    orientation = "vertical" if scope.height > scope.width else "square" if scope.height == scope.width else "landscape"
+    guidance = []
+    if scope.height > scope.width:
+        guidance.append("Compose for a vertical frame, readable close-ups, and fast visual clarity on a phone screen.")
+    else:
+        guidance.append("Use the horizontal frame for staging, geography, and wider character relationships.")
+    if scope.target_duration_seconds <= 90:
+        guidance.append("Open on the central hook immediately, limit the story to one decisive turn, and end on a strong payoff or continuation beat.")
+    elif scope.release_format == "trailer":
+        guidance.append("Sell the dramatic promise without resolving it: hook, world, escalation, signature reveal, and final button.")
+    elif scope.release_format in {"ongoing_series", "limited_series"}:
+        guidance.append("Build an episode engine, a satisfying installment arc, and a closing turn that advances the larger series spine.")
+    elif scope.release_format == "feature_film":
+        guidance.append("Track sustained act escalation, character transformation, midpoint reversal, crisis, and a feature-scale climax.")
+    else:
+        guidance.append("Shape one complete dramatic arc proportionate to the target runtime.")
+    if scope.installment_count > 1:
+        guidance.append(f"Plan continuity across {scope.installment_count} installments and protect escalation between releases.")
+    return {**ProductionScopeRead.model_validate(scope).model_dump(exclude={"summary", "writing_guidance"}), "summary": f"{RELEASE_FORMAT_LABELS.get(scope.release_format, scope.release_format)} · {scope.distribution_channel} · {scope.aspect_ratio} {orientation} · {duration}", "writing_guidance": guidance}
+
+
 @app.post("/api/projects", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     project = Project(title=payload.title, logline=payload.logline)
+    if payload.scope:
+        project.scope = ProductionScope(**payload.scope.model_dump())
     project.style_profile = StyleProfile(
         era_secondary="2020s",
         visual={"linework": "bold variable ink", "palette": "controlled cinematic", "shading": "two-tone cel"},
@@ -218,6 +251,123 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(404, "Project not found")
     return project
+
+
+@app.get("/api/projects/{project_id}/scope", response_model=ProductionScopeRead)
+def get_project_scope(project_id: int, db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    scope = db.scalar(select(ProductionScope).where(ProductionScope.project_id == project_id))
+    if scope is None:
+        brief = db.scalar(select(StoryBrief).where(StoryBrief.project_id == project_id))
+        release_format = {"feature film": "feature_film", "limited series": "limited_series", "episode": "ongoing_series", "trailer": "trailer"}.get(brief.format if brief else "", "one_off")
+        scope = ProductionScope(project_id=project_id, release_format=release_format, target_duration_seconds=(brief.target_duration_minutes * 60 if brief else 300), story_status="aligned" if brief else "not_started")
+        db.add(scope); db.commit(); db.refresh(scope)
+    return scope_response(scope)
+
+
+@app.put("/api/projects/{project_id}/scope", response_model=ProductionScopeRead)
+def update_project_scope(project_id: int, payload: ProductionScopeInput, db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    scope = db.scalar(select(ProductionScope).where(ProductionScope.project_id == project_id))
+    if scope is None:
+        scope = ProductionScope(project_id=project_id)
+        db.add(scope)
+    changed = any(getattr(scope, key) != value for key, value in payload.model_dump().items())
+    for key, value in payload.model_dump().items():
+        setattr(scope, key, value)
+    brief = db.scalar(select(StoryBrief).where(StoryBrief.project_id == project_id))
+    if brief and changed:
+        brief.format = story_format_for_scope(scope)
+        brief.target_duration_minutes = max(1, (scope.target_duration_seconds + 59) // 60)
+        scope.story_status = "review_needed"
+    elif not brief:
+        scope.story_status = "not_started"
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == project_id))
+    if timeline and changed and (timeline.width != scope.width or timeline.height != scope.height):
+        timeline.width, timeline.height, timeline.status = scope.width, scope.height, "needs-rebuild"
+    db.commit(); db.refresh(scope)
+    return scope_response(scope)
+
+
+ASSISTANT_PAGE_GUIDANCE = {
+    "productions": ("Start from the release goal, then make the next production decision that unlocks downstream work.", [{"label": "Open Writer's Room", "workspace": "writer"}, {"label": "Review AI Crew", "workspace": "crew"}]),
+    "writer": ("Protect the production scope while shaping premise, structure, causality, and the emotional turn of each beat.", [{"label": "Open Story Map", "workspace": "writer"}, {"label": "Develop characters", "workspace": "characters"}]),
+    "style": ("Translate references into original craft choices that remain usable across characters, worlds, shots, and sound.", [{"label": "Develop characters", "workspace": "characters"}, {"label": "Design worlds", "workspace": "worlds"}]),
+    "characters": ("Connect visual identity to story want, need, contradiction, relationships, and the approved emotional arc.", [{"label": "Open Story Map", "workspace": "writer"}, {"label": "Plan shots", "workspace": "shots"}]),
+    "worlds": ("Make geography, staging zones, lighting, and continuity reusable rather than treating each frame as an isolated image.", [{"label": "Plan shots", "workspace": "shots"}, {"label": "Open Style Lab", "workspace": "style"}]),
+    "shots": ("Check that every shot changes story information, performance, or tension and respects the target frame shape.", [{"label": "Open Timeline", "workspace": "timeline"}, {"label": "Open Compositor", "workspace": "compositor"}]),
+    "timeline": ("Shape pacing against the target runtime, preserve clear action, and leave intentional room for dialogue and sound.", [{"label": "Open Audio", "workspace": "audio"}, {"label": "Review shots", "workspace": "shots"}]),
+    "audio": ("Build sound around story perspective: performance first, then ambience, effects, music, and final mix clarity.", [{"label": "Open Timeline", "workspace": "timeline"}, {"label": "Review characters", "workspace": "characters"}]),
+    "compositor": ("Preserve approved asset identity, depth, camera intent, and continuity while finishing the selected shot.", [{"label": "Open Render", "workspace": "render"}, {"label": "Review shots", "workspace": "shots"}]),
+    "render": ("Verify picture, sound, aspect ratio, and delivery requirements before spending full-resolution render resources.", [{"label": "Open Timeline", "workspace": "timeline"}, {"label": "Open Settings", "workspace": "settings"}]),
+    "crew": ("Delegate only the departments the creator wants, keep changes reviewable, and resolve the earliest real blocker first.", [{"label": "Open Writer's Room", "workspace": "writer"}, {"label": "Open production", "workspace": "productions"}]),
+    "settings": ("Choose providers and handoffs that match studio privacy, quality, cost, and existing-tool requirements.", [{"label": "Open AI Crew", "workspace": "crew"}, {"label": "Open production", "workspace": "productions"}]),
+}
+
+
+def assistant_project_summary(project: Project, scope: ProductionScope | None) -> dict:
+    shots = [shot for scene in project.scenes for shot in scene.shots]
+    return {"project_id": project.id, "title": project.title, "scope": scope_response(scope)["summary"] if scope else "Scope not set", "story_status": scope.story_status if scope else "not_started", "characters": len(project.characters), "locations": len(project.locations), "scenes": len(project.scenes), "shots": len(shots)}
+
+
+def local_assistant_reply(project: Project, scope: ProductionScope | None, request: AssistantRequest) -> tuple[str, list[dict[str, str]]]:
+    page = request.page if request.page in ASSISTANT_PAGE_GUIDANCE else "productions"
+    craft_guidance, actions = ASSISTANT_PAGE_GUIDANCE[page]
+    summary = assistant_project_summary(project, scope)
+    screen = request.screen_context
+    selected = screen.get("selection") or screen.get("heading") or "the current workspace"
+    needs = []
+    if scope and scope.story_status == "review_needed":
+        needs.append("The production scope changed, so the existing outline needs a deliberate adaptation pass.")
+    if not project.story_brief:
+        needs.append("The story foundation has not been developed yet.")
+    elif not project.characters:
+        needs.append("The story exists, but the principal cast has not been defined.")
+    elif not project.locations:
+        needs.append("The cast exists, but recurring worlds and staging geography still need definition.")
+    elif not project.scenes:
+        needs.append("The foundations are ready for scene and shot coverage.")
+    lower = request.message.lower()
+    if any(word in lower for word in ("scope", "series", "feature", "trailer", "tiktok", "youtube", "vertical", "length")) and scope:
+        guidance = " ".join(scope_response(scope)["writing_guidance"])
+    elif any(word in lower for word in ("write", "story", "script", "beat", "dialogue")):
+        guidance = "Start by stating what must change in this scene or beat, who drives that change, and what visible consequence carries into the next unit."
+    elif any(word in lower for word in ("direct", "camera", "shot", "frame", "stage")):
+        guidance = "Choose the performance and story information first, then use framing, lens, movement, and duration to make that change readable."
+    elif any(word in lower for word in ("character", "arc", "relationship")):
+        guidance = "Tie the character's external goal to the misbelief under pressure, then place the relationship or choice that forces a visible change."
+    else:
+        guidance = craft_guidance
+    response = f"You are in {page.replace('_', ' ').title()} working on {selected} for {project.title}. This production is planned as {summary['scope']}. {guidance}"
+    if needs:
+        response += "\n\nWhat I would protect next: " + " ".join(needs)
+    response += f"\n\nYou asked: {request.message.strip()}"
+    return response, actions
+
+
+@app.get("/api/projects/{project_id}/assistant/messages", response_model=list[AssistantMessageRead])
+def assistant_history(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    return db.scalars(select(AssistantMessage).where(AssistantMessage.project_id == project_id).order_by(AssistantMessage.id.desc()).limit(40)).all()[::-1]
+
+
+@app.post("/api/projects/{project_id}/assistant", response_model=AssistantReply)
+def ask_project_assistant(project_id: int, request: AssistantRequest, db: Session = Depends(get_db)):
+    project = db.scalars(project_query().where(Project.id == project_id)).one_or_none()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    scope = db.scalar(select(ProductionScope).where(ProductionScope.project_id == project_id))
+    user_message = AssistantMessage(project_id=project_id, page=request.page, role="user", content=request.message, context=request.screen_context)
+    db.add(user_message)
+    content, actions = local_assistant_reply(project, scope, request)
+    assistant_message = AssistantMessage(project_id=project_id, page=request.page, role="assistant", content=content, context={"actions": actions})
+    db.add(assistant_message); db.commit(); db.refresh(assistant_message)
+    return {"message": assistant_message, "actions": actions, "project_summary": assistant_project_summary(project, scope)}
 
 
 def mark_project_milestone(project_id: int, key: str, db: Session) -> None:
@@ -442,6 +592,9 @@ def develop_project_story(project_id: int, payload: StoryBriefInput, db: Session
     project = db.get(Project, project_id)
     if not project:
         raise HTTPException(404, "Project not found")
+    scope = db.scalar(select(ProductionScope).where(ProductionScope.project_id == project_id))
+    if scope:
+        payload = payload.model_copy(update={"format": story_format_for_scope(scope), "target_duration_minutes": max(1, (scope.target_duration_seconds + 59) // 60)})
     brief = db.scalar(select(StoryBrief).where(StoryBrief.project_id == project_id))
     if brief is None:
         brief = StoryBrief(project_id=project_id)
@@ -451,6 +604,8 @@ def develop_project_story(project_id: int, payload: StoryBriefInput, db: Session
         setattr(brief, key, value)
     brief.synopsis = synopsis
     brief.beats = beats
+    if scope:
+        scope.story_status = "aligned"
     db.commit()
     db.refresh(brief)
     return brief
@@ -463,6 +618,9 @@ def update_story_outline(project_id: int, payload: StoryOutlineUpdate, db: Sessi
         raise HTTPException(404, "Develop the story before editing its outline")
     brief.synopsis = payload.synopsis
     brief.beats = payload.beats
+    scope = db.scalar(select(ProductionScope).where(ProductionScope.project_id == project_id))
+    if scope:
+        scope.story_status = "aligned"
     db.commit()
     db.refresh(brief)
     return brief
@@ -1409,12 +1567,14 @@ def perform_voice_action(action: CrewAction, db: Session) -> CrewAction:
 def writer_project_context(project: Project, db: Session) -> dict:
     style = db.scalar(select(StyleProfile).where(StyleProfile.project_id == project.id))
     brief = db.scalar(select(StoryBrief).where(StoryBrief.project_id == project.id))
+    scope = db.scalar(select(ProductionScope).where(ProductionScope.project_id == project.id))
     characters = db.scalars(select(Character).where(Character.project_id == project.id).order_by(Character.id)).all()
     return {
         "title": project.title,
         "logline": project.logline,
         "style": {"era_primary": style.era_primary, "era_secondary": style.era_secondary, "direction": style.direction, "narrative": style.narrative, "archetypes": style.archetypes} if style else {},
         "story_brief": {"premise": brief.premise, "format": brief.format, "target_duration_minutes": brief.target_duration_minutes, "audience": brief.audience, "genre": brief.genre, "themes": brief.themes, "synopsis": brief.synopsis, "beats": brief.beats} if brief else None,
+        "production_scope": scope_response(scope) if scope else None,
         "characters": [{"name": character.name, "role": character.role, "want": character.want, "need": character.need, "contradiction": character.contradiction} for character in characters],
         "locations": [{"name": location.name, "narrative_function": location.narrative_function, "description": location.description} for location in db.scalars(select(WorldLocation).where(WorldLocation.project_id == project.id).order_by(WorldLocation.id)).all()],
     }
@@ -1433,6 +1593,9 @@ def perform_writer_action(action: CrewAction, db: Session) -> CrewAction:
         db.add(brief)
     for key in required:
         setattr(brief, key, proposal[key])
+    scope = db.scalar(select(ProductionScope).where(ProductionScope.project_id == action.project_id))
+    if scope:
+        scope.story_status = "aligned"
     action.status, action.error = "completed", ""
     action.result = {"story_brief_id": brief.id, "provider": action.payload.get("provider", "simulation"), "applied_fields": sorted(required), "changes": proposal.get("changes", [])}
     db.commit(); db.refresh(brief)
@@ -2412,14 +2575,7 @@ def render_master(timeline_id: int, payload: MasterRenderRequest, db: Session = 
     timeline = db.get(Timeline, timeline_id)
     if not timeline:
         raise HTTPException(404, "Timeline not found")
-    if payload.profile == "4k":
-        width, height = 3840, 2160
-    elif payload.profile == "1080p":
-        width, height = 1920, 1080
-    else:
-        scale = min(1, 1280 / timeline.width, 720 / timeline.height)
-        width = max(2, int(timeline.width * scale) // 2 * 2)
-        height = max(2, int(timeline.height * scale) // 2 * 2)
+    width, height = master_dimensions(timeline, payload.profile)
     fps = payload.fps or timeline.fps
     base_settings = {"kind": "production_master", "profile": payload.profile, "fps": fps, "width": width, "height": height}
     render = AnimaticRender(timeline_id=timeline.id, status="rendering", render_settings=base_settings)
@@ -2462,10 +2618,11 @@ def export_job_response(job: MasterExportJob, db: Session):
 
 
 def master_dimensions(timeline: Timeline, profile: str):
-    if profile == "4k":
-        return 3840, 2160
-    if profile == "1080p":
-        return 1920, 1080
+    if profile in {"4k", "1080p"}:
+        long_edge, short_edge = (3840, 2160) if profile == "4k" else (1920, 1080)
+        longest, shortest = max(timeline.width, timeline.height), min(timeline.width, timeline.height)
+        scale = min(long_edge / longest, short_edge / shortest)
+        return max(2, int(timeline.width * scale) // 2 * 2), max(2, int(timeline.height * scale) // 2 * 2)
     scale = min(1, 1280 / timeline.width, 720 / timeline.height)
     return max(2, int(timeline.width * scale) // 2 * 2), max(2, int(timeline.height * scale) // 2 * 2)
 

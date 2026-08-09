@@ -15,7 +15,7 @@ def _local_proposal(project: dict[str, Any], request: WriterProposalRequest) -> 
     brief = StoryBriefInput(**request.model_dump(exclude={"objective", "provider"}))
     synopsis, beats = develop_story(project["title"], project.get("logline", ""), brief)
     current = project.get("story_brief") or {}
-    changes = ["Created an eight-beat dramatic spine", "Aligned the premise, genre, audience, and themes"]
+    changes = [f"Created a {len(beats)}-beat dramatic spine proportioned to the release format", "Aligned the premise, genre, audience, and themes"]
     if current:
         changes = ["Rebuilt the dramatic spine from the current brief", "Preserved editable production metadata"]
     return WriterProposal(

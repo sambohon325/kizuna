@@ -15,7 +15,8 @@ services:
     environment:
       KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
       KIZUNA_ENVIRONMENT: production
-      KIZUNA_PUBLIC_URL: ${KIZUNA_PUBLIC_URL:-https://kizuna.technology}
+      KIZUNA_PUBLIC_URL: ${KIZUNA_PUBLIC_URL:?Set the full Kizuna app URL}
+      KIZUNA_MARKETING_URL: ${KIZUNA_MARKETING_URL:-}
       KIZUNA_AUTH_REQUIRED: "true"
       KIZUNA_COOKIE_SECURE: "true"
       KIZUNA_BOOTSTRAP_ADMIN_KEY: ${KIZUNA_BOOTSTRAP_ADMIN_KEY:?Set a strong first-run studio setup key}

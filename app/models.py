@@ -48,6 +48,21 @@ class ProjectMembership(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class StudioInvitation(Base):
+    __tablename__ = "studio_invitations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(320))
+    display_name: Mapped[str] = mapped_column(String(160), default="")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    project_roles: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    invited_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Project(Base):
     __tablename__ = "projects"
 

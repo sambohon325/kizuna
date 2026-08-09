@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Res
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
@@ -25,7 +25,7 @@ from app.database import SessionLocal, get_db
 from app.schema_migrations import database_revision, migrate_database
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
 from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
@@ -44,7 +44,7 @@ from app.director_agent import DirectorAgentError, create_director_proposal
 from app.visual_agents import VisualAgentError, create_background_design_proposal, create_character_design_proposal
 from app.animator_agent import AnimatorAgentError, create_animator_proposal
 from app.editor_agent import EditorAgentError, create_editor_proposal
-from app.auth import CSRF_COOKIE, SESSION_COOKIE, create_session, has_membership, hash_password, normalize_email, project_for_path, project_for_render_uri, public_path, request_identity, safe_render_path, token_hash, user_project_ids, utcnow as auth_utcnow, verify_password
+from app.auth import CSRF_COOKIE, SESSION_COOKIE, create_session, hash_password, normalize_email, project_for_path, project_for_render_uri, project_membership, public_path, request_identity, safe_render_path, token_hash, user_project_ids, utcnow as auth_utcnow, verify_password
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
@@ -62,6 +62,26 @@ class AuthSetupInput(BaseModel):
 class AuthLoginInput(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=256)
+
+
+class ProjectAccessInput(BaseModel):
+    project_id: int
+    role: str = Field(pattern="^(owner|editor|viewer)$")
+
+
+class StudioInvitationInput(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    display_name: str = Field(default="", max_length=160)
+    project_access: list[ProjectAccessInput] = Field(min_length=1, max_length=100)
+
+
+class InvitationAcceptInput(BaseModel):
+    display_name: str = Field(min_length=1, max_length=160)
+    password: str = Field(min_length=12, max_length=256)
+
+
+class MembershipUpdateInput(BaseModel):
+    role: str = Field(pattern="^(owner|editor|viewer|remove)$")
 
 
 def set_auth_cookies(response: Response, session_token: str, csrf_token: str) -> None:
@@ -97,8 +117,12 @@ async def authenticate_and_authorize(request: Request, call_next):
             project_id = project_for_render_uri(db, path)
             if project_id is None:
                 return JSONResponse(status_code=404, content={"detail": "Media not found"})
-        if project_id is not None and not has_membership(db, user.id, project_id):
-            return JSONResponse(status_code=404, content={"detail": "Production not found"})
+        if project_id is not None:
+            membership = project_membership(db, user.id, project_id)
+            if membership is None:
+                return JSONResponse(status_code=404, content={"detail": "Production not found"})
+            if request.method in {"POST", "PUT", "PATCH", "DELETE"} and membership.role == "viewer":
+                return JSONResponse(status_code=403, content={"detail": "Viewer access is read-only"})
     return await call_next(request)
 
 
@@ -222,7 +246,7 @@ def health():
 
 @app.get("/api/auth/status")
 def auth_status(db: Session = Depends(get_db)):
-    return {"auth_required": settings.auth_required, "setup_required": settings.auth_required and db.scalar(select(User.id).limit(1)) is None, "public_url": settings.public_url}
+    return {"auth_required": settings.auth_required, "setup_required": settings.auth_required and db.scalar(select(User.id).limit(1)) is None, "public_url": settings.public_url, "marketing_url": settings.marketing_url}
 
 
 @app.post("/api/auth/setup")
@@ -291,6 +315,112 @@ def sign_out(request: Request, response: Response, db: Session = Depends(get_db)
             db.delete(session); db.commit()
     response.delete_cookie(SESSION_COOKIE, path="/")
     response.delete_cookie(CSRF_COOKIE, path="/")
+
+
+def invitation_response(invitation: StudioInvitation, db: Session) -> dict:
+    titles = {item.id: item.title for item in db.scalars(select(Project).where(Project.id.in_([entry.get("project_id") for entry in invitation.project_roles]))).all()}
+    return {"id": invitation.id, "email": invitation.email, "display_name": invitation.display_name, "project_access": [{**entry, "project_title": titles.get(entry.get("project_id"), "Production")} for entry in invitation.project_roles], "expires_at": invitation.expires_at, "accepted_at": invitation.accepted_at, "revoked_at": invitation.revoked_at, "created_at": invitation.created_at}
+
+
+@app.get("/api/auth/invitations/{invitation_token}")
+def inspect_invitation(invitation_token: str, db: Session = Depends(get_db)):
+    invitation = db.scalar(select(StudioInvitation).where(StudioInvitation.token_hash == token_hash(invitation_token)))
+    if not invitation or invitation.revoked_at or invitation.accepted_at or invitation.expires_at <= auth_utcnow():
+        raise HTTPException(404, "Invitation is invalid or expired")
+    return invitation_response(invitation, db)
+
+
+@app.post("/api/auth/invitations/{invitation_token}")
+def accept_invitation(invitation_token: str, payload: InvitationAcceptInput, response: Response, db: Session = Depends(get_db)):
+    invitation = db.scalar(select(StudioInvitation).where(StudioInvitation.token_hash == token_hash(invitation_token)))
+    if not invitation or invitation.revoked_at or invitation.accepted_at or invitation.expires_at <= auth_utcnow():
+        raise HTTPException(404, "Invitation is invalid or expired")
+    if db.scalar(select(User.id).where(User.email == invitation.email)) is not None:
+        raise HTTPException(409, "An account already uses this email. Sign in and ask the studio administrator to add production access.")
+    user = User(email=invitation.email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="creator", last_sign_in_at=auth_utcnow())
+    db.add(user)
+    try:
+        db.flush()
+        for access in invitation.project_roles:
+            db.add(ProjectMembership(project_id=int(access["project_id"]), user_id=user.id, role=str(access["role"])))
+        invitation.accepted_at = auth_utcnow()
+        session_token, csrf_token, _ = create_session(user, db)
+        db.commit()
+    except IntegrityError:
+        db.rollback(); raise HTTPException(409, "This invitation can no longer be accepted")
+    set_auth_cookies(response, session_token, csrf_token)
+    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role}
+
+
+@app.get("/api/auth/sessions")
+def account_sessions(request: Request, db: Session = Depends(get_db)):
+    current_hash = token_hash(request.cookies.get(SESSION_COOKIE, ""))
+    sessions = db.scalars(select(UserSession).where(UserSession.user_id == request.state.user.id, UserSession.expires_at > auth_utcnow()).order_by(UserSession.last_seen_at.desc())).all()
+    return [{"id": item.id, "current": item.token_hash == current_hash, "created_at": item.created_at, "last_seen_at": item.last_seen_at, "expires_at": item.expires_at} for item in sessions]
+
+
+@app.delete("/api/auth/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_account_session(session_id: int, request: Request, response: Response, db: Session = Depends(get_db)):
+    item = db.scalar(select(UserSession).where(UserSession.id == session_id, UserSession.user_id == request.state.user.id))
+    if item is None: raise HTTPException(404, "Session not found")
+    current = item.token_hash == token_hash(request.cookies.get(SESSION_COOKIE, ""))
+    db.delete(item); db.commit()
+    if current:
+        response.delete_cookie(SESSION_COOKIE, path="/"); response.delete_cookie(CSRF_COOKIE, path="/")
+
+
+@app.get("/api/settings/team")
+def studio_team(request: Request, db: Session = Depends(get_db)):
+    projects = db.execute(select(Project, ProjectMembership).join(ProjectMembership, ProjectMembership.project_id == Project.id).where(ProjectMembership.user_id == request.state.user.id).order_by(Project.title)).all()
+    users = db.scalars(select(User).order_by(User.display_name, User.email)).all()
+    memberships = db.execute(select(ProjectMembership, User).join(User, User.id == ProjectMembership.user_id).where(ProjectMembership.project_id.in_([project.id for project, _ in projects]))).all()
+    invitations = db.scalars(select(StudioInvitation).order_by(StudioInvitation.id.desc()).limit(100)).all()
+    return {"projects": [{"id": project.id, "title": project.title, "my_role": membership.role} for project, membership in projects], "users": [{"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role, "active": user.active} for user in users], "memberships": [{"id": membership.id, "project_id": membership.project_id, "user_id": user.id, "display_name": user.display_name, "email": user.email, "role": membership.role} for membership, user in memberships], "invitations": [invitation_response(item, db) for item in invitations if not item.accepted_at and not item.revoked_at and item.expires_at > auth_utcnow()]}
+
+
+@app.post("/api/settings/team/invitations", status_code=status.HTTP_201_CREATED)
+def create_studio_invitation(payload: StudioInvitationInput, request: Request, db: Session = Depends(get_db)):
+    email = normalize_email(payload.email)
+    if "@" not in email or db.scalar(select(User.id).where(User.email == email)) is not None:
+        raise HTTPException(409, "Use a new, valid email address for an invitation")
+    project_roles = []
+    for access in payload.project_access:
+        membership = project_membership(db, request.state.user.id, access.project_id)
+        if membership is None or membership.role != "owner": raise HTTPException(403, "Only a production owner can invite collaborators to it")
+        project_roles.append(access.model_dump())
+    raw_token = secrets.token_urlsafe(48)
+    invitation = StudioInvitation(email=email, display_name=payload.display_name.strip(), token_hash=token_hash(raw_token), project_roles=project_roles, invited_by_user_id=request.state.user.id, expires_at=auth_utcnow() + timedelta(days=max(1, settings.invitation_days)))
+    db.add(invitation); db.commit(); db.refresh(invitation)
+    return {**invitation_response(invitation, db), "acceptance_url": f"{settings.public_url.rstrip('/')}/invite/{raw_token}"}
+
+
+@app.delete("/api/settings/team/invitations/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_studio_invitation(invitation_id: int, request: Request, db: Session = Depends(get_db)):
+    invitation = db.get(StudioInvitation, invitation_id)
+    if invitation is None or invitation.accepted_at: raise HTTPException(404, "Pending invitation not found")
+    invitation.revoked_at = auth_utcnow(); db.commit()
+
+
+@app.put("/api/settings/team/projects/{project_id}/members/{user_id}")
+def update_project_member(project_id: int, user_id: int, payload: MembershipUpdateInput, request: Request, db: Session = Depends(get_db)):
+    actor = project_membership(db, request.state.user.id, project_id)
+    if actor is None or actor.role != "owner": raise HTTPException(403, "Only a production owner can manage its collaborators")
+    if db.get(User, user_id) is None: raise HTTPException(404, "Account not found")
+    membership = project_membership(db, user_id, project_id)
+    if payload.role == "remove":
+        if membership is None: raise HTTPException(404, "Production membership not found")
+        owner_count = db.scalar(select(func.count(ProjectMembership.id)).where(ProjectMembership.project_id == project_id, ProjectMembership.role == "owner")) or 0
+        if membership.role == "owner" and owner_count <= 1: raise HTTPException(409, "A production must always have at least one owner")
+        db.delete(membership)
+    elif membership:
+        if membership.role == "owner" and payload.role != "owner":
+            owner_count = db.scalar(select(func.count(ProjectMembership.id)).where(ProjectMembership.project_id == project_id, ProjectMembership.role == "owner")) or 0
+            if owner_count <= 1: raise HTTPException(409, "A production must always have at least one owner")
+        membership.role = payload.role
+    else:
+        db.add(ProjectMembership(project_id=project_id, user_id=user_id, role=payload.role))
+    db.commit()
+    return {"project_id": project_id, "user_id": user_id, "role": payload.role}
 
 
 @app.get("/api/style-catalog")
@@ -3954,6 +4084,11 @@ def login_page():
 
 @app.get("/setup", include_in_schema=False)
 def setup_page():
+    return FileResponse(static_dir / "login.html")
+
+
+@app.get("/invite/{invitation_token}", include_in_schema=False)
+def invitation_page(invitation_token: str):
     return FileResponse(static_dir / "login.html")
 
 

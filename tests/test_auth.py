@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from urllib.parse import urlparse
 
 from app.auth import hash_password
 from app.database import SessionLocal
@@ -51,3 +52,28 @@ def test_productions_are_isolated_by_membership(client, monkeypatch):
     assert [item["id"] for item in visible] == [other_project_id]
     assert second.get(f"/api/projects/{other_project_id}").status_code == 200
     assert second.get("/api/settings/integrations").status_code == 403
+
+
+def test_invitations_roles_and_session_revocation(client, monkeypatch):
+    csrf = setup_admin(client, monkeypatch)
+    project = client.post("/api/projects", headers={"X-Kizuna-CSRF": csrf}, json={"title": "Shared Production", "logline": "Role protected"}).json()
+    invited = client.post("/api/settings/team/invitations", headers={"X-Kizuna-CSRF": csrf}, json={"email": "viewer@example.com", "display_name": "Review Partner", "project_access": [{"project_id": project["id"], "role": "viewer"}]})
+    assert invited.status_code == 201
+    invite_path = urlparse(invited.json()["acceptance_url"]).path
+    viewer = TestClient(app)
+    assert viewer.get(invite_path.replace("/invite/", "/api/auth/invitations/")).status_code == 200
+    accepted = viewer.post(invite_path.replace("/invite/", "/api/auth/invitations/"), json={"display_name": "Review Partner", "password": "viewer-secure-password"})
+    assert accepted.status_code == 200
+    viewer_csrf = viewer.cookies.get("kizuna_csrf")
+    assert viewer.get(f"/api/projects/{project['id']}").status_code == 200
+    blocked = viewer.post(f"/api/projects/{project['id']}/characters", headers={"X-Kizuna-CSRF": viewer_csrf}, json={"name": "Blocked Edit", "role": "protagonist", "want": "", "need": "", "contradiction": ""})
+    assert blocked.status_code == 403
+    viewer_id = accepted.json()["id"]
+    promoted = client.put(f"/api/settings/team/projects/{project['id']}/members/{viewer_id}", headers={"X-Kizuna-CSRF": csrf}, json={"role": "editor"})
+    assert promoted.status_code == 200
+    allowed = viewer.post(f"/api/projects/{project['id']}/characters", headers={"X-Kizuna-CSRF": viewer_csrf}, json={"name": "Allowed Edit", "role": "protagonist", "want": "", "need": "", "contradiction": ""})
+    assert allowed.status_code == 201
+    sessions = viewer.get("/api/auth/sessions").json()
+    assert len(sessions) == 1 and sessions[0]["current"] is True
+    assert viewer.delete(f"/api/auth/sessions/{sessions[0]['id']}", headers={"X-Kizuna-CSRF": viewer_csrf}).status_code == 204
+    assert viewer.get("/api/auth/me").status_code == 401

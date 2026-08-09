@@ -82,11 +82,15 @@ def request_identity(request: Request, db: Session) -> tuple[User | None, UserSe
 
 
 def public_path(path: str) -> bool:
-    return path in PUBLIC_EXACT or path.startswith(PUBLIC_PREFIXES) or path.startswith("/delivery/")
+    return path in PUBLIC_EXACT or path.startswith(PUBLIC_PREFIXES) or path.startswith(("/delivery/", "/invite/", "/api/auth/invitations/"))
 
 
 def has_membership(db: Session, user_id: int, project_id: int) -> bool:
     return db.scalar(select(ProjectMembership.id).where(ProjectMembership.user_id == user_id, ProjectMembership.project_id == project_id)) is not None
+
+
+def project_membership(db: Session, user_id: int, project_id: int) -> ProjectMembership | None:
+    return db.scalar(select(ProjectMembership).where(ProjectMembership.user_id == user_id, ProjectMembership.project_id == project_id))
 
 
 def user_project_ids(db: Session, user_id: int) -> list[int]:

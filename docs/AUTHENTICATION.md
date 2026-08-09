@@ -17,4 +17,10 @@ Do not make the domain public until all of these are true:
 - database backups and restore drills are working; and
 - a second review confirms that every newly added endpoint passes through the central authorization layer.
 
-This slice establishes local accounts and production isolation. Password reset, email verification, invitations, optional MFA/passkeys, organization roles, session-management UI, and security event monitoring remain required before a broad public launch.
+This foundation now includes local accounts, production isolation, invitations, project roles, and session-revocation APIs. Password reset, email verification, optional MFA/passkeys, a complete end-user account center, and security event monitoring remain required before a broad public launch.
+
+## App and marketing hostnames
+
+Kizuna keeps the application and marketing URLs separate. Set `KIZUNA_PUBLIC_URL` to the complete application origin, such as `https://app.your-domain.example`; invitation links are generated from this value. Set `KIZUNA_MARKETING_URL` to the public marketing site, such as `https://your-domain.example`; the Kizuna logo on account screens links back there. The Docker stack intentionally requires the application URL instead of assuming a domain spelling.
+
+Administrators can create expiring invitation links under **Settings → Team & access**. Invitations grant only the productions and roles selected by an Owner. Owners can manage membership, Editors can change production content, and Viewers are enforced as read-only by the API. Invitation tokens are stored only as hashes and the raw link is shown once when it is created.

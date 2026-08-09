@@ -1,6 +1,6 @@
 # Production domain and access
 
-Kizuna's intended public hostname is `https://kizuna.technology`. Set `KIZUNA_PUBLIC_URL=https://kizuna.technology` in Coolify, point the domain's DNS records at the server, attach the domain to the web service, and let Coolify issue and renew TLS.
+Use the root domain for the marketing site and a dedicated `app` subdomain for the authenticated studio. Set `KIZUNA_PUBLIC_URL` to the full app origin and `KIZUNA_MARKETING_URL` to the marketing origin in Coolify, point the app subdomain at the server, attach only that hostname to the web service, and let Coolify issue and renew TLS. Kizuna keeps these values configurable so a domain spelling is never silently assumed.
 
 DNS propagation does not make the application production-safe by itself. Keep the web service private or protected by an access gateway until Kizuna has user authentication, tenant-scoped authorization, secure secret management, backups, and tested restore procedures. Do not expose Postgres, Redis, or the compliance scanner to the public internet; only the web service should receive the public domain.
 

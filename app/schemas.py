@@ -592,6 +592,28 @@ class CrewDeployRequest(BaseModel):
     autonomy: str = Field(default="propose", pattern="^(assist|propose|execute)$")
 
 
+class ProducerWorkflowRequest(BaseModel):
+    objective: str = "Guide this production from its current state to a reviewable master."
+    provider: str = Field(default="simulation", pattern="^(simulation|openai)$")
+    render_motion_previews: bool = True
+    render_final_review: bool = True
+    review_profile: str = Field(default="preview", pattern="^(preview|1080p|4k)$")
+
+
+class ProducerWorkflowRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    objective: str
+    status: str
+    current_stage: str
+    stages: list[dict[str, Any]] = Field(default_factory=list)
+    settings: dict[str, Any] = Field(default_factory=dict)
+    last_action_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class CrewAssignmentUpdate(BaseModel):
     enabled: bool = True
     autonomy: str = Field(default="propose", pattern="^(assist|propose|execute)$")

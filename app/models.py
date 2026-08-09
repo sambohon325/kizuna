@@ -420,6 +420,21 @@ class CrewAction(Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class ProductionWorkflow(Base):
+    __tablename__ = "production_workflows"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), unique=True)
+    objective: Mapped[str] = mapped_column(Text, default="Guide this production from its current state to a reviewable master.")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    current_stage: Mapped[str] = mapped_column(String(48), default="story")
+    stages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    last_action_id: Mapped[int | None] = mapped_column(ForeignKey("crew_actions.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class VoiceConsent(Base):
     __tablename__ = "voice_consents"
 

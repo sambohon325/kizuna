@@ -21,8 +21,8 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, Project, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -1420,6 +1420,151 @@ def crew_briefing(project_id: int, db: Session = Depends(get_db)):
     elif not db.scalar(select(AudioTrack).where(AudioTrack.timeline_id == timeline.id)):
         suggestions.append({"role": "sound_producer", "title": "Initialize sound production", "reason": "Dialogue, music, effects, and ambience tracks are not prepared."})
     return {"project_id": project_id, "headline": suggestions[0]["title"] if suggestions else "Production is ready for the next creative pass", "suggestions": suggestions}
+
+
+def pending_crew_action(project_id: int, role: str, db: Session) -> CrewAction | None:
+    return db.scalar(select(CrewAction).where(CrewAction.project_id == project_id, CrewAction.role == role, CrewAction.status.in_(["running", "proposed"])).order_by(CrewAction.id.desc()))
+
+
+def shot_has_current_motion(shot: Shot, db: Session) -> bool:
+    composition = db.scalar(select(ShotComposition).where(ShotComposition.shot_id == shot.id))
+    if not composition:
+        return False
+    motion = db.scalar(select(ShotMotionRender).where(ShotMotionRender.composition_id == composition.id, ShotMotionRender.status == "completed").order_by(ShotMotionRender.id.desc()))
+    return bool(motion and motion.render_settings.get("version") == composition.version)
+
+
+def workflow_stages(project: Project, db: Session) -> list[dict]:
+    assignments = {item.role: item for item in db.scalars(select(CrewAssignment).where(CrewAssignment.project_id == project.id, CrewAssignment.enabled.is_(True))).all()}
+    story = db.scalar(select(StoryBrief).where(StoryBrief.project_id == project.id))
+    characters = db.scalars(select(Character).options(selectinload(Character.design)).where(Character.project_id == project.id)).all()
+    locations = db.scalars(select(WorldLocation).options(selectinload(WorldLocation.design)).where(WorldLocation.project_id == project.id)).all()
+    scenes = db.scalars(select(Scene).where(Scene.project_id == project.id).order_by(Scene.position)).all()
+    shots = [shot for scene in scenes for shot in db.scalars(select(Shot).options(selectinload(Shot.plan)).where(Shot.scene_id == scene.id).order_by(Shot.position)).all()]
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == project.id))
+    tracks = db.scalars(select(AudioTrack).where(AudioTrack.timeline_id == timeline.id)).all() if timeline else []
+    cues = db.scalars(select(AudioCue).join(AudioTrack).where(AudioTrack.timeline_id == timeline.id)).all() if timeline else []
+    master = db.scalar(select(AnimaticRender).where(AnimaticRender.timeline_id == timeline.id, AnimaticRender.status == "completed").order_by(AnimaticRender.id.desc())) if timeline else None
+
+    def stage(key: str, label: str, role: str, complete: bool, ready: bool, reason: str, progress: str, blocked: str = "") -> dict:
+        pending = pending_crew_action(project.id, role, db) if role else None
+        if complete:
+            state = "complete"
+        elif pending:
+            state, reason = "awaiting_approval", f"{pending.title} is {pending.status}."
+        elif blocked:
+            state, reason = "blocked", blocked
+        elif role and role not in assignments:
+            state, reason = "undeployed", f"Deploy the {CREW_ROLES[role]['name']} bot to continue this stage."
+        elif ready:
+            state = "ready"
+        else:
+            state = "blocked"
+        return {"key": key, "label": label, "role": role, "status": state, "reason": reason, "progress": progress, "action_id": pending.id if pending else None}
+
+    story_complete = bool(story and story.beats)
+    cast_complete = bool(characters) and all(item.design for item in characters)
+    worlds_complete = bool(locations) and all(item.design for item in locations)
+    direction_complete = bool(shots) and all(shot.plan for shot in shots)
+    animated = sum(1 for shot in shots if shot_has_current_motion(shot, db))
+    animation_complete = bool(shots) and animated == len(shots)
+    edit_complete = bool(timeline and timeline.status in {"edit-ready", "master-ready"})
+    sound_complete = bool(tracks and cues) and all(cue.uri for cue in cues)
+    delivery_complete = bool(master and master.render_settings.get("kind") == "production_master")
+    return [
+        stage("story", "Story foundation", "writer", story_complete, True, "Develop the premise, structure, and beats.", "Outline approved" if story_complete else "Outline needed"),
+        stage("cast", "Character bibles", "character_designer", cast_complete, bool(characters), "Lock every character model.", f"{sum(1 for item in characters if item.design)}/{len(characters)} designed" if characters else "No cast", "Add at least one character in Character Studio." if not characters else ""),
+        stage("worlds", "Environment bibles", "background_artist", worlds_complete, bool(locations), "Lock every recurring location.", f"{sum(1 for item in locations if item.design)}/{len(locations)} designed" if locations else "No locations", "Add at least one location in Worlds." if not locations else ""),
+        stage("direction", "Scenes and coverage", "director", direction_complete, story_complete and cast_complete and worlds_complete, "Translate the approved foundation into shot coverage.", f"{len(shots)} planned shots" if direction_complete else "Coverage needed", "Finish story, cast, and world bibles first." if not (story_complete and cast_complete and worlds_complete) else ""),
+        stage("animation", "Motion passes", "animator", animation_complete, direction_complete, "Create current motion previews for every shot.", f"{animated}/{len(shots)} animated" if shots else "No shots", "Approve shot coverage first." if not direction_complete else ""),
+        stage("edit", "Picture edit", "editor", edit_complete, direction_complete, "Assemble pacing, transitions, and continuity.", timeline.status if timeline else "No timeline", "Approve shot coverage first." if not direction_complete else ""),
+        stage("sound", "Sound and performances", "sound_producer", sound_complete, bool(timeline), "Initialize sound lanes and complete every planned cue.", f"{sum(1 for cue in cues if cue.uri)}/{len(cues)} cues complete" if cues else ("Tracks initialized; add cues" if tracks else "Sound lanes needed"), "Build the picture edit first." if not timeline else ("Add dialogue, music, ambience, or effects cues in Audio Studio." if tracks and not cues else "")),
+        stage("delivery", "Review master", "editor", delivery_complete, edit_complete and sound_complete, "Render the coordinated picture and sound review master.", "Master ready" if delivery_complete else "Master needed", "Complete picture and sound first." if not (edit_complete and sound_complete) else ""),
+    ]
+
+
+def sync_producer_workflow(workflow: ProductionWorkflow, db: Session) -> ProductionWorkflow:
+    project = db.scalars(project_query().where(Project.id == workflow.project_id)).one()
+    workflow.stages = workflow_stages(project, db)
+    current = next((item for item in workflow.stages if item["status"] != "complete"), None)
+    workflow.current_stage = current["key"] if current else "complete"
+    workflow.status = "complete" if not current else ("awaiting_approval" if current["status"] == "awaiting_approval" else "blocked" if current["status"] in {"blocked", "undeployed"} else "active")
+    db.commit(); db.refresh(workflow)
+    return workflow
+
+
+@app.post("/api/projects/{project_id}/producer/workflow", response_model=ProducerWorkflowRead)
+def create_producer_workflow(project_id: int, payload: ProducerWorkflowRequest, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    workflow = db.scalar(select(ProductionWorkflow).where(ProductionWorkflow.project_id == project_id))
+    if workflow is None:
+        workflow = ProductionWorkflow(project_id=project_id)
+        db.add(workflow)
+    workflow.objective = payload.objective
+    workflow.settings = payload.model_dump(exclude={"objective"})
+    db.commit(); db.refresh(workflow)
+    return sync_producer_workflow(workflow, db)
+
+
+@app.get("/api/projects/{project_id}/producer/workflow", response_model=ProducerWorkflowRead)
+def get_producer_workflow(project_id: int, db: Session = Depends(get_db)):
+    workflow = db.scalar(select(ProductionWorkflow).where(ProductionWorkflow.project_id == project_id))
+    if not workflow:
+        raise HTTPException(404, "Producer workflow not started")
+    return sync_producer_workflow(workflow, db)
+
+
+@app.post("/api/producer-workflows/{workflow_id}/advance", response_model=ProducerWorkflowRead)
+def advance_producer_workflow(workflow_id: int, db: Session = Depends(get_db)):
+    workflow = db.get(ProductionWorkflow, workflow_id)
+    if not workflow:
+        raise HTTPException(404, "Producer workflow not found")
+    sync_producer_workflow(workflow, db)
+    current = next((item for item in workflow.stages if item["status"] != "complete"), None)
+    if not current:
+        return workflow
+    if current["status"] == "awaiting_approval":
+        raise HTTPException(409, "Review the current crew proposal before advancing")
+    if current["status"] != "ready":
+        raise HTTPException(409, current["reason"])
+    project = db.scalars(project_query().where(Project.id == workflow.project_id)).one()
+    provider = workflow.settings.get("provider", "simulation")
+    action = None
+    if current["key"] == "story":
+        action = ask_writer(project.id, WriterProposalRequest(provider=provider), db)
+    elif current["key"] == "cast":
+        target = next(item for item in project.characters if not item.design)
+        action = ask_character_designer(target.id, CharacterDesignerRequest(provider=provider), db)
+    elif current["key"] == "worlds":
+        target = next(item for item in project.locations if not item.design)
+        action = ask_background_artist(target.id, BackgroundArtistRequest(provider=provider), db)
+    elif current["key"] == "direction":
+        action = ask_director(project.id, DirectorProposalRequest(provider=provider), db)
+    elif current["key"] == "animation":
+        target = next(shot for scene in project.scenes for shot in scene.shots if not shot_has_current_motion(shot, db))
+        action = ask_animator(target.id, AnimatorProposalRequest(provider=provider, render_preview=workflow.settings.get("render_motion_previews", True)), db)
+    elif current["key"] == "edit":
+        action = ask_editor(project.id, EditorProposalRequest(provider=provider), db)
+    elif current["key"] == "sound":
+        timeline = db.scalar(select(Timeline).where(Timeline.project_id == project.id))
+        tracks = db.scalars(select(AudioTrack).where(AudioTrack.timeline_id == timeline.id)).all()
+        if not tracks:
+            build_audio_tracks(timeline.id, db)
+            assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == project.id, CrewAssignment.role == "sound_producer"))
+            action = CrewAction(project_id=project.id, assignment_id=assignment.id if assignment else None, role="sound_producer", action_type="initialize_audio", title="Initialize sound production", summary="Created dialogue, music, effects, and ambience lanes.", status="completed", requires_approval=False, result={"timeline_id": timeline.id})
+            db.add(action); db.commit(); db.refresh(action)
+        else:
+            cue = db.scalar(select(AudioCue).join(AudioTrack).where(AudioTrack.timeline_id == timeline.id, AudioCue.uri == "").order_by(AudioCue.id))
+            if not cue:
+                raise HTTPException(409, "Add a sound cue in Audio Studio before advancing")
+            action = ask_sound_producer(cue.id, CrewVoiceRequest(provider="simulation"), db)
+    elif current["key"] == "delivery":
+        action = ask_editor(project.id, EditorProposalRequest(provider=provider, render_review=workflow.settings.get("render_final_review", True), review_profile=workflow.settings.get("review_profile", "preview")), db)
+    workflow = db.get(ProductionWorkflow, workflow.id)
+    workflow.last_action_id = action.id if action else None
+    db.commit()
+    return sync_producer_workflow(workflow, db)
 
 
 @app.put("/api/characters/{character_id}/voice-consent", response_model=VoiceConsentRead)

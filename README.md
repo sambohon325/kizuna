@@ -37,7 +37,7 @@ pytest
 - Director bot with local and hosted structured-output engines, pacing and coverage controls, performance direction, continuity-aware camera plans, non-destructive scene/shot application, and automatic timeline invalidation
 - Timeline editor with clip timing, cuts/dissolves/fades, sound cues, reordering, downloadable H.264 proxy animatics, and an Editor bot that can assemble raw shots, propose reversible pacing changes, flag missing picture/motion, and optionally render a review master
 - Audio & Voice Studio with versioned character voice bibles, dialogue/music/SFX/ambience lanes, timed cues, timing-slate generation, performance uploads, and animatic mixing
-- AI Crew Control Room with Writer, Director, Character Designer, Background Artist, Animator, Sound Producer, and Editor roles; assist/propose/execute autonomy; standing instructions; workflow briefings; and an auditable approval feed
+- AI Crew Control Room with Writer, Director, Character Designer, Background Artist, Animator, Sound Producer, and Editor roles; assist/propose/execute autonomy; standing instructions; workflow briefings; an auditable approval feed; and a persistent Producer assistant that coordinates deployed bots one safe stage at a time from story through review master
 - Provider-neutral dialogue generation with a safe local timing-slate mode, optional OpenAI speech adapter, voice-rights records, required AI disclosure metadata, and per-character pronunciation entries
 - Scene Compositor with shot-specific layer stacks, asset-library reuse, transforms, visibility, opacity, blend modes, virtual camera/grade plans, and flattened preview renders
 - Keyframed layer motion with linear/eased interpolation, animated opacity and transforms, virtual-camera motion, versioned H.264 shot previews, and an Animator bot that proposes or applies editable acting/camera passes before optionally rendering a preview
@@ -48,7 +48,7 @@ pytest
 
 ## Next milestones
 
-1. Add a Producer assistant that coordinates selected bots through approval-gated, resumable production stages from idea to master
+1. Add asset review states, approval gates, version comparisons, and rollback across generated production media
 2. Add production object storage, review states, and asset approval
 3. Add Redis-backed crew/render scheduling, concurrency controls, and worker scaling
 4. Add delivery presets for festival, streaming, broadcast, captions, and archival masters

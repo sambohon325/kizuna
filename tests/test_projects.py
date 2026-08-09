@@ -523,3 +523,41 @@ def test_editor_bot_assembles_timeline_then_renders_review_master(client):
     assert client.get(rendered.json()["result"]["review_uri"]).headers["content-type"] == "video/mp4"
     assert rendered.json()["result"]["review_settings"]["fallback_clips"] == 2
     assert client.get("/api/editing/providers").json()["providers"][0]["ready"] is True
+
+
+def test_producer_workflow_routes_deployed_bots_and_resumes_after_approval(client):
+    project_id = client.post("/api/projects", json={"title": "Producer Thread", "logline": "A signal reunites a divided city."}).json()["id"]
+    client.post(f"/api/projects/{project_id}/characters", json={"name": "Mina", "role": "relay keeper"})
+    client.post(f"/api/projects/{project_id}/locations", json={"name": "Signal Tower", "narrative_function": "The city hears itself again"})
+    roles = ["writer", "character_designer", "background_artist", "director", "animator", "editor", "sound_producer"]
+    client.post(f"/api/projects/{project_id}/crew/deploy", json={"roles": roles, "autonomy": "propose"})
+    started = client.post(f"/api/projects/{project_id}/producer/workflow", json={"objective": "Coordinate a reviewable short film.", "provider": "simulation", "render_motion_previews": False})
+    assert started.status_code == 200
+    workflow = started.json()
+    assert workflow["current_stage"] == "story"
+    assert workflow["stages"][0]["status"] == "ready"
+    workflow_id = workflow["id"]
+
+    writing = client.post(f"/api/producer-workflows/{workflow_id}/advance")
+    assert writing.status_code == 200
+    assert writing.json()["status"] == "awaiting_approval"
+    writer_action_id = writing.json()["last_action_id"]
+    crew = client.get(f"/api/projects/{project_id}/crew").json()
+    writer_action = next(item for item in crew["actions"] if item["id"] == writer_action_id)
+    assert writer_action["role"] == "writer"
+    assert client.post(f"/api/producer-workflows/{workflow_id}/advance").status_code == 409
+    client.post(f"/api/crew-actions/{writer_action_id}/approve")
+
+    resumed = client.get(f"/api/projects/{project_id}/producer/workflow").json()
+    assert resumed["current_stage"] == "cast"
+    character_step = client.post(f"/api/producer-workflows/{workflow_id}/advance").json()
+    client.post(f"/api/crew-actions/{character_step['last_action_id']}/approve")
+    assert client.get(f"/api/projects/{project_id}/producer/workflow").json()["current_stage"] == "worlds"
+
+    background_step = client.post(f"/api/producer-workflows/{workflow_id}/advance").json()
+    client.post(f"/api/crew-actions/{background_step['last_action_id']}/approve")
+    directing = client.post(f"/api/producer-workflows/{workflow_id}/advance").json()
+    assert directing["current_stage"] == "direction"
+    assert directing["status"] == "awaiting_approval"
+    director_action = next(item for item in client.get(f"/api/projects/{project_id}/crew").json()["actions"] if item["id"] == directing["last_action_id"])
+    assert director_action["role"] == "director"

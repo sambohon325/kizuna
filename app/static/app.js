@@ -69,6 +69,7 @@ function showDashboard() {
 document.querySelector('#render-composition').insertAdjacentHTML('afterend','<button id="render-motion" type="button">Render motion preview</button>');
 document.querySelector('.compositor-title').insertAdjacentHTML('afterend','<section class="visual-agent-panel animator-agent-panel"><div class="visual-agent-head"><div><p class="eyebrow">AI ANIMATOR</p><h3>Delegate the motion pass</h3><p>Select a shot, then review camera movement, acting beats, and editable layer keyframes.</p></div></div><div class="visual-agent-controls"><label>Engine<select id="animator-provider"><option value="simulation">Local motion planner</option><option value="openai">OpenAI Animator</option></select></label><label>Assignment<textarea id="animator-objective" rows="2">Create an economical, performance-led motion pass that preserves continuity.</textarea></label><label>Output<select id="animator-output"><option value="plan">Motion plan only</option><option value="proxy">Plan + proxy preview</option><option value="full">Plan + full-resolution preview</option></select></label><button id="ask-animator" type="button">Ask Animator</button></div><div id="animator-result"></div></section>');
 document.querySelector('.timeline-title').insertAdjacentHTML('afterend','<section class="visual-agent-panel editor-agent-panel"><div class="visual-agent-head"><div><p class="eyebrow">AI EDITOR</p><h3>Delegate the picture edit</h3><p>Review clip order, timing, transitions, continuity, and missing-production flags before the timeline changes.</p></div></div><div class="visual-agent-controls"><label>Engine<select id="editor-provider"><option value="simulation">Local edit planner</option><option value="openai">OpenAI Editor</option></select></label><label>Pacing<select id="editor-pacing"><option value="balanced">Balanced</option><option value="restrained">Restrained</option><option value="kinetic">Kinetic</option></select></label><label>Assignment<textarea id="editor-objective" rows="2">Shape a clear, emotionally paced assembly while preserving story continuity.</textarea></label><label>Output<select id="editor-output"><option value="edit">Edit plan only</option><option value="preview">Edit + review preview</option><option value="1080p">Edit + 1080p review</option><option value="4k">Edit + 4K review</option></select></label><button id="ask-editor" type="button">Ask Editor</button></div><div id="editor-result"></div></section>');
+document.querySelector('#crew-briefing').insertAdjacentHTML('afterend','<section class="producer-console"><div class="producer-head"><div><p class="eyebrow">AI PRODUCER</p><h3>Coordinate the whole production</h3><p>Advance one safe stage at a time using only the department bots you deploy.</p></div><span id="producer-status">Not started</span></div><div class="producer-controls"><label>Production goal<textarea id="producer-objective" rows="2">Guide this production from its current state to a reviewable master.</textarea></label><label>Planning engine<select id="producer-provider"><option value="simulation">Local coordinator</option><option value="openai">Hosted department bots</option></select></label><label>Final review<select id="producer-review-profile"><option value="preview">Preview</option><option value="1080p">1080p</option><option value="4k">4K</option></select></label><label class="producer-check"><input id="producer-motion-previews" type="checkbox" checked> Render motion previews</label><label class="producer-check"><input id="producer-final-review" type="checkbox" checked> Render final review</label><button id="start-producer" type="button">Start workflow</button><button id="advance-producer" class="primary" type="button">Advance next stage</button></div><div id="producer-workflow"></div></section>');
 document.querySelector('#layer-form > .primary').insertAdjacentHTML('beforebegin','<section class="motion-controls"><p class="eyebrow">END KEYFRAME</p><div class="motion-grid"><label>Easing<select name="motion_easing"><option value="linear">Linear</option><option value="ease-in">Ease in</option><option value="ease-out">Ease out</option><option value="ease-in-out">Ease in/out</option></select></label><label>End X<input name="motion_end_x" type="number" min="-1" max="2" step="0.01"></label><label>End Y<input name="motion_end_y" type="number" min="-1" max="2" step="0.01"></label><label>End scale<input name="motion_end_scale" type="number" min="0.05" max="5" step="0.05"></label><label>End rotation<input name="motion_end_rotation" type="number" min="-360" max="360" step="1"></label><label>End opacity<input name="motion_end_opacity" type="number" min="0" max="1" step="0.05"></label></div></section>');
 document.querySelector('#render-animatic').insertAdjacentHTML('beforebegin','<select id="master-profile" aria-label="Master profile"><option value="preview">Preview · source up to 720p</option><option value="1080p">Master · 1080p</option><option value="4k">Master · 4K UHD</option></select>');
 document.querySelector('#render-animatic').insertAdjacentHTML('afterend','<button id="render-master" type="button">Export continuous master</button>');
@@ -90,6 +91,7 @@ let activeAudioStudio = null;
 let activeAudioTimeline = null;
 let activeAudioCueId = null;
 let activeCrew = null;
+let activeProducerWorkflow = null;
 let crewRoles = [];
 let activeCompositorStudio = null;
 let activeComposition = null;
@@ -714,8 +716,25 @@ async function openCrewStudio(projectId) {
 }
 
 async function loadCrew(projectId) {
-  const [roles, crew, briefing]=await Promise.all([api('/api/crew/roles'),api(`/api/projects/${projectId}/crew`),api(`/api/projects/${projectId}/crew/briefing`)]);
-  crewRoles=roles; activeCrew=crew; renderCrew(briefing);
+  const [roles, crew, briefing, workflow]=await Promise.all([api('/api/crew/roles'),api(`/api/projects/${projectId}/crew`),api(`/api/projects/${projectId}/crew/briefing`),api(`/api/projects/${projectId}/producer/workflow`).catch(()=>null)]);
+  crewRoles=roles; activeCrew=crew; activeProducerWorkflow=workflow; renderCrew(briefing);renderProducerWorkflow(workflow);
+}
+
+function renderProducerWorkflow(workflow) {
+  const panel=document.querySelector('#producer-workflow'), status=document.querySelector('#producer-status'), advance=document.querySelector('#advance-producer');
+  if(!workflow){status.textContent='Not started';panel.innerHTML='<div class="crew-empty">Set a production goal, deploy the departments you want, then start a resumable workflow.</div>';advance.disabled=true;document.querySelector('#start-producer').textContent='Start workflow';return;}
+  status.textContent=workflow.status.replaceAll('_',' ');document.querySelector('#producer-objective').value=workflow.objective;document.querySelector('#producer-provider').value=workflow.settings.provider||'simulation';document.querySelector('#producer-review-profile').value=workflow.settings.review_profile||'preview';document.querySelector('#producer-motion-previews').checked=workflow.settings.render_motion_previews!==false;document.querySelector('#producer-final-review').checked=workflow.settings.render_final_review!==false;document.querySelector('#start-producer').textContent='Update workflow';
+  panel.innerHTML=`<div class="producer-stages">${workflow.stages.map((stage,index)=>`<article class="producer-stage ${safe(stage.status)}"><span>${stage.status==='complete'?'✓':String(index+1).padStart(2,'0')}</span><div><b>${safe(stage.label)}</b><small>${safe(stage.progress)}</small><p>${safe(stage.reason)}</p></div><em>${safe(stage.status.replaceAll('_',' '))}</em></article>`).join('')}</div>`;
+  const current=workflow.stages.find(stage=>stage.key===workflow.current_stage);advance.disabled=workflow.status!=='active'||current?.status!=='ready';advance.textContent=workflow.status==='complete'?'Production complete':current?.status==='awaiting_approval'?'Awaiting approval':current?.status==='ready'?`Advance · ${current.label}`:'Resolve current blocker';
+}
+
+async function saveProducerWorkflow() {
+  const projectId=activeCrew.project_id;const payload={objective:document.querySelector('#producer-objective').value,provider:document.querySelector('#producer-provider').value,render_motion_previews:document.querySelector('#producer-motion-previews').checked,render_final_review:document.querySelector('#producer-final-review').checked,review_profile:document.querySelector('#producer-review-profile').value};
+  activeProducerWorkflow=await api(`/api/projects/${projectId}/producer/workflow`,{method:'POST',body:JSON.stringify(payload)});renderProducerWorkflow(activeProducerWorkflow);
+}
+
+async function advanceProducerWorkflow() {
+  if(!activeProducerWorkflow)return;const button=document.querySelector('#advance-producer');button.disabled=true;button.textContent='Coordinating next stage…';try{activeProducerWorkflow=await api(`/api/producer-workflows/${activeProducerWorkflow.id}/advance`,{method:'POST'});await loadCrew(activeCrew.project_id);}catch(error){renderProducerWorkflow(activeProducerWorkflow);document.querySelector('#producer-workflow').insertAdjacentHTML('beforeend',`<div class="job-error">${safe(error.message)}</div>`);}
 }
 
 function renderCrew(briefing) {
@@ -870,6 +889,8 @@ document.querySelector('#timeline-close').onclick = showDashboard;
 document.querySelector('#audio-close').onclick = showDashboard;
 document.querySelector('#compositor-close').onclick = showDashboard;
 document.querySelector('#deploy-crew').onclick = deploySelectedCrew;
+document.querySelector('#start-producer').onclick = saveProducerWorkflow;
+document.querySelector('#advance-producer').onclick = advanceProducerWorkflow;
 document.querySelector('#ask-writer').onclick = askWriter;
 document.querySelector('#ask-director').onclick = askDirector;
 document.querySelector('#ask-character-designer').onclick = askCharacterDesigner;

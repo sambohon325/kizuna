@@ -15,11 +15,12 @@ from app.config import settings
 from app.animatic import render_animatic
 from app.audio import generate_timing_slate
 from app.compositor import render_composite
+from app.motion import render_motion_video
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, ShotComposition, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCompositionRead, ShotCreate, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
+from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MotionRenderRequest, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -46,6 +47,9 @@ def timeline_response(timeline: Timeline, db: Session):
         scene = db.get(Scene, shot.scene_id)
         asset = db.scalar(select(StoryboardAsset).where(StoryboardAsset.shot_id == shot.id).order_by(StoryboardAsset.version.desc(), StoryboardAsset.id.desc()))
         composite = db.scalar(select(CompositeRender).join(ShotComposition).where(ShotComposition.shot_id == shot.id, CompositeRender.status == "completed").order_by(CompositeRender.id.desc()))
+        shot_composition = db.scalar(select(ShotComposition).where(ShotComposition.shot_id == shot.id))
+        if composite and shot_composition and composite.render_settings.get("version") != shot_composition.version:
+            composite = None
         output.append({
             "id": clip.id, "timeline_id": clip.timeline_id, "shot_id": clip.shot_id, "position": clip.position,
             "duration_seconds": clip.duration_seconds, "transition": clip.transition,
@@ -741,7 +745,12 @@ def composition_response(composition: ShotComposition, db: Session):
     scene = db.get(Scene, shot.scene_id)
     layers = db.scalars(select(CompositionLayer).where(CompositionLayer.composition_id == composition.id).order_by(CompositionLayer.z_index)).all()
     latest = db.scalar(select(CompositeRender).where(CompositeRender.composition_id == composition.id, CompositeRender.status == "completed").order_by(CompositeRender.id.desc()))
-    return {"id": composition.id, "shot_id": composition.shot_id, "width": composition.width, "height": composition.height, "camera": composition.camera, "color_grade": composition.color_grade, "status": composition.status, "version": composition.version, "shot_title": shot.title, "scene_title": scene.title, "layers": layers, "latest_render_uri": latest.uri if latest else ""}
+    if latest and latest.render_settings.get("version") != composition.version:
+        latest = None
+    motion = db.scalar(select(ShotMotionRender).where(ShotMotionRender.composition_id == composition.id, ShotMotionRender.status == "completed").order_by(ShotMotionRender.id.desc()))
+    if motion and motion.render_settings.get("version") != composition.version:
+        motion = None
+    return {"id": composition.id, "shot_id": composition.shot_id, "width": composition.width, "height": composition.height, "camera": composition.camera, "color_grade": composition.color_grade, "status": composition.status, "version": composition.version, "shot_title": shot.title, "scene_title": scene.title, "layers": layers, "latest_render_uri": latest.uri if latest else "", "latest_motion_uri": motion.uri if motion else ""}
 
 
 def project_asset_library(project_id: int, db: Session):
@@ -854,6 +863,35 @@ def render_shot_composition(composition_id: int, db: Session = Depends(get_db)):
         render_composite(prepared, render_dir / render.filename, composition.width, composition.height, composition.color_grade)
         render.uri, render.status = f"/renders/{render.filename}", "completed"
         composition.status = "preview-ready"
+    except Exception as exc:
+        render.status, render.error = "failed", str(exc)
+    db.commit(); db.refresh(render)
+    return render
+
+
+@app.post("/api/compositions/{composition_id}/render-video", response_model=ShotMotionRenderRead, status_code=status.HTTP_201_CREATED)
+def render_shot_motion(composition_id: int, payload: MotionRenderRequest, db: Session = Depends(get_db)):
+    composition = db.get(ShotComposition, composition_id)
+    if not composition:
+        raise HTTPException(404, "Composition not found")
+    shot = db.get(Shot, composition.shot_id)
+    scene = db.get(Scene, shot.scene_id)
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == scene.project_id))
+    fps = payload.fps or (timeline.fps if timeline else 24)
+    scale = min(1, 1280 / composition.width, 720 / composition.height) if payload.quality == "proxy" else 1
+    width = max(2, int(composition.width * scale) // 2 * 2)
+    height = max(2, int(composition.height * scale) // 2 * 2)
+    settings_data = {"quality": payload.quality, "fps": fps, "width": width, "height": height, "duration_seconds": shot.duration_seconds, "version": composition.version}
+    render = ShotMotionRender(composition_id=composition.id, status="rendering", render_settings=settings_data)
+    db.add(render); db.commit(); db.refresh(render)
+    try:
+        layers = db.scalars(select(CompositionLayer).where(CompositionLayer.composition_id == composition_id).order_by(CompositionLayer.z_index)).all()
+        prepared = [{"name": layer.name, "kind": layer.kind, "source": render_dir / Path(layer.source_uri).name if layer.source_uri else None, "z_index": layer.z_index, "visible": layer.visible, "opacity": layer.opacity, "blend_mode": layer.blend_mode, "transform": layer.transform, "animation": layer.animation} for layer in layers]
+        render.filename = f"shot-{shot.id}-motion-v{composition.version}-{render.id}.mp4"
+        frame_count = render_motion_video(prepared, render_dir / render.filename, width, height, fps, shot.duration_seconds, composition.color_grade, composition.camera)
+        render.uri, render.status = f"/renders/{render.filename}", "completed"
+        render.render_settings = {**settings_data, "frame_count": frame_count}
+        composition.status = "motion-ready"
     except Exception as exc:
         render.status, render.error = "failed", str(exc)
     db.commit(); db.refresh(render)

@@ -37,13 +37,14 @@ pytest
 - Timeline editor with clip timing, cuts/dissolves/fades, sound cues, reordering, and downloadable H.264 proxy animatics
 - Audio & Voice Studio with versioned character voice bibles, dialogue/music/SFX/ambience lanes, timed cues, timing-slate generation, performance uploads, and animatic mixing
 - Scene Compositor with shot-specific layer stacks, asset-library reuse, transforms, visibility, opacity, blend modes, virtual camera/grade plans, and flattened preview renders
+- Keyframed layer motion with linear/eased interpolation, animated opacity and transforms, virtual-camera motion, and versioned H.264 shot previews
 - Pillow frame normalization and bundled FFmpeg locally; system FFmpeg in the production container
 - Docker Compose foundation for eventual Coolify deployment
 
 ## Next milestones
 
-1. Keyframed motion and per-shot video rendering from compositor layers
+1. Timeline assembly from rendered shot clips with transitions and synchronized audio
 2. AI voice-provider adapters with consent metadata and pronunciation controls
-3. Background, storyboard, composite, and audio render-farm scheduling with production object storage
+3. Background, storyboard, composite, motion, and audio render-farm scheduling with production object storage
 4. Redis-backed production queue and worker scaling
 5. 4K final-master profiles, checkpoints, and resumable feature-film export

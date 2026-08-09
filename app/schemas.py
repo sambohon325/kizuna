@@ -421,9 +421,27 @@ class ShotCompositionRead(CompositionInput):
     scene_title: str = ""
     layers: list[CompositionLayerRead] = Field(default_factory=list)
     latest_render_uri: str = ""
+    latest_motion_uri: str = ""
 
 
 class CompositeRenderRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    composition_id: int
+    status: str
+    filename: str
+    uri: str
+    mime_type: str
+    error: str
+    render_settings: dict[str, Any]
+
+
+class MotionRenderRequest(BaseModel):
+    quality: str = Field(default="proxy", pattern="^(proxy|full)$")
+    fps: int | None = Field(default=None, ge=1, le=60)
+
+
+class ShotMotionRenderRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     composition_id: int

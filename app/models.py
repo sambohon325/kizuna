@@ -401,6 +401,7 @@ class ShotComposition(Base):
     shot: Mapped[Shot] = relationship(back_populates="composition")
     layers: Mapped[list[CompositionLayer]] = relationship(back_populates="composition", cascade="all, delete-orphan", order_by="CompositionLayer.z_index")
     renders: Mapped[list[CompositeRender]] = relationship(back_populates="composition", cascade="all, delete-orphan")
+    motion_renders: Mapped[list[ShotMotionRender]] = relationship(back_populates="composition", cascade="all, delete-orphan")
 
 
 class CompositionLayer(Base):
@@ -437,3 +438,19 @@ class CompositeRender(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     composition: Mapped[ShotComposition] = relationship(back_populates="renders")
+
+
+class ShotMotionRender(Base):
+    __tablename__ = "shot_motion_renders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    composition_id: Mapped[int] = mapped_column(ForeignKey("shot_compositions.id"))
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    uri: Mapped[str] = mapped_column(Text, default="")
+    mime_type: Mapped[str] = mapped_column(String(80), default="video/mp4")
+    error: Mapped[str] = mapped_column(Text, default="")
+    render_settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    composition: Mapped[ShotComposition] = relationship(back_populates="motion_renders")

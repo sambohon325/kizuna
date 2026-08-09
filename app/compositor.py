@@ -67,7 +67,7 @@ def _blend(base: Image.Image, layer: Image.Image, mode: str) -> Image.Image:
     return Image.alpha_composite(base, layer)
 
 
-def render_composite(layers: list[dict], output: Path, width: int, height: int, color_grade: dict) -> None:
+def compose_frame(layers: list[dict], width: int, height: int, color_grade: dict) -> Image.Image:
     canvas = Image.new("RGBA", (width, height), "#11131a")
     for layer in sorted((item for item in layers if item.get("visible", True)), key=lambda item: item["z_index"]):
         rendered = _load_layer(layer.get("source"), width, height, layer)
@@ -82,5 +82,10 @@ def render_composite(layers: list[dict], output: Path, width: int, height: int, 
     result = ImageEnhance.Brightness(result).enhance(float(color_grade.get("exposure", 1)))
     result = ImageEnhance.Contrast(result).enhance(float(color_grade.get("contrast", 1)))
     result = ImageEnhance.Color(result).enhance(float(color_grade.get("saturation", 1)))
+    return result
+
+
+def render_composite(layers: list[dict], output: Path, width: int, height: int, color_grade: dict) -> None:
+    result = compose_frame(layers, width, height, color_grade)
     output.parent.mkdir(parents=True, exist_ok=True)
     result.save(output, "PNG", optimize=True)

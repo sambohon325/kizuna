@@ -255,3 +255,15 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):
     assert preview.headers["content-type"] == "image/png"
     updated_timeline = client.get(f"/api/projects/{project_id}/timeline").json()
     assert updated_timeline["clips"][0]["storyboard_uri"] == rendered.json()["uri"]
+
+    layer_payload["animation"] = {"intent": "drift into frame", "easing": "ease-in-out", "end": {"x": 0.55, "y": 0.58, "scale": 0.95, "rotation": 1, "opacity": 0.8}}
+    client.put(f"/api/composition-layers/{character_layer['id']}", json=layer_payload)
+    motion = client.post(f"/api/compositions/{composition['id']}/render-video", json={"quality": "proxy", "fps": 8})
+    assert motion.status_code == 201
+    assert motion.json()["status"] == "completed", motion.json().get("error")
+    assert motion.json()["render_settings"]["frame_count"] == 8
+    video = client.get(motion.json()["uri"])
+    assert video.status_code == 200
+    assert video.headers["content-type"] == "video/mp4"
+    refreshed = client.get(f"/api/shots/{shot['id']}/composition").json()
+    assert refreshed["latest_motion_uri"] == motion.json()["uri"]

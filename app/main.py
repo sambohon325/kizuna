@@ -9,15 +9,19 @@ from sqlalchemy.orm import Session, selectinload
 from app.config import settings
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
-from app.models import Character, CharacterDesign, Project, Scene, Shot, StoryBrief, StyleProfile
-from app.schemas import CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, ProjectCreate, ProjectRead, SceneCreate, SceneRead, ShotCreate, ShotRead, StoryBriefInput, StoryBriefRead, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead
+from app.generation import ComfyUIProvider, MockProvider, ProviderError
+from app.models import Character, CharacterDesign, GenerationJob, MediaAsset, Project, Scene, Shot, StoryBrief, StyleProfile
+from app.schemas import CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, ProjectCreate, ProjectRead, SceneCreate, SceneRead, ShotCreate, ShotRead, StoryBriefInput, StoryBriefRead, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.app_name, version="0.1.0")
 static_dir = Path(__file__).parent / "static"
+render_dir = Path(settings.render_directory).resolve()
+render_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+app.mount("/renders", StaticFiles(directory=render_dir), name="renders")
 
 
 def project_query():
@@ -32,6 +36,12 @@ def health():
 @app.get("/api/style-catalog")
 def style_catalog():
     return STYLE_CATALOG
+
+
+@app.get("/api/generation/providers")
+def generation_providers():
+    workflow_ready = bool(settings.comfyui_workflow_path and Path(settings.comfyui_workflow_path).exists())
+    return {"active": settings.generation_provider, "providers": [{"id": "mock", "label": "Simulation", "ready": True}, {"id": "comfyui", "label": "Local ComfyUI", "ready": workflow_ready, "base_url": settings.comfyui_url}]}
 
 
 @app.get("/api/projects", response_model=list[ProjectRead])
@@ -149,6 +159,82 @@ def update_character_design(character_id: int, payload: CharacterDesignInput, db
     db.commit()
     db.refresh(design)
     return design
+
+
+def provider_for(name: str):
+    if name == "mock":
+        return MockProvider(render_dir)
+    if name == "comfyui":
+        return ComfyUIProvider(settings.comfyui_url, settings.comfyui_workflow_path, settings.comfyui_positive_node, settings.comfyui_negative_node, settings.comfyui_sampler_node)
+    raise ProviderError(f"Unknown generation provider: {name}")
+
+
+def record_assets(job: GenerationJob, character: Character, outputs: list[dict], db: Session) -> list[MediaAsset]:
+    existing = db.scalars(select(MediaAsset).where(MediaAsset.character_id == character.id, MediaAsset.kind == "character_reference")).all()
+    version = len(existing) + 1
+    assets = []
+    for output in outputs:
+        filename = output["filename"]
+        uri = f"/renders/{filename}" if output.get("path") else output.get("url", "")
+        asset = MediaAsset(project_id=character.project_id, character_id=character.id, generation_job_id=job.id, kind="character_reference", filename=filename, uri=uri, mime_type=output.get("mime_type", "image/png"), asset_metadata={key: value for key, value in output.items() if key not in {"path"}}, version=version)
+        db.add(asset)
+        assets.append(asset)
+    return assets
+
+
+def job_response(job: GenerationJob, db: Session):
+    assets = db.scalars(select(MediaAsset).where(MediaAsset.generation_job_id == job.id)).all()
+    return {"id": job.id, "character_id": job.character_id, "provider": job.provider, "status": job.status, "prompt": job.prompt, "negative_prompt": job.negative_prompt, "external_id": job.external_id, "error": job.error, "result_data": job.result_data, "assets": assets}
+
+
+@app.post("/api/characters/{character_id}/generate", response_model=GenerationJobRead, status_code=status.HTTP_201_CREATED)
+def generate_character_reference(character_id: int, payload: GenerationRequest, db: Session = Depends(get_db)):
+    character = db.scalars(select(Character).options(selectinload(Character.design)).where(Character.id == character_id)).one_or_none()
+    if not character:
+        raise HTTPException(404, "Character not found")
+    if not character.design or not character.design.reference_brief:
+        raise HTTPException(409, "Create the character reference brief before generating artwork")
+    provider_name = payload.provider or settings.generation_provider
+    job = GenerationJob(character_id=character.id, provider=provider_name, prompt=character.design.reference_brief, negative_prompt=payload.negative_prompt, request_data=payload.model_dump())
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    try:
+        result = provider_for(provider_name).submit(job.id, character.name, job.prompt, negative_prompt=job.negative_prompt, seed=payload.seed)
+        job.status = result.status
+        job.external_id = result.external_id
+        job.result_data = result.metadata
+        if result.outputs:
+            record_assets(job, character, result.outputs, db)
+    except ProviderError as exc:
+        job.status = "failed"
+        job.error = str(exc)
+    db.commit()
+    db.refresh(job)
+    return job_response(job, db)
+
+
+@app.post("/api/generation-jobs/{job_id}/sync", response_model=GenerationJobRead)
+def sync_generation_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(GenerationJob, job_id)
+    if not job:
+        raise HTTPException(404, "Generation job not found")
+    if job.provider != "comfyui" or job.status in {"completed", "failed"}:
+        return job_response(job, db)
+    try:
+        provider = provider_for(job.provider)
+        result = provider.poll(job.external_id)
+        job.status = result.status
+        job.result_data = result.metadata
+        if result.outputs:
+            character = db.get(Character, job.character_id)
+            local_outputs = provider.materialize(result.outputs, render_dir, job.id)
+            record_assets(job, character, local_outputs, db)
+    except ProviderError as exc:
+        job.status = "failed"
+        job.error = str(exc)
+    db.commit()
+    return job_response(job, db)
 
 
 @app.post("/api/projects/{project_id}/scenes", response_model=SceneRead, status_code=status.HTTP_201_CREATED)

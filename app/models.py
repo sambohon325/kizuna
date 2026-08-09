@@ -87,6 +87,39 @@ class CharacterDesign(Base):
     character: Mapped[Character] = relationship(back_populates="design")
 
 
+class GenerationJob(Base):
+    __tablename__ = "generation_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"))
+    provider: Mapped[str] = mapped_column(String(40), default="mock")
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    prompt: Mapped[str] = mapped_column(Text)
+    negative_prompt: Mapped[str] = mapped_column(Text, default="")
+    external_id: Mapped[str] = mapped_column(String(160), default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    request_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    result_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class MediaAsset(Base):
+    __tablename__ = "media_assets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    character_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id"), nullable=True)
+    generation_job_id: Mapped[int | None] = mapped_column(ForeignKey("generation_jobs.id"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(48), default="character_reference")
+    filename: Mapped[str] = mapped_column(String(255))
+    uri: Mapped[str] = mapped_column(Text)
+    mime_type: Mapped[str] = mapped_column(String(80), default="image/png")
+    asset_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    version: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Scene(Base):
     __tablename__ = "scenes"
 

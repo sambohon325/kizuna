@@ -13,4 +13,10 @@
 .reference-brief b{display:block;color:#f39c87;font-size:9px;letter-spacing:.15em;margin-bottom:8px}
 .anchor-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .anchor-list span{background:#f0e9f5;color:var(--purple);border-radius:30px;padding:6px 9px;font-size:10px}
+.generation-actions{display:flex;gap:10px;margin-top:14px;align-items:center}
+.generation-actions button{border:0;border-radius:9px;background:var(--red);color:white;padding:10px 14px;font-weight:700;cursor:pointer}
+.generation-actions small{color:var(--muted)}
+.asset-preview{margin-top:14px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#eee8df}
+.asset-preview img{display:block;width:100%;height:auto}
+.job-error{margin-top:12px;color:#a8322a;background:#f8dfda;border-radius:10px;padding:12px;font-size:12px}
 @media(max-width:700px){.character-grid{grid-template-columns:1fr}}

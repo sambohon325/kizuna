@@ -181,7 +181,33 @@ function collectCharacterDesign(form) {
 }
 
 function renderCharacterDesign(character, design) {
-  document.querySelector('#character-result').innerHTML = `<div class="reference-brief"><b>GENERATION-READY REFERENCE BRIEF · V${design.version}</b>${safe(design.reference_brief)}</div><div class="anchor-list">${design.consistency_anchors.map(anchor => `<span>LOCK · ${safe(anchor)}</span>`).join('')}</div>`;
+  document.querySelector('#character-result').innerHTML = `<div class="reference-brief"><b>GENERATION-READY REFERENCE BRIEF · V${design.version}</b>${safe(design.reference_brief)}</div><div class="anchor-list">${design.consistency_anchors.map(anchor => `<span>LOCK · ${safe(anchor)}</span>`).join('')}</div><div class="generation-actions"><button type="button" id="generate-character">Generate reference sheet</button><small>Simulation is the safe default; ComfyUI can be enabled through environment settings.</small></div><div id="generation-result"></div>`;
+  document.querySelector('#generate-character').onclick = generateCharacterReference;
+}
+
+async function generateCharacterReference() {
+  if (!activeCharacterId) return;
+  const button = document.querySelector('#generate-character');
+  button.disabled = true;
+  button.textContent = 'Queuing generation…';
+  try {
+    const job = await api(`/api/characters/${activeCharacterId}/generate`, {method:'POST', body:JSON.stringify({})});
+    renderGenerationJob(job);
+  } catch (error) {
+    document.querySelector('#generation-result').innerHTML = `<div class="job-error">${safe(error.message)}</div>`;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Generate reference sheet';
+  }
+}
+
+function renderGenerationJob(job) {
+  const result = document.querySelector('#generation-result');
+  if (job.status === 'failed') { result.innerHTML = `<div class="job-error">${safe(job.error)}</div>`; return; }
+  if (job.assets.length) { const asset = job.assets[0]; result.innerHTML = `<div class="asset-preview"><img src="${safe(asset.uri)}" alt="Generated character reference for the selected character"></div><div class="generation-actions"><small>${safe(job.provider)} · asset v${asset.version} · job ${job.id}</small></div>`; return; }
+  result.innerHTML = `<div class="generation-actions"><small>${safe(job.provider)} job ${job.external_id || job.id} is ${safe(job.status)}.</small>${job.provider === 'comfyui' ? `<button type="button" data-sync-job="${job.id}">Check result</button>` : ''}</div>`;
+  const sync = document.querySelector('[data-sync-job]');
+  if (sync) sync.onclick = async () => renderGenerationJob(await api(`/api/generation-jobs/${job.id}/sync`, {method:'POST'}));
 }
 
 function collectStory(form) {

@@ -64,6 +64,40 @@ class CharacterDesignRead(CharacterDesignInput):
     version: int
 
 
+class GenerationRequest(BaseModel):
+    provider: str | None = None
+    negative_prompt: str = "copyrighted character, logo, watermark, inconsistent face, extra limbs, text"
+    seed: int | None = None
+
+
+class MediaAssetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    character_id: int | None
+    generation_job_id: int | None
+    kind: str
+    filename: str
+    uri: str
+    mime_type: str
+    asset_metadata: dict[str, Any]
+    version: int
+
+
+class GenerationJobRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    character_id: int
+    provider: str
+    status: str
+    prompt: str
+    negative_prompt: str
+    external_id: str
+    error: str
+    result_data: dict[str, Any]
+    assets: list[MediaAssetRead] = Field(default_factory=list)
+
+
 class CharacterRead(CharacterInput):
     model_config = ConfigDict(from_attributes=True)
     id: int

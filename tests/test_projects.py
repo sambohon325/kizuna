@@ -68,3 +68,21 @@ def test_character_design_compiles_style_aware_reference_brief(client):
     assert updated.json()["want"] == "Save the entire station"
     versioned = client.put(f"/api/characters/{character['id']}/design", json=design_payload)
     assert versioned.json()["version"] == 2
+    providers = client.get("/api/generation/providers")
+    assert providers.status_code == 200
+    assert providers.json()["active"] == "mock"
+    generation = client.post(f"/api/characters/{character['id']}/generate", json={"provider": "mock", "seed": 42})
+    assert generation.status_code == 201
+    job = generation.json()
+    assert job["status"] == "completed"
+    assert job["assets"][0]["mime_type"] == "image/svg+xml"
+    preview = client.get(job["assets"][0]["uri"])
+    assert preview.status_code == 200
+    assert "REFERENCE SHEET SIMULATION" in preview.text
+
+
+def test_generation_requires_character_design(client):
+    project_id = client.post("/api/projects", json={"title": "No Sheet"}).json()["id"]
+    character_id = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ren"}).json()["id"]
+    response = client.post(f"/api/characters/{character_id}/generate", json={"provider": "mock"})
+    assert response.status_code == 409

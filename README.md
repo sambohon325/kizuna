@@ -13,6 +13,8 @@ uvicorn app.main:app --reload
 
 Open <http://127.0.0.1:8000>. The local setup uses SQLite and creates `anime_studio.db` automatically.
 
+To connect a render machine, see [ComfyUI provider setup](docs/COMFYUI.md).
+
 ## Test
 
 ```powershell
@@ -26,6 +28,8 @@ pytest
 - Structured Creative DNA rather than opaque prompt presets
 - Writer's Room with project briefs, generated dramatic beats, and editable outlines
 - Character Studio with narrative identity, visual anchors, versioned designs, and style-aware reference briefs
+- Provider-neutral image generation jobs with versioned media assets
+- Local ComfyUI adapter using API-format workflows; safe simulation provider by default
 - Provider and render-worker interfaces to be added behind stable job APIs
 - Docker Compose foundation for eventual Coolify deployment
 

@@ -298,6 +298,7 @@ class TimelineClipRead(TimelineClipUpdate):
     shot_title: str = ""
     scene_title: str = ""
     storyboard_uri: str = ""
+    motion_uri: str = ""
 
 
 class TimelineOrderUpdate(BaseModel):
@@ -324,6 +325,11 @@ class AnimaticRenderRead(BaseModel):
     uri: str
     error: str
     render_settings: dict[str, Any]
+
+
+class MasterRenderRequest(BaseModel):
+    profile: str = Field(default="preview", pattern="^(preview|1080p|4k)$")
+    fps: int | None = Field(default=None, ge=1, le=60)
 
 
 class VoiceProfileInput(BaseModel):

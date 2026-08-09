@@ -267,3 +267,18 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):
     assert video.headers["content-type"] == "video/mp4"
     refreshed = client.get(f"/api/shots/{shot['id']}/composition").json()
     assert refreshed["latest_motion_uri"] == motion.json()["uri"]
+
+    client.post(f"/api/scenes/{scene_id}/shots", json={"title": "Signal answers", "position": 2, "duration_seconds": 0.6})
+    rebuilt_timeline = client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 8, "width": 320, "height": 180}).json()
+    studio = client.post(f"/api/timelines/{rebuilt_timeline['id']}/audio/build").json()
+    ambience = next(track for track in studio["tracks"] if track["kind"] == "ambience")
+    cue = client.post(f"/api/audio-tracks/{ambience['id']}/cues", json={"start_seconds": 0.1, "duration_seconds": 0.3, "text": "Carrier tone"}).json()
+    client.post(f"/api/audio-cues/{cue['id']}/generate-scratch")
+    master = client.post(f"/api/timelines/{rebuilt_timeline['id']}/render-master", json={"profile": "preview", "fps": 8})
+    assert master.status_code == 201
+    assert master.json()["status"] == "completed", master.json().get("error")
+    assert master.json()["render_settings"]["motion_clips"] == 1
+    assert master.json()["render_settings"]["fallback_clips"] == 1
+    assert master.json()["render_settings"]["audio_cues"] == 1
+    assert master.json()["render_settings"]["width"] == 320
+    assert client.get(master.json()["uri"]).headers["content-type"] == "video/mp4"

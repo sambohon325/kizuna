@@ -16,11 +16,12 @@ from app.animatic import render_animatic
 from app.audio import generate_timing_slate
 from app.compositor import render_composite
 from app.motion import render_motion_video
+from app.mastering import render_timeline_master
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
 from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MotionRenderRequest, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
+from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterRenderRequest, MotionRenderRequest, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -50,11 +51,14 @@ def timeline_response(timeline: Timeline, db: Session):
         shot_composition = db.scalar(select(ShotComposition).where(ShotComposition.shot_id == shot.id))
         if composite and shot_composition and composite.render_settings.get("version") != shot_composition.version:
             composite = None
+        motion = db.scalar(select(ShotMotionRender).where(ShotMotionRender.composition_id == shot_composition.id, ShotMotionRender.status == "completed").order_by(ShotMotionRender.id.desc())) if shot_composition else None
+        if motion and motion.render_settings.get("version") != shot_composition.version:
+            motion = None
         output.append({
             "id": clip.id, "timeline_id": clip.timeline_id, "shot_id": clip.shot_id, "position": clip.position,
             "duration_seconds": clip.duration_seconds, "transition": clip.transition,
             "transition_duration": clip.transition_duration, "audio_cue": clip.audio_cue,
-            "shot_title": shot.title, "scene_title": scene.title, "storyboard_uri": composite.uri if composite else (asset.uri if asset else ""),
+            "shot_title": shot.title, "scene_title": scene.title, "storyboard_uri": composite.uri if composite else (asset.uri if asset else ""), "motion_uri": motion.uri if motion else "",
         })
     total = sum(clip["duration_seconds"] for clip in output)
     total -= sum(min(clip["transition_duration"], clip["duration_seconds"] / 2) for clip in output[1:] if clip["transition"] != "cut")
@@ -1034,6 +1038,53 @@ def render_timeline(timeline_id: int, db: Session = Depends(get_db)):
         render_animatic(clips, render_dir / render.filename, work_dir, timeline.fps, timeline.width, timeline.height, audio_clips)
         render.uri, render.status = f"/renders/{render.filename}", "completed"
         timeline.status = "preview-ready"
+    except Exception as exc:
+        render.status, render.error = "failed", str(exc)
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+    db.commit(); db.refresh(render)
+    return render
+
+
+@app.post("/api/timelines/{timeline_id}/render-master", response_model=AnimaticRenderRead, status_code=status.HTTP_201_CREATED)
+def render_master(timeline_id: int, payload: MasterRenderRequest, db: Session = Depends(get_db)):
+    timeline = db.get(Timeline, timeline_id)
+    if not timeline:
+        raise HTTPException(404, "Timeline not found")
+    if payload.profile == "4k":
+        width, height = 3840, 2160
+    elif payload.profile == "1080p":
+        width, height = 1920, 1080
+    else:
+        scale = min(1, 1280 / timeline.width, 720 / timeline.height)
+        width = max(2, int(timeline.width * scale) // 2 * 2)
+        height = max(2, int(timeline.height * scale) // 2 * 2)
+    fps = payload.fps or timeline.fps
+    base_settings = {"kind": "production_master", "profile": payload.profile, "fps": fps, "width": width, "height": height}
+    render = AnimaticRender(timeline_id=timeline.id, status="rendering", render_settings=base_settings)
+    db.add(render); db.commit(); db.refresh(render)
+    work_dir = render_dir / f"master-work-{render.id}"
+    try:
+        timeline_data = timeline_response(timeline, db)
+        clips = []
+        for clip in timeline_data["clips"]:
+            clips.append({
+                "motion_source": render_dir / Path(clip["motion_uri"]).name if clip["motion_uri"] else None,
+                "still_source": render_dir / Path(clip["storyboard_uri"]).name if clip["storyboard_uri"] else None,
+                "title": clip["shot_title"], "subtitle": f"{clip['scene_title']}  /  {clip['duration_seconds']:.1f}s",
+                "duration": clip["duration_seconds"], "transition": clip["transition"], "transition_duration": clip["transition_duration"],
+            })
+        audio_clips = []
+        tracks = db.scalars(select(AudioTrack).options(selectinload(AudioTrack.cues)).where(AudioTrack.timeline_id == timeline.id, AudioTrack.muted.is_(False))).unique().all()
+        for track in tracks:
+            for cue in track.cues:
+                if cue.uri:
+                    audio_clips.append({"source": render_dir / Path(cue.uri).name, "start": cue.start_seconds, "duration": cue.duration_seconds, "volume": track.volume})
+        render.filename = f"master-{render.id}-{payload.profile}.mp4"
+        manifest = render_timeline_master(clips, audio_clips, render_dir / render.filename, work_dir, fps, width, height)
+        render.uri, render.status = f"/renders/{render.filename}", "completed"
+        render.render_settings = {**base_settings, **manifest}
+        timeline.status = "master-ready"
     except Exception as exc:
         render.status, render.error = "failed", str(exc)
     finally:

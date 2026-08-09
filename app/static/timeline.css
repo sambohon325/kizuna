@@ -22,4 +22,5 @@
 .clip-actions { justify-content:flex-end; margin-top:16px; }
 #animatic-result video { width:100%; max-height:360px; background:#07080b; margin-top:18px; }
 .render-progress { margin-top:18px; padding:14px; border-left:3px solid #e85c48; background:#211a1b; }
+.master-manifest{display:grid;gap:6px;margin-top:10px;padding:14px;background:#10131a;border-left:3px solid #65c39c}.master-manifest b{color:#65c39c}.master-manifest span{color:#aeb4c0}.master-manifest a{color:#f07861}.timeline-project-control{flex-wrap:wrap}#master-profile{min-width:210px}
 @media(max-width:850px){.timeline-title{align-items:flex-start;flex-direction:column}.timeline-project-control{flex-wrap:wrap}.timeline-workspace{grid-template-columns:1fr}.timeline-clips{max-height:260px}.clip-grid{grid-template-columns:1fr}}

@@ -11,7 +11,7 @@ python -m pip install -e ".[dev]"
 uvicorn app.main:app --reload
 ```
 
-Open <http://127.0.0.1:8000>. The local setup uses SQLite and creates `anime_studio.db` automatically.
+Open <http://127.0.0.1:8000>. The local setup uses SQLite, creates `anime_studio.db` automatically, and applies versioned database migrations before startup.
 
 To connect a render machine, see [ComfyUI provider setup](docs/COMFYUI.md).
 For distributed workers, see [network render farm setup](docs/RENDER_FARM.md).
@@ -26,6 +26,7 @@ pytest
 
 - FastAPI API and browser application
 - SQLAlchemy persistence (SQLite locally, PostgreSQL-ready)
+- Versioned Alembic schema migrations with guarded adoption of existing databases, idempotent startup upgrades, and an ordered Coolify migration service
 - Structured Creative DNA rather than opaque prompt presets
 - Writer's Room with project briefs, editable outlines, and a deployable Writer bot that produces schema-validated story proposals through approval or automatic execution
 - Character Studio with narrative identity, visual anchors, versioned designs, style-aware reference briefs, and a Character Designer bot that can propose or apply a complete character bible before optionally queuing reference-sheet generation
@@ -65,7 +66,7 @@ pytest
 ## Next milestones
 
 1. Migrate media transfer, maintenance, crew, and render workloads onto the new durable job contract
-2. Add Alembic migrations and production PostgreSQL verification
+2. Add PostgreSQL migration verification in CI
 3. Add health checks, job diagnostics, backup restore verification, and the guarded Coolify deployment path
 4. Add authentication and tenant isolation before any public deployment
 
@@ -82,3 +83,4 @@ See [metadata-first media storage](docs/MEDIA_STORAGE.md) for local originals, l
 See [durable production jobs](docs/JOBS.md) for retries, cancellation, worker recovery, Redis dispatch, and local inline behavior.
 See [originality, rights, and release compliance](docs/COMPLIANCE.md) for enforced gates and audit limitations, and [professional verification](docs/PROFESSIONAL_VERIFICATION.md) for creator identity and prior-work claims.
 See [picture and audio editing](docs/EDITING.md) for tactile edit controls.
+See [database migrations](docs/DATABASE_MIGRATIONS.md) for local upgrades, existing-database adoption, and Coolify startup behavior.

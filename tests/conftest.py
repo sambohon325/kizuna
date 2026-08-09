@@ -1,6 +1,6 @@
 import os
 
-os.environ["KIZUNA_DATABASE_URL"] = "sqlite:///./test_anime_studio.db"
+os.environ.setdefault("KIZUNA_DATABASE_URL", "sqlite:///./test_anime_studio.db")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,4 +20,3 @@ def clean_database():
 @pytest.fixture
 def client():
     return TestClient(app)
-

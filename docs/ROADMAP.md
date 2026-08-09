@@ -55,7 +55,7 @@ Goal: turn the current single-studio alpha into a durable system that can surviv
 - provide a creator-reviewed cleanup queue with fresh replica verification and no implicit deletion;
 - move crew, render, media, and maintenance work onto a durable Redis-backed job contract;
 - add idempotency, cancellation, retry policy, progress events, and recovery after restart;
-- introduce Alembic migrations and test both SQLite development and PostgreSQL production paths;
+- maintain the implemented Alembic migration path and add PostgreSQL production verification in CI;
 - split the large application module into bounded production services without rewriting working craft UIs; and
 - add structured logs, health/readiness checks, job diagnostics, and backup-restore drills.
 
@@ -142,7 +142,7 @@ The next four implementation slices should remain inside Phase 0:
 
 1. **Automatic media lifecycle — implemented:** generated assets, audio, shot renders, animatics, and masters enter residency tracking automatically; working proxies are produced; cleanup approval requires fresh checksum-matching replicas and does not delete the original.
 2. **Durable job foundation — in progress:** the shared database job envelope, Redis wakeups, inline development fallback, worker leases, retry/cancellation controls, event history, and proxy executor are implemented. Next migrate media transfer and maintenance, then crew and render jobs.
-3. **Schema migrations and production database verification:** add Alembic, create a baseline migration for existing models, and run the suite against PostgreSQL in CI while retaining SQLite for simple local development.
+3. **Schema migrations and production database verification — migration foundation implemented:** Alembic now owns a complete baseline, safely adopts matching legacy databases without losing productions, rejects unsafe partial schemas, and orders Coolify services behind a dedicated migration job. Next run the migration suite against PostgreSQL in CI while retaining SQLite for simple local development.
 4. **Operational readiness:** add health/readiness endpoints, structured job diagnostics, backup restore verification, storage-capacity warnings, and a safe Coolify deployment checklist. Authentication and tenant isolation must land before any public deployment.
 
 This order converts existing features into dependable platform services. It also keeps the door open for every useful part of the proposed suite without prematurely multiplying products, infrastructure, or model-training obligations.

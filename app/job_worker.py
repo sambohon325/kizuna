@@ -6,9 +6,10 @@ import time
 from uuid import uuid4
 
 from app.config import settings
-from app.database import Base, SessionLocal, engine
+from app.database import SessionLocal
 from app.job_queue import claim_job, complete_job, fail_job, redis_client, update_progress, wait_for_notification
 from app.media_proxy import execute_media_proxy_job
+from app.schema_migrations import migrate_database
 
 
 HANDLERS = {"media.proxy": execute_media_proxy_job}
@@ -41,7 +42,7 @@ def run_job_once(worker_id: str) -> bool:
 
 
 def main() -> None:
-    Base.metadata.create_all(bind=engine)
+    migrate_database()
     worker_id = worker_identity()
     stream_id = "$"
     while True:

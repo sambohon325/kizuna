@@ -21,7 +21,8 @@ from app.compositor import render_composite
 from app.motion import render_motion_video
 from app.mastering import render_timeline_master
 from app.segmented_export import assemble_segments, clip_start_times, segment_clip_ranges, sha256_file
-from app.database import Base, engine, get_db
+from app.database import get_db
+from app.schema_migrations import database_revision, migrate_database
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
 from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
@@ -44,7 +45,7 @@ from app.visual_agents import VisualAgentError, create_background_design_proposa
 from app.animator_agent import AnimatorAgentError, create_animator_proposal
 from app.editor_agent import EditorAgentError, create_editor_proposal
 
-Base.metadata.create_all(bind=engine)
+migrate_database()
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
 
@@ -164,7 +165,7 @@ def timeline_response(timeline: Timeline, db: Session):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "environment": settings.environment}
+    return {"status": "ok", "environment": settings.environment, "database_revision": database_revision()}
 
 
 @app.get("/api/style-catalog")

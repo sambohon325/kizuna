@@ -1,4 +1,15 @@
 services:
+  migrate:
+    build: .
+    command: python -m app.schema_migrations
+    environment:
+      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
+      KIZUNA_ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   web:
     build: .
     environment:
@@ -20,6 +31,8 @@ services:
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       KIZUNA_FFMPEG_PATH: /usr/bin/ffmpeg
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -42,6 +55,8 @@ services:
       KIZUNA_STORAGE_DIRECTORY: /app/storage
       KIZUNA_FFMPEG_PATH: /usr/bin/ffmpeg
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -64,6 +79,8 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     volumes:

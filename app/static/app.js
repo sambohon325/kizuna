@@ -406,12 +406,15 @@ async function openRenderFarm() {
 
 async function refreshRenderFarm() {
   const farm = await api('/api/render-farm/status');
-  const queued = farm.jobs.filter(job => job.status === 'queued').length;
-  const running = farm.jobs.filter(job => job.status === 'running').length;
+  const segments = farm.master_segments || [];
+  const queued = farm.jobs.filter(job => job.status === 'queued').length + segments.filter(segment => segment.status === 'queued').length;
+  const running = farm.jobs.filter(job => job.status === 'running').length + segments.filter(segment => ['leased','rendering'].includes(segment.status)).length;
   const online = farm.workers.filter(worker => ['online','busy'].includes(worker.status)).length;
   document.querySelector('#farm-summary').innerHTML = `<div class="farm-stat"><b>${online}</b><span>WORKERS ONLINE</span></div><div class="farm-stat"><b>${running}</b><span>JOBS RENDERING</span></div><div class="farm-stat"><b>${queued}</b><span>JOBS QUEUED</span></div>`;
   document.querySelector('#farm-workers').innerHTML = farm.workers.length ? farm.workers.map(worker => { const gpu = worker.capabilities.gpu || worker.capabilities.gpus?.map(item => item.name).join(', ') || 'CPU worker'; const vram = worker.capabilities.vram_gb ? `${worker.capabilities.vram_gb} GB VRAM` : ''; return `<article class="worker-card"><header><div><b>${safe(worker.name)}</b><br><small>${safe(worker.hostname)}</small></div><span class="worker-status ${safe(worker.status)}">${safe(worker.status)}</span></header><p>${safe(gpu)} ${safe(vram)}</p><small>${worker.supported_tasks.map(safe).join(' · ')}</small></article>`; }).join('') : '<div class="empty">No render workers enrolled yet.</div>';
-  document.querySelector('#farm-jobs').innerHTML = farm.jobs.length ? farm.jobs.map(job => `<div class="farm-job"><b>#${job.id}</b><span>Character ${job.character_id}</span><span>${safe(job.status)}</span><span>${job.assets} assets</span></div>`).join('') : '<div class="empty">No farm jobs yet. Choose Render farm in Character Studio to queue one.</div>';
+  const characterJobs = farm.jobs.map(job => `<div class="farm-job"><b>#${job.id}</b><span>Character ${job.character_id}</span><span>${safe(job.status)}</span><span>${job.assets} assets</span></div>`);
+  const masterJobs = segments.map(segment => `<div class="farm-job"><b>S${segment.id}</b><span>Master ${segment.export_id} · segment ${segment.position}</span><span>${safe(segment.status)}</span><span>${segment.attempts} attempt${segment.attempts === 1 ? '' : 's'}</span></div>`);
+  document.querySelector('#farm-jobs').innerHTML = characterJobs.length || masterJobs.length ? [...masterJobs, ...characterJobs].join('') : '<div class="empty">No farm jobs yet. Queue a character render or segmented master export.</div>';
 }
 
 async function openTimeline(projectId) {

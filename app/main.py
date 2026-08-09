@@ -508,8 +508,21 @@ def render_farm_status(db: Session = Depends(get_db)):
         if not worker.last_seen or worker.last_seen < stale_before:
             worker.status = "offline"
     jobs = db.scalars(select(GenerationJob).where(GenerationJob.provider == "farm").order_by(GenerationJob.id.desc()).limit(20)).all()
+    segments = db.scalars(select(MasterSegment).order_by(MasterSegment.id.desc()).limit(20)).all()
     db.commit()
-    return {"workers": [RenderWorkerRead.model_validate(worker).model_dump() for worker in workers], "jobs": [{"id": job.id, "character_id": job.character_id, "status": job.status, "error": job.error, "assets": len(db.scalars(select(MediaAsset).where(MediaAsset.generation_job_id == job.id)).all())} for job in jobs]}
+    return {
+        "workers": [RenderWorkerRead.model_validate(worker).model_dump() for worker in workers],
+        "jobs": [{"id": job.id, "character_id": job.character_id, "status": job.status, "error": job.error, "assets": len(db.scalars(select(MediaAsset).where(MediaAsset.generation_job_id == job.id)).all())} for job in jobs],
+        "master_segments": [{
+            "id": segment.id,
+            "export_id": segment.export_id,
+            "position": segment.position,
+            "status": segment.status,
+            "attempts": segment.attempts,
+            "worker_id": segment.worker_id,
+            "error": segment.error,
+        } for segment in segments],
+    }
 
 
 @app.post("/api/generation-jobs/{job_id}/sync", response_model=GenerationJobRead)
@@ -1260,19 +1273,62 @@ def claim_master_segment(worker_id: int, authorization: str | None = Header(defa
     return {"segment": MasterSegmentRead.model_validate(segment).model_dump(), "export": {"id": job.id, "fps": job.fps, "width": job.width, "height": job.height, "profile": job.profile}}
 
 
-@app.put("/api/workers/{worker_id}/master-segments/{segment_id}/artifact", response_model=MasterSegmentRead)
-async def upload_master_segment(worker_id: int, segment_id: int, request: Request, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    worker = authenticate_worker(worker_id, authorization, db)
+def leased_master_segment(worker: RenderWorker, segment_id: int, db: Session) -> MasterSegment:
     segment = db.get(MasterSegment, segment_id)
     if not segment or segment.worker_id != worker.id or segment.status != "leased":
         raise HTTPException(409, "Segment is not leased to this worker")
-    content = await request.body()
-    if not content or len(content) > settings.max_artifact_bytes * 16:
-        raise HTTPException(413, "Segment artifact is empty or too large")
+    return segment
+
+
+@app.post("/api/workers/{worker_id}/master-segments/{segment_id}/heartbeat", response_model=MasterSegmentRead)
+def heartbeat_master_segment(worker_id: int, segment_id: int, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    worker = authenticate_worker(worker_id, authorization, db)
+    segment = leased_master_segment(worker, segment_id, db)
+    segment.leased_until = utcnow() + timedelta(seconds=settings.worker_lease_seconds)
+    worker.status, worker.last_seen = "busy", utcnow()
+    db.commit(); db.refresh(segment)
+    return segment
+
+
+@app.post("/api/workers/{worker_id}/master-segments/{segment_id}/fail", response_model=MasterSegmentRead)
+def fail_master_segment(worker_id: int, segment_id: int, payload: JobFailure, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    worker = authenticate_worker(worker_id, authorization, db)
+    segment = leased_master_segment(worker, segment_id, db)
+    segment.status = "queued" if payload.retryable else "failed"
+    segment.error, segment.worker_id, segment.leased_until = payload.error[:4000], None, None
+    worker.status, worker.last_seen = "online", utcnow()
+    job = db.get(MasterExportJob, segment.export_id)
+    job.status = "planned" if payload.retryable else "needs-attention"
+    job.error = "" if payload.retryable else segment.error
+    db.commit(); db.refresh(segment)
+    return segment
+
+
+@app.put("/api/workers/{worker_id}/master-segments/{segment_id}/artifact", response_model=MasterSegmentRead)
+async def upload_master_segment(worker_id: int, segment_id: int, request: Request, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    worker = authenticate_worker(worker_id, authorization, db)
+    segment = leased_master_segment(worker, segment_id, db)
     segment.filename = f"master-export-{segment.export_id}-segment-{segment.position:04d}.mp4"
     path = render_dir / segment.filename
-    path.write_bytes(content)
-    segment.uri, segment.status, segment.checksum_sha256 = f"/renders/{segment.filename}", "completed", sha256_file(path)
+    temporary = render_dir / f".{segment.filename}.{uuid4().hex}.part"
+    maximum = settings.max_artifact_bytes * 16
+    received = 0
+    checksum = hashlib.sha256()
+    try:
+        with temporary.open("wb") as output:
+            async for chunk in request.stream():
+                received += len(chunk)
+                if received > maximum:
+                    raise HTTPException(413, "Segment artifact is too large")
+                checksum.update(chunk)
+                output.write(chunk)
+        if not received:
+            raise HTTPException(413, "Segment artifact is empty")
+        temporary.replace(path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+    segment.uri, segment.status, segment.checksum_sha256 = f"/renders/{segment.filename}", "completed", checksum.hexdigest()
     worker.status, worker.last_seen = "online", utcnow()
     job = db.get(MasterExportJob, segment.export_id)
     if not db.scalar(select(MasterSegment).where(MasterSegment.export_id == segment.export_id, MasterSegment.status != "completed")):

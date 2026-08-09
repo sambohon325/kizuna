@@ -305,7 +305,16 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):
     claimed = client.post(f"/api/workers/{worker['id']}/master-segments/claim", headers=headers)
     assert claimed.status_code == 200
     segment_id = claimed.json()["segment"]["id"]
+    renewed = client.post(f"/api/workers/{worker['id']}/master-segments/{segment_id}/heartbeat", headers=headers)
+    assert renewed.json()["status"] == "leased"
+    retry = client.post(f"/api/workers/{worker['id']}/master-segments/{segment_id}/fail", headers=headers, json={"error": "temporary encoder failure", "retryable": True})
+    assert retry.json()["status"] == "queued"
+    claimed_again = client.post(f"/api/workers/{worker['id']}/master-segments/claim", headers=headers)
+    assert claimed_again.json()["segment"]["id"] == segment_id
+    assert claimed_again.json()["segment"]["attempts"] == 2
     artifact = client.get(assembled.json()["final_uri"]).content
     uploaded = client.put(f"/api/workers/{worker['id']}/master-segments/{segment_id}/artifact", headers={**headers, "Content-Type": "video/mp4"}, content=artifact)
     assert uploaded.json()["status"] == "completed"
     assert len(uploaded.json()["checksum_sha256"]) == 64
+    farm = client.get("/api/render-farm/status").json()
+    assert any(segment["id"] == segment_id and segment["status"] == "completed" for segment in farm["master_segments"])

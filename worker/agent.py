@@ -162,7 +162,7 @@ class KizunaWorker:
                 } for cue in segment["manifest"].get("audio", [])]
                 output = root / "segment.mp4"
                 with ThreadPoolExecutor(max_workers=1) as renderer:
-                    future = renderer.submit(render_timeline_master, clips, audio, output, root / "work", int(export["fps"]), int(export["width"]), int(export["height"]))
+                    future = renderer.submit(render_timeline_master, clips, audio, output, root / "work", int(export["fps"]), int(export["width"]), int(export["height"]), segment["manifest"].get("watermark_text", ""), segment["manifest"].get("max_duration_seconds"))
                     while not future.done():
                         time.sleep(self.poll_seconds)
                         self.segment_heartbeat(segment_id)

@@ -202,6 +202,7 @@ let activeCompositorShotId = null;
 let activeCompositionLayerId = null;
 let activeMasterExport = null;
 let masterExportPollTimer = null;
+let activeAccount = null;
 let generationProviders = [];
 let draggedTimelineClipId = null;
 let audioDragState = null;
@@ -223,7 +224,7 @@ function safe(value = '') {
 
 async function loadAccountIdentity(){
   const status=await fetch('/api/auth/status').then(response=>response.json());if(!status.auth_required)return;
-  const user=await api('/api/auth/me');document.querySelector('#studio-identity').textContent=user.display_name;
+  const user=await api('/api/auth/me');activeAccount=user;document.querySelector('#studio-identity').textContent=user.account_tier==='trial'?`${user.display_name} · Trial`:user.display_name;
   const button=document.querySelector('#sign-out');button.hidden=false;button.onclick=async()=>{await api('/api/auth/logout',{method:'POST'});location.href='/login';};
 }
 
@@ -970,6 +971,7 @@ function renderSegmentedExport(job) {
   if (distributed) actions = '<button type="button" data-export-action="refresh">Refresh status</button>';
   else if (job.status !== 'completed') actions = `<button type="button" data-export-action="dispatch">Send to render farm</button><button type="button" data-export-action="run-next">Run next locally</button><button type="button" data-export-action="run-all">Run all locally</button><button type="button" data-export-action="resume">Verify & resume</button>${ready?'<button type="button" data-export-action="assemble">Assemble master</button>':''}`;
   document.querySelector('#segmented-export-result').innerHTML=`<section class="segment-export"><header><div><p class="eyebrow">DISTRIBUTED MASTER · JOB ${job.id}</p><b>${safe(job.profile.toUpperCase())} · ${job.width} × ${job.height} · ${job.fps} fps</b></div><span>${job.completed_segments}/${job.total_segments} segments · ${job.progress_percent}%</span></header><div class="export-state ${safe(job.status)}"><i></i><span>${safe(stateText)}</span></div><div class="segment-progress"><i style="width:${job.progress_percent}%"></i></div><div class="segment-list">${job.segments.map(segment=>`<span class="segment-chip ${safe(segment.status)}"><b>${segment.position}</b> clips ${segment.manifest.clip_start}–${segment.manifest.clip_end}<small>${safe(segment.status)}${segment.checksum_sha256?' · '+safe(segment.checksum_sha256.slice(0,8)):''}</small></span>`).join('')}</div>${actions?`<div class="segment-actions">${actions}</div>`:''}${job.final_uri?`<div class="master-manifest"><b>FINAL MASTER READY</b><span>All segments passed integrity checks and were assembled automatically.</span><a href="${safe(job.final_uri)}" download>Download final master</a></div>`:''}${job.error?`<div class="job-error">${safe(job.error)}</div>`:''}</section>`;
+  if(job.watermarked)document.querySelector('#segmented-export-result .segment-export header')?.insertAdjacentHTML('afterend',`<div class="job-error">Trial export · limited to ${job.max_duration_seconds||60} seconds · Kizuna watermark included</div>`);
   document.querySelectorAll('[data-export-action]').forEach(button=>button.onclick=()=>runExportAction(button.dataset.exportAction));
   if (distributed) startMasterExportPolling(); else stopMasterExportPolling();
 }

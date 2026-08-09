@@ -64,6 +64,12 @@ class AuthLoginInput(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class TrialSignupInput(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    display_name: str = Field(min_length=1, max_length=160)
+    password: str = Field(min_length=12, max_length=256)
+
+
 class ProjectAccessInput(BaseModel):
     project_id: int
     role: str = Field(pattern="^(owner|editor|viewer)$")
@@ -90,6 +96,12 @@ def set_auth_cookies(response: Response, session_token: str, csrf_token: str) ->
     response.set_cookie(CSRF_COOKIE, csrf_token, max_age=max_age, httponly=False, secure=settings.cookie_secure, samesite="strict", path="/")
 
 
+def account_response(user: User) -> dict:
+    now = auth_utcnow()
+    trial_active = user.account_tier == "trial" and bool(user.trial_ends_at and user.trial_ends_at > now)
+    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role, "account_tier": user.account_tier, "trial_ends_at": user.trial_ends_at, "trial_active": trial_active, "trial_export_seconds": settings.trial_export_seconds if user.account_tier == "trial" else None, "trial_watermarked": user.account_tier == "trial"}
+
+
 @app.middleware("http")
 async def authenticate_and_authorize(request: Request, call_next):
     if not settings.auth_required:
@@ -110,6 +122,8 @@ async def authenticate_and_authorize(request: Request, call_next):
             csrf = request.headers.get("X-Kizuna-CSRF", "")
             if not csrf or not secrets.compare_digest(token_hash(csrf), session.csrf_hash):
                 return JSONResponse(status_code=403, content={"detail": "Security token missing or expired. Refresh the page and try again."})
+            if user.account_tier == "trial" and user.trial_ends_at and user.trial_ends_at <= auth_utcnow() and not path.startswith("/api/auth/"):
+                return JSONResponse(status_code=status.HTTP_402_PAYMENT_REQUIRED, content={"detail": "Your 7-day Kizuna trial has ended. Your productions remain available to review; upgrade to continue creating or exporting."})
         if (path.startswith("/api/settings/") or path == "/api/render-farm/status") and user.role != "admin":
             return JSONResponse(status_code=403, content={"detail": "Studio administrator access required"})
         project_id = project_for_path(db, path)
@@ -246,7 +260,33 @@ def health():
 
 @app.get("/api/auth/status")
 def auth_status(db: Session = Depends(get_db)):
-    return {"auth_required": settings.auth_required, "setup_required": settings.auth_required and db.scalar(select(User.id).limit(1)) is None, "public_url": settings.public_url, "marketing_url": settings.marketing_url}
+    return {"auth_required": settings.auth_required, "setup_required": settings.auth_required and db.scalar(select(User.id).limit(1)) is None, "trial_signup_available": settings.auth_required and db.scalar(select(User.id).where(User.role == "admin").limit(1)) is not None, "trial_days": settings.trial_days, "trial_export_seconds": settings.trial_export_seconds, "public_url": settings.public_url, "marketing_url": settings.marketing_url}
+
+
+@app.post("/api/auth/trial", status_code=status.HTTP_201_CREATED)
+def create_trial_account(payload: TrialSignupInput, response: Response, db: Session = Depends(get_db)):
+    if not settings.auth_required:
+        raise HTTPException(409, "Trial accounts are only available on the hosted Kizuna studio")
+    if db.scalar(select(User.id).where(User.role == "admin").limit(1)) is None:
+        raise HTTPException(503, "Kizuna is finishing studio setup. Please try again shortly.")
+    email = normalize_email(payload.email)
+    if "@" not in email or email.startswith("@") or email.endswith("@"):
+        raise HTTPException(422, "Enter a valid email address")
+    trial_ends_at = auth_utcnow() + timedelta(days=max(1, settings.trial_days))
+    user = User(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="creator", account_tier="trial", trial_ends_at=trial_ends_at, last_sign_in_at=auth_utcnow())
+    project = Project(title="My First Production", logline="")
+    project.style_profile = StyleProfile(era_secondary="2020s", visual={"linework": "bold variable ink", "palette": "controlled cinematic", "shading": "two-tone cel"}, direction={"camera": "character-led", "motion": "selective fluidity"}, narrative={"structure": "kishotenketsu", "tone": "hopeful"}, archetypes=["reluctant protagonist", "ideological rival"])
+    db.add_all([user, project])
+    try:
+        db.flush()
+        db.add(ProjectMembership(project_id=project.id, user_id=user.id, role="owner"))
+        session_token, csrf_token, _ = create_session(user, db)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "An account already uses this email")
+    set_auth_cookies(response, session_token, csrf_token)
+    return {**account_response(user), "project_id": project.id}
 
 
 @app.post("/api/auth/setup")
@@ -260,7 +300,7 @@ def setup_first_admin(payload: AuthSetupInput, response: Response, db: Session =
     email = normalize_email(payload.email)
     if "@" not in email or email.startswith("@") or email.endswith("@"):
         raise HTTPException(422, "Enter a valid email address")
-    user = User(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="admin")
+    user = User(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="admin", account_tier="studio")
     db.add(user)
     try:
         db.flush()
@@ -273,7 +313,7 @@ def setup_first_admin(payload: AuthSetupInput, response: Response, db: Session =
         db.rollback()
         raise HTTPException(409, "Studio setup was completed by another request")
     set_auth_cookies(response, session_token, csrf_token)
-    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role}
+    return account_response(user)
 
 
 @app.post("/api/auth/login")
@@ -297,13 +337,12 @@ def sign_in(payload: AuthLoginInput, response: Response, db: Session = Depends(g
     session_token, csrf_token, _ = create_session(user, db)
     db.commit()
     set_auth_cookies(response, session_token, csrf_token)
-    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role}
+    return account_response(user)
 
 
 @app.get("/api/auth/me")
 def current_account(request: Request):
-    user = request.state.user
-    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role}
+    return account_response(request.state.user)
 
 
 @app.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -337,7 +376,7 @@ def accept_invitation(invitation_token: str, payload: InvitationAcceptInput, res
         raise HTTPException(404, "Invitation is invalid or expired")
     if db.scalar(select(User.id).where(User.email == invitation.email)) is not None:
         raise HTTPException(409, "An account already uses this email. Sign in and ask the studio administrator to add production access.")
-    user = User(email=invitation.email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="creator", last_sign_in_at=auth_utcnow())
+    user = User(email=invitation.email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="creator", account_tier="collaborator", last_sign_in_at=auth_utcnow())
     db.add(user)
     try:
         db.flush()
@@ -349,7 +388,7 @@ def accept_invitation(invitation_token: str, payload: InvitationAcceptInput, res
     except IntegrityError:
         db.rollback(); raise HTTPException(409, "This invitation can no longer be accepted")
     set_auth_cookies(response, session_token, csrf_token)
-    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role}
+    return account_response(user)
 
 
 @app.get("/api/auth/sessions")
@@ -3693,12 +3732,27 @@ async def upload_audio_cue(cue_id: int, request: Request, filename: str, db: Ses
     return cue
 
 
+def project_export_entitlement(project_id: int, db: Session) -> tuple[str, float | None]:
+    if not settings.auth_required:
+        return "", None
+    owners = db.scalars(select(User).join(ProjectMembership, ProjectMembership.user_id == User.id).where(ProjectMembership.project_id == project_id, ProjectMembership.role == "owner", User.active.is_(True))).all()
+    if any(owner.account_tier == "studio" for owner in owners):
+        return "", None
+    now = auth_utcnow()
+    if any(owner.account_tier == "trial" and owner.trial_ends_at and owner.trial_ends_at > now for owner in owners):
+        return settings.trial_watermark, float(max(1, settings.trial_export_seconds))
+    if any(owner.account_tier == "trial" for owner in owners):
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "The production owner's 7-day trial has ended. Upgrade to export again.")
+    raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "This production needs an active trial or studio plan before it can export.")
+
+
 @app.post("/api/timelines/{timeline_id}/render", response_model=AnimaticRenderRead, status_code=status.HTTP_201_CREATED)
 def render_timeline(timeline_id: int, db: Session = Depends(get_db)):
     timeline = db.get(Timeline, timeline_id)
     if not timeline:
         raise HTTPException(404, "Timeline not found")
-    render = AnimaticRender(timeline_id=timeline.id, status="rendering", render_settings={"fps": timeline.fps, "width": timeline.width, "height": timeline.height, "kind": "proxy_animatic"})
+    watermark_text, max_duration = project_export_entitlement(timeline.project_id, db)
+    render = AnimaticRender(timeline_id=timeline.id, status="rendering", render_settings={"fps": timeline.fps, "width": timeline.width, "height": timeline.height, "kind": "proxy_animatic", "watermarked": bool(watermark_text), "max_duration_seconds": max_duration})
     db.add(render); db.commit(); db.refresh(render)
     work_dir = render_dir / f"animatic-work-{render.id}"
     try:
@@ -3715,7 +3769,7 @@ def render_timeline(timeline_id: int, db: Session = Depends(get_db)):
                     audio_clips.append({"source": render_dir / Path(cue.uri).name, "start": cue.start_seconds, "duration": cue.duration_seconds, "volume": track.volume})
         render.filename = f"animatic-{render.id}.mp4"
         render.render_settings = {**render.render_settings, "audio_cues": len(audio_clips)}
-        render_animatic(clips, render_dir / render.filename, work_dir, timeline.fps, timeline.width, timeline.height, audio_clips)
+        render_animatic(clips, render_dir / render.filename, work_dir, timeline.fps, timeline.width, timeline.height, audio_clips, watermark_text, max_duration)
         render.uri, render.status = f"/renders/{render.filename}", "completed"
         timeline.status = "preview-ready"
     except Exception as exc:
@@ -3735,9 +3789,10 @@ def render_master(timeline_id: int, payload: MasterRenderRequest, db: Session = 
     if payload.profile != "preview":
         try: require_release_clearance(timeline.project_id, db)
         except PermissionError as exc: raise HTTPException(409, f"Master blocked: {exc}") from exc
+    watermark_text, max_duration = project_export_entitlement(timeline.project_id, db)
     width, height = master_dimensions(timeline, payload.profile)
     fps = payload.fps or timeline.fps
-    base_settings = {"kind": "production_master", "profile": payload.profile, "fps": fps, "width": width, "height": height}
+    base_settings = {"kind": "production_master", "profile": payload.profile, "fps": fps, "width": width, "height": height, "watermarked": bool(watermark_text), "max_duration_seconds": max_duration}
     render = AnimaticRender(timeline_id=timeline.id, status="rendering", render_settings=base_settings)
     db.add(render); db.commit(); db.refresh(render)
     work_dir = render_dir / f"master-work-{render.id}"
@@ -3758,7 +3813,7 @@ def render_master(timeline_id: int, payload: MasterRenderRequest, db: Session = 
                 if cue.uri:
                     audio_clips.append({"source": render_dir / Path(cue.uri).name, "start": cue.start_seconds, "duration": cue.duration_seconds, "volume": track.volume})
         render.filename = f"master-{render.id}-{payload.profile}.mp4"
-        manifest = render_timeline_master(clips, audio_clips, render_dir / render.filename, work_dir, fps, width, height)
+        manifest = render_timeline_master(clips, audio_clips, render_dir / render.filename, work_dir, fps, width, height, watermark_text, max_duration)
         render.uri, render.status = f"/renders/{render.filename}", "completed"
         render.render_settings = {**base_settings, **manifest}
         timeline.status = "master-ready"
@@ -3775,7 +3830,7 @@ def export_job_response(job: MasterExportJob, db: Session):
     segments = db.scalars(select(MasterSegment).where(MasterSegment.export_id == job.id).order_by(MasterSegment.position)).all()
     completed = sum(segment.status == "completed" for segment in segments)
     total = len(segments)
-    return {"id": job.id, "timeline_id": job.timeline_id, "profile": job.profile, "fps": job.fps, "width": job.width, "height": job.height, "status": job.status, "final_filename": job.final_filename, "final_uri": job.final_uri, "error": job.error, "completed_segments": completed, "total_segments": total, "progress_percent": round(completed / total * 100, 1) if total else 0, "segments": segments}
+    return {"id": job.id, "timeline_id": job.timeline_id, "profile": job.profile, "fps": job.fps, "width": job.width, "height": job.height, "status": job.status, "final_filename": job.final_filename, "final_uri": job.final_uri, "error": job.error, "watermarked": job.watermarked, "max_duration_seconds": job.max_duration_seconds, "completed_segments": completed, "total_segments": total, "progress_percent": round(completed / total * 100, 1) if total else 0, "segments": segments}
 
 
 def master_dimensions(timeline: Timeline, profile: str):
@@ -3795,23 +3850,28 @@ def create_segmented_export(timeline_id: int, payload: SegmentedExportRequest, d
     if payload.profile != "preview":
         try: require_release_clearance(timeline.project_id, db)
         except PermissionError as exc: raise HTTPException(409, f"Master blocked: {exc}") from exc
+    watermark_text, max_duration = project_export_entitlement(timeline.project_id, db)
     timeline_data = timeline_response(timeline, db)
     if not timeline_data["clips"]:
         raise HTTPException(409, "Timeline has no clips")
     width, height = master_dimensions(timeline, payload.profile)
     fps = payload.fps or timeline.fps
-    job = MasterExportJob(timeline_id=timeline.id, profile=payload.profile, fps=fps, width=width, height=height, status=job_status)
+    job = MasterExportJob(timeline_id=timeline.id, profile=payload.profile, fps=fps, width=width, height=height, status=job_status, watermarked=bool(watermark_text), max_duration_seconds=max_duration)
     db.add(job); db.flush()
     starts = clip_start_times(timeline_data["clips"], fps)
     tracks = db.scalars(select(AudioTrack).options(selectinload(AudioTrack.cues)).where(AudioTrack.timeline_id == timeline.id, AudioTrack.muted.is_(False))).unique().all()
     audio = [{"uri": cue.uri, "start": cue.start_seconds, "duration": cue.duration_seconds, "volume": track.volume} for track in tracks for cue in track.cues if cue.uri]
-    ranges = segment_clip_ranges(timeline_data["clips"], payload.segment_size)
+    eligible_clips = timeline_data["clips"]
+    if max_duration is not None:
+        eligible_clips = [clip for index, clip in enumerate(eligible_clips) if starts[index] < max_duration]
+    ranges = segment_clip_ranges(eligible_clips, payload.segment_size)
     for position, (start, end) in enumerate(ranges, start=1):
         segment_start = starts[start]
         segment_end = starts[end] if end < len(starts) else timeline_data["total_duration_seconds"]
-        clips = [{"motion_uri": clip["motion_uri"], "still_uri": clip["storyboard_uri"], "title": clip["shot_title"], "subtitle": f"{clip['scene_title']}  /  {clip['duration_seconds']:.1f}s", "duration": clip["duration_seconds"], "transition": clip["transition"] if index > start else "cut", "transition_duration": clip["transition_duration"] if index > start else 0} for index, clip in enumerate(timeline_data["clips"][start:end], start=start)]
+        if max_duration is not None: segment_end = min(segment_end, max_duration)
+        clips = [{"motion_uri": clip["motion_uri"], "still_uri": clip["storyboard_uri"], "title": clip["shot_title"], "subtitle": f"{clip['scene_title']}  /  {clip['duration_seconds']:.1f}s", "duration": clip["duration_seconds"], "transition": clip["transition"] if index > start else "cut", "transition_duration": clip["transition_duration"] if index > start else 0} for index, clip in enumerate(eligible_clips[start:end], start=start)]
         segment_audio = [{**cue, "start": max(0, cue["start"] - segment_start)} for cue in audio if cue["start"] < segment_end and cue["start"] + cue["duration"] > segment_start]
-        db.add(MasterSegment(export_id=job.id, position=position, manifest={"clip_start": start + 1, "clip_end": end, "start_seconds": segment_start, "end_seconds": segment_end, "clips": clips, "audio": segment_audio}))
+        db.add(MasterSegment(export_id=job.id, position=position, manifest={"clip_start": start + 1, "clip_end": end, "start_seconds": segment_start, "end_seconds": segment_end, "clips": clips, "audio": segment_audio, "watermark_text": watermark_text, "max_duration_seconds": max(.001, segment_end - segment_start) if max_duration is not None else None}))
     db.commit()
     db.refresh(job)
     return job
@@ -3854,7 +3914,7 @@ def render_master_segment(segment: MasterSegment, job: MasterExportJob, db: Sess
         clips = [{"motion_source": render_dir / Path(clip["motion_uri"]).name if clip.get("motion_uri") else None, "still_source": render_dir / Path(clip["still_uri"]).name if clip.get("still_uri") else None, **{key: clip[key] for key in ("title", "subtitle", "duration", "transition", "transition_duration")}} for clip in segment.manifest["clips"]]
         audio = [{"source": render_dir / Path(cue["uri"]).name, "start": cue["start"], "duration": cue["duration"], "volume": cue["volume"]} for cue in segment.manifest.get("audio", [])]
         segment.filename = f"master-export-{job.id}-segment-{segment.position:04d}.mp4"
-        render_timeline_master(clips, audio, render_dir / segment.filename, work_dir, job.fps, job.width, job.height)
+        render_timeline_master(clips, audio, render_dir / segment.filename, work_dir, job.fps, job.width, job.height, segment.manifest.get("watermark_text", ""), segment.manifest.get("max_duration_seconds"))
         segment.uri, segment.status = f"/renders/{segment.filename}", "completed"
         segment.checksum_sha256 = sha256_file(render_dir / segment.filename)
     except Exception as exc:
@@ -3954,7 +4014,8 @@ def assemble_master_export_job(job: MasterExportJob, db: Session, strict: bool =
     db.commit()
     try:
         job.final_filename = f"master-export-{job.id}-{job.profile}.mp4"
-        assemble_segments(files, render_dir / job.final_filename, work_dir)
+        watermark_text = segments[0].manifest.get("watermark_text", settings.trial_watermark) if job.watermarked else ""
+        assemble_segments(files, render_dir / job.final_filename, work_dir, watermark_text, job.max_duration_seconds)
         job.final_uri, job.status = f"/renders/{job.final_filename}", "completed"
         timeline = db.get(Timeline, job.timeline_id)
         if timeline:
@@ -4079,6 +4140,11 @@ def index():
 
 @app.get("/login", include_in_schema=False)
 def login_page():
+    return FileResponse(static_dir / "login.html")
+
+
+@app.get("/signup", include_in_schema=False)
+def signup_page():
     return FileResponse(static_dir / "login.html")
 
 

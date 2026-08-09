@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     bootstrap_admin_key: str = ""
     session_days: int = 7
     invitation_days: int = 7
+    trial_days: int = 7
+    trial_export_seconds: int = 60
+    trial_watermark: str = "KIZUNA TRIAL | kizuna.technology"
     cookie_secure: bool = False
     database_url: str = "sqlite:///./anime_studio.db"
     generation_provider: str = "mock"

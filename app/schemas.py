@@ -575,6 +575,8 @@ class MasterExportRead(BaseModel):
     final_filename: str
     final_uri: str
     error: str
+    watermarked: bool = False
+    max_duration_seconds: float | None = None
     completed_segments: int
     total_segments: int
     progress_percent: float

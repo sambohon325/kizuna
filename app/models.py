@@ -17,6 +17,8 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(160))
     password_hash: Mapped[str] = mapped_column(Text)
     role: Mapped[str] = mapped_column(String(32), default="creator")
+    account_tier: Mapped[str] = mapped_column(String(32), default="collaborator")
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     active: Mapped[bool] = mapped_column(default=True)
     failed_sign_in_count: Mapped[int] = mapped_column(default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -690,6 +692,8 @@ class MasterExportJob(Base):
     final_filename: Mapped[str] = mapped_column(String(255), default="")
     final_uri: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str] = mapped_column(Text, default="")
+    watermarked: Mapped[bool] = mapped_column(default=False)
+    max_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     segments: Mapped[list[MasterSegment]] = relationship(back_populates="export", cascade="all, delete-orphan", order_by="MasterSegment.position")

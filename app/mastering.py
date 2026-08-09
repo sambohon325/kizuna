@@ -6,7 +6,7 @@ from pathlib import Path
 from app.animatic import ffmpeg_executable, prepare_frame
 
 
-def render_timeline_master(clips: list[dict], audio_clips: list[dict], output: Path, work_dir: Path, fps: int, width: int, height: int) -> dict:
+def render_timeline_master(clips: list[dict], audio_clips: list[dict], output: Path, work_dir: Path, fps: int, width: int, height: int, watermark_text: str = "", max_duration_seconds: float | None = None) -> dict:
     if not clips:
         raise ValueError("The timeline has no clips")
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -48,6 +48,11 @@ def render_timeline_master(clips: list[dict], audio_clips: list[dict], output: P
         current = output_label
         elapsed = offset + clips[index]["duration"]
 
+    if watermark_text:
+        escaped = watermark_text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
+        filters.append(f"[{current}]drawtext=text='{escaped}':fontcolor=white@0.92:fontsize=h/28:box=1:boxcolor=black@0.58:boxborderw=12:x=w-tw-24:y=h-th-24[trialmark]")
+        current = "trialmark"
+
     filters.append(f"[{silence_index}:a]atrim=0:{elapsed:.4f},asetpts=PTS-STARTPTS[bed]")
     audio_labels = ["bed"]
     for index, cue in enumerate(usable_audio):
@@ -64,12 +69,13 @@ def render_timeline_master(clips: list[dict], audio_clips: list[dict], output: P
     else:
         audio_map = "[bed]"
 
+    output_duration = min(elapsed, max_duration_seconds) if max_duration_seconds else elapsed
     command += [
         "-filter_complex", ";".join(filters), "-map", f"[{current}]", "-map", audio_map,
-        "-t", f"{elapsed:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-t", f"{output_duration:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(output),
     ]
     completed = subprocess.run(command, capture_output=True, text=True, timeout=max(300, int(elapsed * 8)))
     if completed.returncode:
         raise RuntimeError(completed.stderr[-4000:] or "FFmpeg master render failed")
-    return {"motion_clips": motion_count, "fallback_clips": len(clips) - motion_count, "audio_cues": len(usable_audio), "duration_seconds": round(elapsed, 3)}
+    return {"motion_clips": motion_count, "fallback_clips": len(clips) - motion_count, "audio_cues": len(usable_audio), "duration_seconds": round(output_duration, 3), "watermarked": bool(watermark_text)}

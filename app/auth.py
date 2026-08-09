@@ -24,7 +24,7 @@ SESSION_COOKIE = "kizuna_session"
 CSRF_COOKIE = "kizuna_csrf"
 PASSWORD_ITERATIONS = 600_000
 PUBLIC_PREFIXES = ("/static/", "/api/workers/", "/api/nodes/", "/api/internal/")
-PUBLIC_EXACT = {"/api/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login", "/login", "/setup"}
+PUBLIC_EXACT = {"/api/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/trial", "/login", "/signup", "/setup"}
 
 
 def utcnow() -> datetime:

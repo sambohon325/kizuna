@@ -41,14 +41,22 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def assemble_segments(segment_files: list[Path], output: Path, work_dir: Path) -> None:
+def assemble_segments(segment_files: list[Path], output: Path, work_dir: Path, watermark_text: str = "", max_duration_seconds: float | None = None) -> None:
     if not segment_files:
         raise ValueError("No completed segments to assemble")
     work_dir.mkdir(parents=True, exist_ok=True)
     concat_file = work_dir / "segments.txt"
     lines = [f"file '{str(path.resolve()).replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'" for path in segment_files]
     concat_file.write_text("\n".join(lines), encoding="utf-8")
-    command = [ffmpeg_executable(), "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", "-movflags", "+faststart", str(output)]
+    command = [ffmpeg_executable(), "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat_file)]
+    if watermark_text:
+        escaped = watermark_text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
+        command += ["-vf", f"drawtext=text='{escaped}':fontcolor=white@0.92:fontsize=h/28:box=1:boxcolor=black@0.58:boxborderw=12:x=w-tw-24:y=h-th-24", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "192k"]
+    else:
+        command += ["-c", "copy"]
+    if max_duration_seconds:
+        command += ["-t", f"{max_duration_seconds:.3f}"]
+    command += ["-movflags", "+faststart", str(output)]
     completed = subprocess.run(command, capture_output=True, text=True, timeout=300)
     if completed.returncode:
         raise RuntimeError(completed.stderr[-3000:] or "Segment assembly failed")

@@ -1,10 +1,12 @@
 from fastapi.testclient import TestClient
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
+from sqlalchemy import select
 
-from app.auth import hash_password
+from app.auth import hash_password, utcnow as auth_utcnow
 from app.database import SessionLocal
 from app.main import app
-from app.models import Character, Project, ProjectMembership, User
+from app.models import Character, Project, ProjectMembership, Scene, Shot, Timeline, TimelineClip, User
 
 
 def setup_admin(client, monkeypatch):
@@ -77,3 +79,38 @@ def test_invitations_roles_and_session_revocation(client, monkeypatch):
     assert len(sessions) == 1 and sessions[0]["current"] is True
     assert viewer.delete(f"/api/auth/sessions/{sessions[0]['id']}", headers={"X-Kizuna-CSRF": viewer_csrf}).status_code == 204
     assert viewer.get("/api/auth/me").status_code == 401
+
+
+def test_trial_signup_and_export_limits(client, monkeypatch):
+    setup_admin(client, monkeypatch)
+    trial = TestClient(app)
+    created = trial.post("/api/auth/trial", json={"email": "trial@example.com", "display_name": "Trial Creator", "password": "trial-secure-password"})
+    assert created.status_code == 201
+    account = created.json()
+    assert account["account_tier"] == "trial"
+    assert account["trial_active"] is True
+    assert account["trial_export_seconds"] == 60
+    remaining = datetime.fromisoformat(account["trial_ends_at"]) - auth_utcnow()
+    assert timedelta(days=6, hours=23) < remaining <= timedelta(days=7)
+    project_id = account["project_id"]
+    with SessionLocal() as db:
+        scene = Scene(project_id=project_id, title="Trial Scene", position=1)
+        db.add(scene); db.flush()
+        shot = Shot(scene_id=scene.id, title="Long Trial Shot", position=1, duration_seconds=80)
+        timeline = Timeline(project_id=project_id, fps=24, width=1920, height=1080)
+        db.add_all([shot, timeline]); db.flush()
+        db.add(TimelineClip(timeline_id=timeline.id, shot_id=shot.id, position=1, duration_seconds=80))
+        db.commit(); timeline_id = timeline.id
+    planned = trial.post(f"/api/timelines/{timeline_id}/master-exports", headers={"X-Kizuna-CSRF": trial.cookies.get("kizuna_csrf")}, json={"profile": "preview", "segment_size": 4})
+    assert planned.status_code == 201
+    export = planned.json()
+    assert export["watermarked"] is True
+    assert export["max_duration_seconds"] == 60
+    assert export["segments"][-1]["manifest"]["end_seconds"] == 60
+    assert export["segments"][-1]["manifest"]["watermark_text"].startswith("KIZUNA TRIAL")
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.email == "trial@example.com"))
+        user.trial_ends_at = auth_utcnow() - timedelta(seconds=1)
+        db.commit()
+    expired = trial.post(f"/api/timelines/{timeline_id}/master-exports", headers={"X-Kizuna-CSRF": trial.cookies.get("kizuna_csrf")}, json={"profile": "preview"})
+    assert expired.status_code == 402

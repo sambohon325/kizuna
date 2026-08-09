@@ -47,7 +47,7 @@ def prepare_frame(source: Path | None, target: Path, width: int, height: int, ti
     canvas.save(target, "PNG")
 
 
-def render_animatic(clips: list[dict], output: Path, work_dir: Path, fps: int, width: int, height: int, audio_clips: list[dict] | None = None) -> None:
+def render_animatic(clips: list[dict], output: Path, work_dir: Path, fps: int, width: int, height: int, audio_clips: list[dict] | None = None, watermark_text: str = "", max_duration_seconds: float | None = None) -> None:
     if not clips:
         raise ValueError("The timeline has no clips")
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -76,6 +76,10 @@ def render_animatic(clips: list[dict], output: Path, work_dir: Path, fps: int, w
         filters.append(f"[{current}][v{i}]xfade=transition=fade:duration={duration:.4f}:offset={offset:.4f}[{output_label}]")
         current = output_label
         elapsed = offset + clips[i]["duration"]
+    if watermark_text:
+        escaped = watermark_text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
+        filters.append(f"[{current}]drawtext=text='{escaped}':fontcolor=white@0.92:fontsize=h/28:box=1:boxcolor=black@0.58:boxborderw=12:x=w-tw-24:y=h-th-24[trialmark]")
+        current = "trialmark"
     silence_index = len(clips)
     filters.append(f"[{silence_index}:a]atrim=0:{elapsed:.4f},asetpts=PTS-STARTPTS[bed]")
     audio_labels = ["bed"]
@@ -92,9 +96,10 @@ def render_animatic(clips: list[dict], output: Path, work_dir: Path, fps: int, w
         audio_map = "[audio]"
     else:
         audio_map = "[bed]"
+    output_duration = min(elapsed, max_duration_seconds) if max_duration_seconds else elapsed
     command += [
         "-filter_complex", ";".join(filters), "-map", f"[{current}]", "-map", audio_map,
-        "-t", f"{elapsed:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-t", f"{output_duration:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(output),
     ]
     completed = subprocess.run(command, capture_output=True, text=True, timeout=max(120, int(elapsed * 3)))

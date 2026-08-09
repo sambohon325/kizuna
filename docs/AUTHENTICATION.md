@@ -2,7 +2,7 @@
 
 Kizuna can run without sign-in only for isolated local development. The production Docker stack always sets `KIZUNA_AUTH_REQUIRED=true`, uses Secure, HttpOnly, SameSite cookies, and requires a one-time `KIZUNA_BOOTSTRAP_ADMIN_KEY` stored as a Coolify secret.
 
-On the first visit to `https://kizuna.technology`, Kizuna redirects to `/setup`. The creator must enter the server-side setup key and create an administrator with a password of at least 12 characters. That first administrator is assigned ownership of any productions that existed before accounts were enabled. The setup endpoint permanently closes once the first user exists.
+On the first visit to `https://app.kizuna.technology`, Kizuna redirects to `/setup`. The creator must enter the server-side setup key and create an administrator with a password of at least 12 characters. That first administrator is assigned ownership of any productions that existed before accounts were enabled. The setup endpoint permanently closes once the first user exists.
 
 Passwords use salted PBKDF2-SHA256 hashes and are never stored or logged in plain text. Sessions use random tokens whose hashes are stored in the database. Browser mutations require a separate CSRF token. Five failed sign-in attempts temporarily lock the account for 15 minutes.
 
@@ -19,8 +19,14 @@ Do not make the domain public until all of these are true:
 
 This foundation now includes local accounts, production isolation, invitations, project roles, and session-revocation APIs. Password reset, email verification, optional MFA/passkeys, a complete end-user account center, and security event monitoring remain required before a broad public launch.
 
+## Hosted trial accounts
+
+The marketing call to action opens `https://app.kizuna.technology/signup`. Once the first studio administrator exists, a visitor can create a trial account and a starter production. The trial lasts 7 days by default. During the active trial, every animatic and master export is limited to 60 seconds and watermarked by the render process. Segmented farm exports carry the same policy in their job manifests, and the server enforces it again during final assembly. When the trial expires, the account becomes review-only until its entitlement is upgraded.
+
+Configure the policy with `KIZUNA_TRIAL_DAYS`, `KIZUNA_TRIAL_EXPORT_SECONDS`, and `KIZUNA_TRIAL_WATERMARK`. Before opening public self-service signup, connect verified email delivery, password recovery, signup abuse controls, and billing-driven entitlement upgrades. Trial enforcement does not depend on browser controls.
+
 ## App and marketing hostnames
 
-Kizuna keeps the application and marketing URLs separate. Set `KIZUNA_PUBLIC_URL` to the complete application origin, such as `https://app.your-domain.example`; invitation links are generated from this value. Set `KIZUNA_MARKETING_URL` to the public marketing site, such as `https://your-domain.example`; the Kizuna logo on account screens links back there. The Docker stack intentionally requires the application URL instead of assuming a domain spelling.
+Kizuna keeps the application and marketing URLs separate. Set `KIZUNA_PUBLIC_URL=https://app.kizuna.technology`; invitation links are generated from this value. Set `KIZUNA_MARKETING_URL=https://kizuna.technology`; the Kizuna logo on account screens links back there.
 
 Administrators can create expiring invitation links under **Settings → Team & access**. Invitations grant only the productions and roles selected by an Owner. Owners can manage membership, Editors can change production content, and Viewers are enforced as read-only by the API. Invitation tokens are stored only as hashes and the raw link is shown once when it is created.

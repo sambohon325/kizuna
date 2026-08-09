@@ -25,7 +25,7 @@
   </header>
   <div class="shell">
     <nav class="rail">
-      <button class="active">⌂<span>Productions</span></button>
+      <button class="active" id="productions-nav">⌂<span>Productions</span></button>
       <button id="writer-nav">✎<span>Writer's Room</span></button>
       <button id="style-lab-nav">✦<span>Style Lab</span></button>
       <button id="characters-nav">♙<span>Characters</span></button>
@@ -36,13 +36,15 @@
       <button id="compositor-nav">◈<span>Composite</span></button>
       <button id="render-nav">▶<span>Render</span></button>
     </nav>
-    <main>
+    <main id="workspace-main">
+      <div id="dashboard-home">
       <section class="hero">
         <div><p class="eyebrow">AI ANIME STUDIO</p><h1>Create anime.<br><em>Direct every frame.</em></h1><p>Move from story and character design to shots, sound, and a finished master—all in one production workspace.</p></div>
         <div class="hero-flow" aria-label="Production workflow"><span><b>01</b> Write</span><span><b>02</b> Design</span><span><b>03</b> Direct</span><span><b>04</b> Render</span></div>
       </section>
       <section class="section-head"><div><p class="eyebrow">YOUR WORK</p><h2>Productions</h2></div><span id="project-count">0 projects</span></section>
       <div id="projects" class="projects"></div>
+      </div>
     </main>
   </div>
   <dialog id="project-dialog">

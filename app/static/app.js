@@ -10,6 +10,59 @@ const shotDialog = document.querySelector('#shot-dialog');
 const timelineDialog = document.querySelector('#timeline-dialog');
 const audioDialog = document.querySelector('#audio-dialog');
 const compositorDialog = document.querySelector('#compositor-dialog');
+const workspaceMain = document.querySelector('#workspace-main');
+const dashboardHome = document.querySelector('#dashboard-home');
+const workspaceDialogs = [detailDialog, styleDialog, writerDialog, characterDialog, renderDialog, worldDialog, shotDialog, timelineDialog, audioDialog, compositorDialog];
+const workspaceNav = new Map([
+  [detailDialog, 'productions-nav'], [styleDialog, 'style-lab-nav'], [writerDialog, 'writer-nav'],
+  [characterDialog, 'characters-nav'], [renderDialog, 'render-nav'], [worldDialog, 'worlds-nav'],
+  [shotDialog, 'shots-nav'], [timelineDialog, 'timeline-nav'], [audioDialog, 'audio-nav'],
+  [compositorDialog, 'compositor-nav'],
+]);
+
+function setActiveNavigation(navId = 'productions-nav') {
+  document.querySelectorAll('.rail button').forEach(button => {
+    const active = button.id === navId;
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
+  });
+}
+
+function openWorkspace(dialog) {
+  workspaceDialogs.forEach(item => {
+    if (item !== dialog) {
+      item.removeAttribute('open');
+      item.classList.remove('workspace-view');
+    }
+  });
+  dashboardHome.hidden = true;
+  workspaceMain.classList.add('tool-open');
+  workspaceMain.appendChild(dialog);
+  dialog.classList.add('workspace-view');
+  dialog.setAttribute('open', '');
+  dialog.setAttribute('role', 'region');
+  const heading = dialog.querySelector('h2');
+  if (heading) dialog.setAttribute('aria-label', heading.textContent);
+  const back = dialog.querySelector('.close');
+  if (back) {
+    back.textContent = '← Productions';
+    back.title = 'Back to productions';
+    back.setAttribute('aria-label', 'Back to productions');
+  }
+  setActiveNavigation(workspaceNav.get(dialog));
+  window.scrollTo({top: 0, left: 0, behavior: 'auto'});
+}
+
+function showDashboard() {
+  workspaceDialogs.forEach(dialog => {
+    dialog.removeAttribute('open');
+    dialog.classList.remove('workspace-view');
+  });
+  dashboardHome.hidden = false;
+  workspaceMain.classList.remove('tool-open');
+  setActiveNavigation();
+  window.scrollTo({top: 0, left: 0, behavior: 'auto'});
+}
 document.querySelector('#render-composition').insertAdjacentHTML('afterend','<button id="render-motion" type="button">Render motion preview</button>');
 document.querySelector('#layer-form > .primary').insertAdjacentHTML('beforebegin','<section class="motion-controls"><p class="eyebrow">END KEYFRAME</p><div class="motion-grid"><label>Easing<select name="motion_easing"><option value="linear">Linear</option><option value="ease-in">Ease in</option><option value="ease-out">Ease out</option><option value="ease-in-out">Ease in/out</option></select></label><label>End X<input name="motion_end_x" type="number" min="-1" max="2" step="0.01"></label><label>End Y<input name="motion_end_y" type="number" min="-1" max="2" step="0.01"></label><label>End scale<input name="motion_end_scale" type="number" min="0.05" max="5" step="0.05"></label><label>End rotation<input name="motion_end_rotation" type="number" min="-360" max="360" step="1"></label><label>End opacity<input name="motion_end_opacity" type="number" min="0" max="1" step="0.05"></label></div></section>');
 document.querySelector('#render-animatic').insertAdjacentHTML('beforebegin','<select id="master-profile" aria-label="Master profile"><option value="preview">Preview · source up to 720p</option><option value="1080p">Master · 1080p</option><option value="4k">Master · 4K UHD</option></select>');
@@ -58,8 +111,8 @@ async function openProject(id) {
     <div class="detail-head"><div><p class="eyebrow" style="color:#e84b38">${safe(project.status.toUpperCase())}</p><h2>${safe(project.title)}</h2><p>${safe(project.logline)}</p><button class="style-launch" data-style-id="${project.id}">Edit Creative DNA</button><button class="writer-launch" data-writer-id="${project.id}">Develop Story</button></div><button class="close" data-close-detail>×</button></div>
     <div class="style-grid"><div class="style-card"><b>ERA BLEND</b>${safe(style.era_primary)} × ${safe(style.era_secondary)}</div><div class="style-card"><b>VISUAL DNA</b>${safe(Object.values(style.visual).join(' · '))}</div><div class="style-card"><b>STORY DNA</b>${safe(Object.values(style.narrative).join(' · '))}</div></div>
     <h3>Scenes</h3>${project.scenes.length ? project.scenes.map(scene => `<div class="scene"><strong>${scene.position}. ${safe(scene.title)}</strong><br><small>${safe(scene.summary)} · ${scene.shots.length} shots</small></div>`).join('') : '<div class="empty">Scene planning will appear here.</div>'}`;
-  detailDialog.showModal();
-  document.querySelector('[data-close-detail]').onclick = () => detailDialog.close();
+  openWorkspace(detailDialog);
+  document.querySelector('[data-close-detail]').onclick = showDashboard;
   document.querySelector('[data-style-id]').onclick = event => { detailDialog.close(); openStyleLab(Number(event.currentTarget.dataset.styleId)); };
   document.querySelector('[data-writer-id]').onclick = event => { detailDialog.close(); openWriterRoom(Number(event.currentTarget.dataset.writerId)); };
 }
@@ -85,7 +138,7 @@ async function openStyleLab(projectId) {
   projectSelect.onchange = () => fillStyle(Number(projectSelect.value));
   document.querySelector('#style-form').onchange = updateSummary;
   fillStyle(Number(projectSelect.value));
-  styleDialog.showModal();
+  openWorkspace(styleDialog);
 }
 
 function fillStyle(projectId) {
@@ -122,7 +175,7 @@ async function openWriterRoom(projectId) {
   projectSelect.innerHTML = options(projects.map(p => ({id:String(p.id), label:p.title})), String(projectId || projects[0].id));
   projectSelect.onchange = () => fillStory(Number(projectSelect.value));
   fillStory(Number(projectSelect.value));
-  writerDialog.showModal();
+  openWorkspace(writerDialog);
 }
 
 function fillStory(projectId) {
@@ -162,7 +215,7 @@ async function openCharacterStudio(projectId) {
   projectSelect.onchange = () => { activeCharacterId = null; clearCharacterForm(); renderCharacterRoster(Number(projectSelect.value)); };
   renderCharacterRoster(Number(projectSelect.value));
   document.querySelector('#character-result').innerHTML = '';
-  characterDialog.showModal();
+  openWorkspace(characterDialog);
 }
 
 function renderCharacterRoster(projectId) {
@@ -247,7 +300,7 @@ async function openWorldStudio(projectId) {
   projectSelect.onchange = () => { activeLocationId = null; clearWorldForm(); renderWorldRoster(Number(projectSelect.value)); };
   renderWorldRoster(Number(projectSelect.value));
   document.querySelector('#world-result').innerHTML = '';
-  worldDialog.showModal();
+  openWorkspace(worldDialog);
 }
 
 function renderWorldRoster(projectId) {
@@ -320,7 +373,7 @@ async function openShotPlanner(projectId) {
   projectSelect.onchange = () => { activeShotId = null; renderShotTree(Number(projectSelect.value)); hideShotEditor(); };
   renderShotTree(Number(projectSelect.value));
   hideShotEditor();
-  shotDialog.showModal();
+  openWorkspace(shotDialog);
 }
 
 function currentShotProject() {
@@ -400,7 +453,7 @@ function renderStoryboardJob(job) {
 }
 
 async function openRenderFarm() {
-  renderDialog.showModal();
+  openWorkspace(renderDialog);
   await refreshRenderFarm();
 }
 
@@ -423,7 +476,7 @@ async function openTimeline(projectId) {
   const select = document.querySelector('#timeline-project');
   select.innerHTML = options(projects.map(project => ({id:String(project.id),label:project.title})), String(projectId || projects[0].id));
   select.onchange = () => loadTimeline(Number(select.value));
-  timelineDialog.showModal();
+  openWorkspace(timelineDialog);
   await loadTimeline(Number(select.value));
 }
 
@@ -476,7 +529,7 @@ async function openAudioStudio(projectId) {
   if (!projects.length) await loadProjects();
   if (!projects.length) { projectDialog.showModal(); return; }
   const select=document.querySelector('#audio-project'); select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(projectId||projects[0].id));
-  select.onchange=()=>loadAudioStudio(Number(select.value)); audioDialog.showModal(); await loadAudioStudio(Number(select.value));
+  select.onchange=()=>loadAudioStudio(Number(select.value)); openWorkspace(audioDialog); await loadAudioStudio(Number(select.value));
 }
 
 async function loadAudioStudio(projectId) {
@@ -529,7 +582,7 @@ async function uploadCueAudio(event) { const file=event.target.files[0];if(!file
 async function refreshAudioAndSelect(cueId) { activeAudioStudio=await api(`/api/projects/${activeAudioStudio.project_id}/audio-studio`); renderAudioStudio(activeAudioStudio.project_id); selectAudioCue(cueId); }
 
 async function openCompositor(projectId) {
-  if(!projects.length)await loadProjects();if(!projects.length){projectDialog.showModal();return;} const select=document.querySelector('#compositor-project');select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(projectId||projects[0].id));select.onchange=()=>loadCompositorStudio(Number(select.value));compositorDialog.showModal();await loadCompositorStudio(Number(select.value));
+  if(!projects.length)await loadProjects();if(!projects.length){projectDialog.showModal();return;} const select=document.querySelector('#compositor-project');select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(projectId||projects[0].id));select.onchange=()=>loadCompositorStudio(Number(select.value));openWorkspace(compositorDialog);await loadCompositorStudio(Number(select.value));
 }
 
 async function loadCompositorStudio(projectId) {
@@ -567,6 +620,8 @@ function collectStory(form) {
 }
 
 document.querySelector('#new-project').onclick = () => projectDialog.showModal();
+document.querySelector('#productions-nav').onclick = showDashboard;
+document.querySelector('.brand').onclick = event => { event.preventDefault(); showDashboard(); };
 document.querySelector('#style-lab-nav').onclick = () => openStyleLab();
 document.querySelector('#writer-nav').onclick = () => openWriterRoom();
 document.querySelector('#characters-nav').onclick = () => openCharacterStudio();
@@ -577,15 +632,15 @@ document.querySelector('#timeline-nav').onclick = () => openTimeline();
 document.querySelector('#audio-nav').onclick = () => openAudioStudio();
 document.querySelector('#compositor-nav').onclick = () => openCompositor();
 document.querySelector('.close').onclick = () => projectDialog.close();
-document.querySelector('#style-close').onclick = () => styleDialog.close();
-document.querySelector('#writer-close').onclick = () => writerDialog.close();
-document.querySelector('#character-close').onclick = () => characterDialog.close();
-document.querySelector('#render-close').onclick = () => renderDialog.close();
-document.querySelector('#world-close').onclick = () => worldDialog.close();
-document.querySelector('#shot-close').onclick = () => shotDialog.close();
-document.querySelector('#timeline-close').onclick = () => timelineDialog.close();
-document.querySelector('#audio-close').onclick = () => audioDialog.close();
-document.querySelector('#compositor-close').onclick = () => compositorDialog.close();
+document.querySelector('#style-close').onclick = showDashboard;
+document.querySelector('#writer-close').onclick = showDashboard;
+document.querySelector('#character-close').onclick = showDashboard;
+document.querySelector('#render-close').onclick = showDashboard;
+document.querySelector('#world-close').onclick = showDashboard;
+document.querySelector('#shot-close').onclick = showDashboard;
+document.querySelector('#timeline-close').onclick = showDashboard;
+document.querySelector('#audio-close').onclick = showDashboard;
+document.querySelector('#compositor-close').onclick = showDashboard;
 document.querySelector('#build-composition').onclick = async () => { if(!activeCompositorShotId)return;activeComposition=await api(`/api/shots/${activeCompositorShotId}/composition/build`,{method:'POST'});activeCompositorStudio=await api(`/api/projects/${activeCompositorStudio.project_id}/compositor`);renderCompositorShots();renderCompositionEditor();if(activeComposition.layers.length)selectCompositionLayer(activeComposition.layers[0].id); };
 document.querySelector('#save-composition').onclick = async () => { if(!activeComposition)return;activeComposition=await api(`/api/compositions/${activeComposition.id}`,{method:'PUT',body:JSON.stringify({camera:{...activeComposition.camera,move:document.querySelector('#comp-camera-move').value,start_scale:Number(document.querySelector('#comp-start-scale').value),end_scale:Number(document.querySelector('#comp-end-scale').value)},color_grade:{exposure:Number(document.querySelector('#comp-exposure').value),contrast:Number(document.querySelector('#comp-contrast').value),saturation:Number(document.querySelector('#comp-saturation').value)}})});renderCompositionEditor(); };
 document.querySelector('#add-composition-layer').onclick = async () => { if(!activeComposition)return;const asset=activeCompositorStudio.assets[Number(document.querySelector('#composition-asset').value)];if(!asset)return;const z=Math.max(0,...activeComposition.layers.map(layer=>layer.z_index))+10;const layer=await api(`/api/compositions/${activeComposition.id}/layers`,{method:'POST',body:JSON.stringify({name:asset.name,kind:asset.kind,source_kind:asset.source_kind,source_asset_id:asset.id,source_uri:asset.uri,z_index:z,visible:true,opacity:1,blend_mode:'normal',transform:{x:.5,y:.5,scale:1,rotation:0},animation:{intent:'hold'}})});activeCompositionLayerId=layer.id;await refreshComposition(); };
@@ -604,7 +659,7 @@ document.querySelector('#render-master').onclick = async () => { if(!activeTimel
 document.querySelector('#plan-segmented-export').onclick = async () => { if(!activeTimeline)return;const button=document.querySelector('#plan-segmented-export');button.disabled=true;button.textContent='Planning…';try{renderSegmentedExport(await api(`/api/timelines/${activeTimeline.id}/master-exports`,{method:'POST',body:JSON.stringify({profile:document.querySelector('#master-profile').value,segment_size:Number(document.querySelector('#segment-size').value)})}));}catch(error){document.querySelector('#segmented-export-result').innerHTML=`<div class="job-error">${safe(error.message)}</div>`;}finally{button.disabled=false;button.textContent='Plan resumable export';} };
 document.querySelector('#expand-story').onclick = async () => { const projectId = Number(document.querySelector('#shot-project').value); try { await api(`/api/projects/${projectId}/expand-story`, {method:'POST',body:JSON.stringify({shots_per_beat:Number(document.querySelector('#shots-per-beat').value)})}); await loadProjects(); renderShotTree(projectId); } catch(error) { document.querySelector('#shot-tree').innerHTML = `<div class="job-error">${safe(error.message)}</div>`; } };
 document.querySelector('#refresh-farm').onclick = () => refreshRenderFarm();
-document.querySelector('#project-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); await api('/api/projects', {method:'POST', body:JSON.stringify(data)}); event.target.reset(); projectDialog.close(); await loadProjects(); };
+document.querySelector('#project-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); await api('/api/projects', {method:'POST', body:JSON.stringify(data)}); event.target.reset(); projectDialog.close(); await loadProjects(); showDashboard(); };
 document.querySelector('#style-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#style-project').value); await api(`/api/projects/${projectId}/style`, {method:'PUT', body:JSON.stringify(collectStyle(event.target))}); styleDialog.close(); await loadProjects(); openProject(projectId); };
 document.querySelector('#writer-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#writer-project').value); const brief = await api(`/api/projects/${projectId}/story`, {method:'PUT', body:JSON.stringify(collectStory(event.target))}); await loadProjects(); renderStory(brief); };
 document.querySelector('#character-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#character-project').value); const character = activeCharacterId ? await api(`/api/characters/${activeCharacterId}`, {method:'PUT', body:JSON.stringify(collectCharacter(event.target))}) : await api(`/api/projects/${projectId}/characters`, {method:'POST', body:JSON.stringify(collectCharacter(event.target))}); activeCharacterId = character.id; const design = await api(`/api/characters/${character.id}/design`, {method:'PUT', body:JSON.stringify(collectCharacterDesign(event.target))}); await loadProjects(); renderCharacterRoster(projectId); renderCharacterDesign(character, design); };

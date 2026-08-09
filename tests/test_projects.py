@@ -62,6 +62,59 @@ def test_compliance_scans_block_imitation_track_stale_work_and_chain_audit_event
     assert all(ledger[index]["previous_hash"] == ledger[index + 1]["event_hash"] for index in range(len(ledger) - 1))
 
 
+def test_external_compliance_scanners_are_evidence_backed_and_fail_closed(client, monkeypatch):
+    import json
+    from urllib.error import URLError
+
+    class ScannerResponse:
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def read(self, _limit):
+            return json.dumps({"status": "review", "matches": [{"severity": "review", "score": 0.91, "source": "Licensed comparison corpus", "evidence": "A structurally similar passage was found.", "suggestion": "Revise the beat or document applicable rights."}]}).encode()
+
+    project_id = client.post("/api/projects", json={"title": "Scanner Protocol", "logline": "A performer searches for an original ending."}).json()["id"]
+    client.put(f"/api/projects/{project_id}/story", json={"premise": "A performer writes a new ending while the theater changes around her.", "themes": ["authorship"]})
+    configured = client.put("/api/settings/integrations/compliance-text", json={"display_name": "Studio Text Scanner", "category": "compliance", "mode": "api", "endpoint": "https://scanner.test", "model": "", "secret_env_var": "", "configuration": {"categories": ["text"]}})
+    assert configured.status_code == 200 and configured.json()["configured"] is True
+    monkeypatch.setattr("app.compliance.urlopen", lambda *_args, **_kwargs: ScannerResponse())
+
+    scanned = client.post(f"/api/projects/{project_id}/compliance/scan", json={"stage": "story"}).json()["scans"][0]
+    assert scanned["status"] == "blocked" and scanned["coverage"] == "external"
+    finding = next(item for item in scanned["findings"] if item["provider_key"] == "compliance-text")
+    assert finding["score"] == 0.91 and finding["resolvable"] is True
+    missing_evidence = client.post(f"/api/projects/{project_id}/compliance/scans/{scanned['id']}/findings/{finding['id']}/resolve", json={"status": "rights_verified", "reviewer": "Rights Lead", "rationale": "The studio owns the underlying licensed work.", "evidence_refs": []})
+    assert missing_evidence.status_code == 422
+    resolved = client.post(f"/api/projects/{project_id}/compliance/scans/{scanned['id']}/findings/{finding['id']}/resolve", json={"status": "rights_verified", "reviewer": "Rights Lead", "rationale": "The studio owns the underlying licensed work.", "evidence_refs": ["license-vault:story-27"]})
+    assert resolved.status_code == 200, resolved.text
+    story = next(item for item in resolved.json()["stages"] if item["stage"] == "story")
+    assert story["status"] == "pass_with_resolution"
+    assert story["findings"][0]["resolution"]["reviewer"] == "Rights Lead"
+
+    client.put(f"/api/projects/{project_id}/story", json={"premise": "The performer must improvise when every written ending disappears.", "themes": ["authorship"]})
+    monkeypatch.setattr("app.compliance.urlopen", lambda *_args, **_kwargs: (_ for _ in ()).throw(URLError("scanner offline")))
+    failed = client.post(f"/api/projects/{project_id}/compliance/scan", json={"stage": "story"}).json()["scans"][0]
+    outage = next(item for item in failed["findings"] if item["category"] == "scanner_unavailable")
+    assert failed["status"] == "blocked" and failed["coverage"] == "partial" and outage["resolvable"] is False
+    override = client.post(f"/api/projects/{project_id}/compliance/scans/{failed['id']}/findings/{outage['id']}/resolve", json={"status": "false_positive", "reviewer": "Rights Lead", "rationale": "Attempting to bypass an unavailable scanner.", "evidence_refs": []})
+    assert override.status_code == 409
+
+
+def test_asset_rights_register_requires_license_evidence_and_updates_audit(client):
+    project_id = client.post("/api/projects", json={"title": "Rights Register"}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari"}).json()
+    client.put(f"/api/characters/{character['id']}/design", json={"appearance": {"silhouette": "angular raincoat"}, "consistency_anchors": ["amber clasp"]})
+    client.post(f"/api/characters/{character['id']}/generate", json={"provider": "mock", "seed": 29})
+    overview = client.get(f"/api/projects/{project_id}/compliance").json()
+    asset_key = overview["asset_candidates"][0]["asset_key"]
+    payload = {"asset_key": asset_key, "source_type": "licensed", "rights_holder": "Reference Library", "license_name": "Commercial Studio License", "permitted_uses": ["commercial", "streaming"], "territories": ["worldwide"], "reviewer": "Asset Producer", "notes": "Approved reference package."}
+    assert client.put(f"/api/projects/{project_id}/compliance/asset-rights", json={**payload, "evidence_refs": []}).status_code == 422
+    saved = client.put(f"/api/projects/{project_id}/compliance/asset-rights", json={**payload, "evidence_refs": ["license-vault:asset-144"]})
+    assert saved.status_code == 200
+    assert saved.json()["rights_records"][0]["asset_key"] == asset_key
+    audit = client.get(f"/api/projects/{project_id}/audit-ledger").json()["events"]
+    assert any(event["category"] == "rights" and event["action"] == "asset_rights_recorded" for event in audit)
+
+
 def test_integration_settings_support_builtin_and_custom_tools(client):
     settings_response = client.get("/api/settings/integrations")
     assert settings_response.status_code == 200

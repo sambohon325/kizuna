@@ -849,6 +849,54 @@ class ComplianceScan(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class ComplianceProviderResult(Base):
+    __tablename__ = "compliance_provider_results"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scan_id: Mapped[int] = mapped_column(ForeignKey("compliance_scans.id"))
+    provider_key: Mapped[str] = mapped_column(String(120))
+    category: Mapped[str] = mapped_column(String(48))
+    status: Mapped[str] = mapped_column(String(24), default="completed")
+    request_hash: Mapped[str] = mapped_column(String(64))
+    response_hash: Mapped[str] = mapped_column(String(64), default="")
+    matches: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ComplianceFindingResolution(Base):
+    __tablename__ = "compliance_finding_resolutions"
+    __table_args__ = (UniqueConstraint("scan_id", "finding_id", name="uq_compliance_scan_finding_resolution"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scan_id: Mapped[int] = mapped_column(ForeignKey("compliance_scans.id"))
+    finding_id: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32))
+    reviewer: Mapped[str] = mapped_column(String(160))
+    rationale: Mapped[str] = mapped_column(Text)
+    evidence_refs: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AssetRightsRecord(Base):
+    __tablename__ = "asset_rights_records"
+    __table_args__ = (UniqueConstraint("project_id", "asset_key", name="uq_asset_rights_project_asset"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    asset_key: Mapped[str] = mapped_column(String(160))
+    source_type: Mapped[str] = mapped_column(String(48))
+    rights_holder: Mapped[str] = mapped_column(String(200), default="")
+    license_name: Mapped[str] = mapped_column(String(200), default="")
+    permitted_uses: Mapped[list[str]] = mapped_column(JSON, default=list)
+    territories: Mapped[list[str]] = mapped_column(JSON, default=list)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    evidence_refs: Mapped[list[str]] = mapped_column(JSON, default=list)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class ComplianceClearance(Base):
     __tablename__ = "compliance_clearances"
 

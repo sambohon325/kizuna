@@ -25,10 +25,10 @@ from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
 from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
-from app.compliance import COMPLIANCE_STAGES, append_audit_event, compliance_overview, latest_current_scan, policy_for as compliance_policy_for, require_release_clearance, run_stage_scan
+from app.compliance import COMPLIANCE_STAGES, append_audit_event, compliance_overview, latest_current_scan, policy_for as compliance_policy_for, require_release_clearance, resolve_finding, run_stage_scan, save_asset_rights, scan_passes
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
@@ -640,6 +640,26 @@ def scan_project_compliance(project_id: int, payload: ComplianceScanRequest, db:
     return {"scans": [{"id": scan.id, "stage": scan.stage, "status": scan.status, "risk_score": scan.risk_score, "summary": scan.summary, "findings": scan.findings, "suggestions": scan.suggestions, "coverage": scan.coverage} for scan in scans], "overview": compliance_overview(project_id, db)}
 
 
+@app.post("/api/projects/{project_id}/compliance/scans/{scan_id}/findings/{finding_id}/resolve")
+def resolve_compliance_finding(project_id: int, scan_id: int, finding_id: str, payload: ComplianceFindingResolutionInput, db: Session = Depends(get_db)):
+    scan = db.get(ComplianceScan, scan_id)
+    if scan is None or scan.project_id != project_id: raise HTTPException(404, "Compliance finding not found")
+    try: resolve_finding(scan, finding_id, payload.status, payload.reviewer.strip(), payload.rationale.strip(), payload.evidence_refs, db)
+    except PermissionError as exc: raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc: raise HTTPException(404, str(exc)) from exc
+    db.commit()
+    return compliance_overview(project_id, db)
+
+
+@app.put("/api/projects/{project_id}/compliance/asset-rights")
+def update_asset_rights(project_id: int, payload: AssetRightsInput, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    try: save_asset_rights(project_id, payload.asset_key, payload.model_dump(exclude={"reviewer"}), payload.reviewer.strip(), db)
+    except ValueError as exc: raise HTTPException(422, str(exc)) from exc
+    db.commit()
+    return compliance_overview(project_id, db)
+
+
 @app.post("/api/projects/{project_id}/compliance/acknowledge")
 def acknowledge_project_compliance(project_id: int, payload: ComplianceAcknowledgement, db: Session = Depends(get_db)):
     if not payload.accepted: raise HTTPException(422, "The creator-responsibility acknowledgement must be accepted")
@@ -704,7 +724,7 @@ def get_production_status(project_id: int, db: Session = Depends(get_db)):
     completed_masters = db.scalars(select(AnimaticRender).where(AnimaticRender.timeline_id == timeline.id, AnimaticRender.status == "completed")).all() if timeline else []
     production_master_exists = any(render.render_settings.get("kind") == "production_master" and render.uri for render in completed_masters)
     master_complete = production_master_exists and edit_complete and sound_complete and finish_complete
-    compliance_pass = {key: bool((scan := latest_current_scan(project_id, key, db)) and scan.status == "pass") for key in COMPLIANCE_STAGES}
+    compliance_pass = {key: scan_passes(latest_current_scan(project_id, key, db)) for key in COMPLIANCE_STAGES}
     story_approved, style_approved = story_complete and compliance_pass["story"], style_complete and compliance_pass["style"]
     cast_approved, worlds_approved = cast_complete and compliance_pass["characters"], worlds_complete and compliance_pass["worlds"]
     shots_approved, edit_approved = shots_complete and compliance_pass["shots"], edit_complete and compliance_pass["timeline"]
@@ -2822,7 +2842,7 @@ def workflow_stages(project: Project, db: Session) -> list[dict]:
             state = "blocked"
         return {"key": key, "label": label, "role": role, "status": state, "reason": reason, "progress": progress, "action_id": pending.id if pending else None}
 
-    scan_pass = {key: bool((scan := latest_current_scan(project.id, key, db)) and scan.status == "pass") for key in COMPLIANCE_STAGES}
+    scan_pass = {key: scan_passes(latest_current_scan(project.id, key, db)) for key in COMPLIANCE_STAGES}
     story_ready = bool(story and story.beats)
     cast_ready = bool(characters) and all(item.design for item in characters)
     worlds_ready = bool(locations) and all(item.design for item in locations)

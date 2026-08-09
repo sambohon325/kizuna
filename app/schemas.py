@@ -1019,6 +1019,38 @@ class ComplianceClearanceInput(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list, max_length=20)
 
 
+class ComplianceFindingResolutionInput(BaseModel):
+    status: str = Field(pattern="^(rights_verified|false_positive)$")
+    reviewer: str = Field(min_length=2, max_length=160)
+    rationale: str = Field(min_length=10, max_length=2000)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def evidence_for_rights(self):
+        if self.status == "rights_verified" and not self.evidence_refs:
+            raise ValueError("Rights-verified resolutions require at least one evidence reference")
+        return self
+
+
+class AssetRightsInput(BaseModel):
+    asset_key: str = Field(min_length=1, max_length=160)
+    source_type: str = Field(pattern="^(original|ai_generated|commissioned|licensed|public_domain|stock|user_owned)$")
+    rights_holder: str = Field(default="", max_length=200)
+    license_name: str = Field(default="", max_length=200)
+    permitted_uses: list[str] = Field(default_factory=list, max_length=20)
+    territories: list[str] = Field(default_factory=list, max_length=40)
+    expires_at: datetime | None = None
+    evidence_refs: list[str] = Field(default_factory=list, max_length=20)
+    notes: str = Field(default="", max_length=2000)
+    reviewer: str = Field(min_length=2, max_length=160)
+
+    @model_validator(mode="after")
+    def evidence_for_external_sources(self):
+        if self.source_type in {"licensed", "commissioned", "stock", "public_domain"} and not self.evidence_refs:
+            raise ValueError("This source type requires at least one license or evidence reference")
+        return self
+
+
 class ProjectBackupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -1056,7 +1088,7 @@ class DeliveryLinkRead(BaseModel):
 
 class IntegrationProfileInput(BaseModel):
     display_name: str = Field(default="", max_length=160)
-    category: str = Field(default="ai", pattern="^(ai|generation|creative)$")
+    category: str = Field(default="ai", pattern="^(ai|generation|creative|compliance)$")
     mode: str = Field(default="disabled", pattern="^(api|handoff|disabled)$")
     endpoint: str = Field(default="", max_length=2000)
     model: str = Field(default="", max_length=255)

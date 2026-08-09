@@ -4,6 +4,8 @@ Kizuna treats compliance as a production gate, not a one-time disclaimer. Story,
 
 The built-in scanner currently detects direct-copy and false-affiliation instructions, including requests to imitate a named source exactly, reproduce protected expression, lift melodies or recordings, or claim an official relationship. It also compares checksums inside the production to surface duplicate source files. Findings identify the triggering material and suggest an original or properly licensed alternative.
 
+Administrators can connect text, trademark, visual, and audio services through the provider-neutral [scanner protocol](COMPLIANCE_SCANNERS.md). A configured service is part of the gate: if it is unavailable or returns invalid data, the scan fails closed and that outage cannot be manually overridden. External match findings can only pass through an evidence-backed reviewer decision, and every decision is added to the audit chain.
+
 This is preliminary risk screening. It is not a comprehensive comparison against published stories, audiovisual works, trademark registries, image indexes, music-rights catalogs, or audio-fingerprint databases. Those checks require licensed/searchable corpora, specialist providers, and qualified review. Kizuna must not label a local heuristic result as legal clearance.
 
 ## Release gates
@@ -15,6 +17,8 @@ Strict gates are enabled by default. High-resolution continuous or farm masters 
 3. a release-clearance record from counsel, a rights-and-clearance professional, or an authorized studio reviewer, including evidence references where available.
 
 Preview renders remain available so creators can revise flagged work. Failed or stale material cannot be released through Kizuna.
+
+The asset rights register records source type, rights holder, license, permitted uses, territories, expiry, and evidence references against indexed production files. Licensed, commissioned, stock, and public-domain claims require evidence. Adding or changing a rights record or finding resolution makes an older release clearance stale.
 
 ## Product-facing legal notice
 
@@ -28,11 +32,6 @@ Compliance scans, acknowledgement, release clearance, and registered output file
 
 The current database chain is tamper-evident, not independently notarized. A production deployment should add signed events, trusted timestamps, append-only/WORM export, secure identity, retention policy, access logs, and periodic external anchoring. An audit trail can support provenance and investigation but does not guarantee admissibility, prove non-infringement, or prevent legal claims.
 
-## Next adapters
+## Adapter status
 
-- text similarity against licensed story/script corpora with passage-level evidence;
-- USPTO and jurisdiction-specific title/trademark search connectors;
-- perceptual image/video matching against licensed reference indexes;
-- acoustic fingerprinting and composition similarity through music-rights providers;
-- license, consent, model-release, and reference-source records attached to assets; and
-- reviewer resolution workflows for licensed uses and false positives without silently bypassing a gate.
+The transport, fail-closed behavior, provider evidence storage, asset-rights records, and reviewer-resolution workflow are implemented. Actual coverage depends on the corpus and jurisdiction of each service the studio connects. Concrete licensed-corpus adapters and signed/notarized audit exports remain production work.

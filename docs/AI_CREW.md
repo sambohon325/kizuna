@@ -12,6 +12,8 @@ The Writer can read the production logline, Creative DNA, existing story, cast, 
 
 The Character Designer turns a character's narrative role, traits, arc, Creative DNA, and existing design into a versioned production bible: silhouette and appearance rules, palette, wardrobe, consistency anchors, and a reusable reference-sheet brief. The Background Artist does the same for locations, producing architecture and atmosphere direction, palette, parallax layers, lighting variants, continuity locks, and a reusable background brief. Each bot applies the bible first and can then queue generation through the selected provider, so a generation failure never discards approved design work.
 
+The Animator reads a saved shot plan, its camera direction, continuity notes, duration, Creative DNA, cast, location, and existing compositor layers. It proposes a virtual-camera move, acting beats, timing guidance, and editable end keyframes for every layer. Approval can build a missing composition, apply the motion as a new composition version, and optionally render a proxy or full-resolution MP4. A render failure does not discard the approved motion pass.
+
 The Sound Producer can take a saved dialogue cue, combine its character voice bible, line direction, and pronunciation dictionary, generate a performance, and attach the result to the timeline cue.
 
 ## Visual-development providers
@@ -21,6 +23,8 @@ The built-in simulation engine creates deterministic, editable proposals without
 ```env
 KIZUNA_VISUAL_AGENT_PROVIDER=openai
 KIZUNA_OPENAI_VISUAL_AGENT_MODEL=gpt-5.6-terra
+KIZUNA_ANIMATOR_PROVIDER=openai
+KIZUNA_OPENAI_ANIMATOR_MODEL=gpt-5.6-terra
 KIZUNA_OPENAI_API_KEY=your-key
 ```
 

@@ -40,7 +40,7 @@ pytest
 - AI Crew Control Room with Writer, Director, Character Designer, Background Artist, Animator, Sound Producer, and Editor roles; assist/propose/execute autonomy; standing instructions; workflow briefings; and an auditable approval feed
 - Provider-neutral dialogue generation with a safe local timing-slate mode, optional OpenAI speech adapter, voice-rights records, required AI disclosure metadata, and per-character pronunciation entries
 - Scene Compositor with shot-specific layer stacks, asset-library reuse, transforms, visibility, opacity, blend modes, virtual camera/grade plans, and flattened preview renders
-- Keyframed layer motion with linear/eased interpolation, animated opacity and transforms, virtual-camera motion, and versioned H.264 shot previews
+- Keyframed layer motion with linear/eased interpolation, animated opacity and transforms, virtual-camera motion, versioned H.264 shot previews, and an Animator bot that proposes or applies editable acting/camera passes before optionally rendering a preview
 - Continuous master export that combines current motion clips, safe still-frame fallbacks, Timeline transitions, and the Audio Studio mix at Preview, 1080p, or 4K UHD
 - One-click distributed master exports with safe cut boundaries, authenticated worker dispatch, live progress, retries, SHA-256 verification, automatic final assembly, and local recovery controls
 - Pillow frame normalization and bundled FFmpeg locally; system FFmpeg in the production container
@@ -48,7 +48,7 @@ pytest
 
 ## Next milestones
 
-1. Connect the Animator bot to shot motion plans, preview renders, and render-farm dispatch
+1. Connect the Editor bot to pacing analysis, transition proposals, timeline assembly, and master-quality review
 2. Add production object storage, review states, and asset approval
 3. Add Redis-backed crew/render scheduling, concurrency controls, and worker scaling
 4. Add delivery presets for festival, streaming, broadcast, captions, and archival masters

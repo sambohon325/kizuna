@@ -22,7 +22,7 @@ from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
 from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, Project, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -31,6 +31,7 @@ from app.voice import VoiceProviderError, generate_voice
 from app.writer_agent import WriterAgentError, create_writer_proposal
 from app.director_agent import DirectorAgentError, create_director_proposal
 from app.visual_agents import VisualAgentError, create_background_design_proposal, create_character_design_proposal
+from app.animator_agent import AnimatorAgentError, create_animator_proposal
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -1173,9 +1174,87 @@ def perform_background_design_action(action: CrewAction, db: Session) -> CrewAct
     return action
 
 
+def animator_shot_context(shot: Shot, db: Session) -> dict:
+    scene = db.get(Scene, shot.scene_id)
+    project = db.get(Project, scene.project_id)
+    context = writer_project_context(project, db)
+    plan = shot.plan
+    composition = db.scalar(select(ShotComposition).where(ShotComposition.shot_id == shot.id))
+    if composition:
+        layers = db.scalars(select(CompositionLayer).where(CompositionLayer.composition_id == composition.id).order_by(CompositionLayer.z_index)).all()
+        layer_context = [{"id": layer.id, "name": layer.name, "kind": layer.kind, "opacity": layer.opacity, "transform": layer.transform, "animation": layer.animation} for layer in layers]
+    else:
+        layer_context = []
+        if plan and plan.location_id:
+            location = db.get(WorldLocation, plan.location_id)
+            if location:
+                layer_context.append({"id": None, "name": location.name, "kind": "background", "opacity": 1, "transform": {"x": .5, "y": .5, "scale": 1, "rotation": 0}, "animation": {}})
+        if plan:
+            for character_id in plan.character_ids:
+                character = db.get(Character, character_id)
+                if character:
+                    layer_context.append({"id": None, "name": character.name, "kind": "character", "opacity": 1, "transform": {"x": .5, "y": .58, "scale": 1, "rotation": 0}, "animation": {}})
+        if not layer_context:
+            layer_context.append({"id": None, "name": "Background plate", "kind": "background", "opacity": 1, "transform": {"x": .5, "y": .5, "scale": 1, "rotation": 0}, "animation": {}})
+    context["shot"] = {"id": shot.id, "title": shot.title, "description": shot.description, "duration_seconds": shot.duration_seconds, "scene_title": scene.title, "plan": {"action": plan.action, "dialogue": plan.dialogue, "lighting": plan.lighting, "camera": plan.camera, "continuity_notes": plan.continuity_notes} if plan else None}
+    context["composition"] = {"id": composition.id, "camera": composition.camera, "version": composition.version} if composition else None
+    context["layers"] = layer_context
+    return context
+
+
+def perform_animator_action(action: CrewAction, db: Session) -> CrewAction:
+    shot = db.scalars(select(Shot).options(selectinload(Shot.plan)).where(Shot.id == int(action.payload.get("target_id", 0)))).one_or_none()
+    try:
+        proposal = AnimatorProposal.model_validate(action.payload.get("proposal") or {})
+    except Exception as exc:
+        action.status, action.error = "failed", f"Animator proposal is incomplete: {exc}"
+        db.commit()
+        return action
+    if not shot or not shot.plan:
+        action.status, action.error = "failed", "Shot plan not found"
+        db.commit()
+        return action
+    composition = db.scalar(select(ShotComposition).where(ShotComposition.shot_id == shot.id))
+    if composition is None:
+        build_shot_composition(shot.id, db)
+        composition = db.scalar(select(ShotComposition).where(ShotComposition.shot_id == shot.id))
+    layers = db.scalars(select(CompositionLayer).where(CompositionLayer.composition_id == composition.id).order_by(CompositionLayer.z_index)).all()
+    by_id = {layer.id: layer for layer in layers}
+    applied = []
+    for motion in proposal.layer_motions:
+        layer = by_id.get(motion.layer_id) if motion.layer_id else next((item for item in layers if item.name.casefold() == motion.layer_name.casefold() and item.kind == motion.kind), None)
+        if not layer:
+            continue
+        layer.animation = {"intent": motion.intent, "easing": motion.easing, "end": {"x": motion.end_x, "y": motion.end_y, "scale": motion.end_scale, "rotation": motion.end_rotation, "opacity": motion.end_opacity}}
+        applied.append({"layer_id": layer.id, "name": layer.name, "intent": motion.intent})
+    if not applied:
+        action.status, action.error = "failed", "No proposed motion matched the composition layers"
+        db.commit()
+        return action
+    composition.camera = proposal.camera.model_dump()
+    composition.version += 1
+    composition.status = "draft"
+    action.status, action.error = "completed", ""
+    db.commit(); db.refresh(composition)
+    result = {"shot_id": shot.id, "composition_id": composition.id, "composition_version": composition.version, "applied_layers": applied, "camera": proposal.camera.model_dump(), "acting_beats": proposal.acting_beats, "preview_queued": False}
+    request = action.payload.get("request", {})
+    if request.get("render_preview"):
+        render = render_shot_motion(composition.id, MotionRenderRequest(quality=request.get("quality", "proxy"), fps=request.get("fps")), db)
+        result.update({"preview_queued": True, "preview_render_id": render.id, "preview_status": render.status, "preview_uri": render.uri, "preview_error": render.error})
+    action = db.get(CrewAction, action.id)
+    action.status, action.result = "completed", result
+    db.commit(); db.refresh(action)
+    return action
+
+
 @app.get("/api/crew/roles")
 def crew_roles():
     return [{"id": role, **data} for role, data in CREW_ROLES.items()]
+
+
+@app.get("/api/animation/providers")
+def animation_providers():
+    return {"active": settings.animator_provider, "providers": [{"id": "simulation", "label": "Local motion planner", "ready": True}, {"id": "openai", "label": "OpenAI Animator", "ready": bool(settings.openai_api_key)}]}
 
 
 @app.get("/api/voice/providers")
@@ -1360,6 +1439,32 @@ def ask_director(project_id: int, payload: DirectorProposalRequest, db: Session 
     return perform_director_action(action, db) if assignment.autonomy == "execute" else action
 
 
+@app.post("/api/shots/{shot_id}/crew/animate", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
+def ask_animator(shot_id: int, payload: AnimatorProposalRequest, db: Session = Depends(get_db)):
+    shot = db.scalars(select(Shot).options(selectinload(Shot.plan)).where(Shot.id == shot_id)).one_or_none()
+    if not shot:
+        raise HTTPException(404, "Shot not found")
+    if not shot.plan:
+        raise HTTPException(409, "Save the shot plan before asking the Animator")
+    scene = db.get(Scene, shot.scene_id)
+    assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == scene.project_id, CrewAssignment.role == "animator", CrewAssignment.enabled.is_(True)))
+    if not assignment:
+        raise HTTPException(409, "Deploy the Animator bot first")
+    provider = payload.provider or settings.animator_provider
+    action = CrewAction(project_id=scene.project_id, assignment_id=assignment.id, role="animator", action_type="animate_shot", title=f"Animate {shot.title}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "target_id": shot.id, "request": payload.model_dump()})
+    db.add(action); db.commit(); db.refresh(action)
+    try:
+        proposal = create_animator_proposal(animator_shot_context(shot, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_animator_model, instructions=assignment.instructions)
+        action.payload = {**action.payload, "proposal": proposal.model_dump()}
+        action.summary, action.status = proposal.approach, "proposed"
+        db.commit(); db.refresh(action)
+    except AnimatorAgentError as exc:
+        action.status, action.error = "failed", str(exc)
+        db.commit(); db.refresh(action)
+        return action
+    return perform_animator_action(action, db) if assignment.autonomy == "execute" else action
+
+
 @app.post("/api/characters/{character_id}/crew/design", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
 def ask_character_designer(character_id: int, payload: CharacterDesignerRequest, db: Session = Depends(get_db)):
     character = db.scalars(select(Character).options(selectinload(Character.design)).where(Character.id == character_id)).one_or_none()
@@ -1420,6 +1525,8 @@ def approve_crew_action(action_id: int, db: Session = Depends(get_db)):
         return perform_writer_action(action, db)
     if action.action_type == "direct_coverage":
         return perform_director_action(action, db)
+    if action.action_type == "animate_shot":
+        return perform_animator_action(action, db)
     if action.action_type == "design_character":
         return perform_character_design_action(action, db)
     if action.action_type == "design_background":

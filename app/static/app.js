@@ -67,6 +67,7 @@ function showDashboard() {
   window.scrollTo({top: 0, left: 0, behavior: 'auto'});
 }
 document.querySelector('#render-composition').insertAdjacentHTML('afterend','<button id="render-motion" type="button">Render motion preview</button>');
+document.querySelector('.compositor-title').insertAdjacentHTML('afterend','<section class="visual-agent-panel animator-agent-panel"><div class="visual-agent-head"><div><p class="eyebrow">AI ANIMATOR</p><h3>Delegate the motion pass</h3><p>Select a shot, then review camera movement, acting beats, and editable layer keyframes.</p></div></div><div class="visual-agent-controls"><label>Engine<select id="animator-provider"><option value="simulation">Local motion planner</option><option value="openai">OpenAI Animator</option></select></label><label>Assignment<textarea id="animator-objective" rows="2">Create an economical, performance-led motion pass that preserves continuity.</textarea></label><label>Output<select id="animator-output"><option value="plan">Motion plan only</option><option value="proxy">Plan + proxy preview</option><option value="full">Plan + full-resolution preview</option></select></label><button id="ask-animator" type="button">Ask Animator</button></div><div id="animator-result"></div></section>');
 document.querySelector('#layer-form > .primary').insertAdjacentHTML('beforebegin','<section class="motion-controls"><p class="eyebrow">END KEYFRAME</p><div class="motion-grid"><label>Easing<select name="motion_easing"><option value="linear">Linear</option><option value="ease-in">Ease in</option><option value="ease-out">Ease out</option><option value="ease-in-out">Ease in/out</option></select></label><label>End X<input name="motion_end_x" type="number" min="-1" max="2" step="0.01"></label><label>End Y<input name="motion_end_y" type="number" min="-1" max="2" step="0.01"></label><label>End scale<input name="motion_end_scale" type="number" min="0.05" max="5" step="0.05"></label><label>End rotation<input name="motion_end_rotation" type="number" min="-360" max="360" step="1"></label><label>End opacity<input name="motion_end_opacity" type="number" min="0" max="1" step="0.05"></label></div></section>');
 document.querySelector('#render-animatic').insertAdjacentHTML('beforebegin','<select id="master-profile" aria-label="Master profile"><option value="preview">Preview · source up to 720p</option><option value="1080p">Master · 1080p</option><option value="4k">Master · 4K UHD</option></select>');
 document.querySelector('#render-animatic').insertAdjacentHTML('afterend','<button id="render-master" type="button">Export continuous master</button>');
@@ -437,6 +438,31 @@ function renderBackgroundArtistAction(action) {
   document.querySelector('#reject-background-design').onclick=async()=>renderBackgroundArtistAction(await api(`/api/crew-actions/${action.id}/reject`,{method:'POST'}));
 }
 
+async function askAnimator() {
+  const result=document.querySelector('#animator-result'), projectId=Number(document.querySelector('#compositor-project').value);
+  if(!activeCompositorShotId){result.innerHTML='<div class="job-error">Select a planned shot first.</div>';return;}
+  const output=document.querySelector('#animator-output').value;
+  const payload={objective:document.querySelector('#animator-objective').value,provider:document.querySelector('#animator-provider').value,render_preview:output!=='plan',quality:output==='full'?'full':'proxy'};
+  result.innerHTML='<div class="render-progress">Animator is planning acting beats, camera movement, and editable layer keyframes…</div>';
+  try{renderAnimatorAction(await api(`/api/shots/${activeCompositorShotId}/crew/animate`,{method:'POST',body:JSON.stringify(payload)}));}
+  catch(error){result.innerHTML=`<div class="job-error">${safe(error.message)}</div>${error.message.includes('Deploy the Animator')?'<button id="deploy-animator-here" type="button">Deploy Animator</button>':''}`;const deploy=document.querySelector('#deploy-animator-here');if(deploy)deploy.onclick=async()=>{await api(`/api/projects/${projectId}/crew/deploy`,{method:'POST',body:JSON.stringify({roles:['animator'],autonomy:'propose'})});await askAnimator();};}
+}
+
+async function refreshAnimatorComposition(projectId, shotId) {
+  activeCompositorStudio=await api(`/api/projects/${projectId}/compositor`);activeCompositorShotId=shotId;activeComposition=await api(`/api/shots/${shotId}/composition`);renderCompositorShots();renderCompositionEditor();if(activeComposition.layers.length)selectCompositionLayer(activeComposition.layers[0].id);
+}
+
+function renderAnimatorAction(action) {
+  const result=document.querySelector('#animator-result'), proposal=action.payload?.proposal;
+  if(action.status==='failed'){result.innerHTML=`<div class="job-error">${safe(action.error)}</div>`;return;}
+  if(action.status==='rejected'){result.innerHTML='<div class="crew-empty">Motion proposal rejected. The composition was not changed.</div>';return;}
+  if(action.status==='completed'){const data=action.result;result.innerHTML=`<div class="visual-applied">Motion pass applied to ${data.applied_layers.length} layer${data.applied_layers.length===1?'':'s'} · composition v${data.composition_version}${data.preview_queued?` · preview ${safe(data.preview_status)}`:''}${data.preview_error?` · render needs attention: ${safe(data.preview_error)}`:''}.</div>`;refreshAnimatorComposition(action.project_id,data.shot_id);return;}
+  if(!proposal){result.innerHTML='<div class="job-error">Animator proposal is unavailable.</div>';return;}
+  result.innerHTML=`<article class="visual-proposal animator-proposal"><header><div><p class="eyebrow">PROPOSED MOTION PASS</p><h3>Acting, camera & layer motion</h3></div><span>Awaiting approval</span></header><p>${safe(proposal.approach)}</p><div class="visual-proposal-grid"><section><h4>Virtual camera</h4><span><b>${safe(proposal.camera.move)}</b> · ${safe(proposal.camera.intent)}</span><span>${proposal.camera.start_scale.toFixed(2)}× → ${proposal.camera.end_scale.toFixed(2)}× · pan ${proposal.camera.pan_x.toFixed(2)}, ${proposal.camera.pan_y.toFixed(2)}</span>${proposal.acting_beats.map((item,index)=>`<span>BEAT ${index+1} · ${safe(item)}</span>`).join('')}</section><section><h4>Editable layer motion</h4>${proposal.layer_motions.map(item=>`<span><b>${safe(item.layer_name)}</b> · ${safe(item.intent)}<small>${item.end_x.toFixed(2)}, ${item.end_y.toFixed(2)} · ${item.end_scale.toFixed(2)}× · ${safe(item.easing)}</small></span>`).join('')}</section></div><div class="visual-locks">${proposal.timing_notes.map(item=>`<span>TIMING · ${safe(item)}</span>`).join('')}</div><div class="crew-action-buttons"><button id="approve-animation" class="primary" type="button">Approve motion${action.payload.request.render_preview?' & render preview':''}</button><button id="reject-animation" type="button">Reject</button></div></article>`;
+  document.querySelector('#approve-animation').onclick=async()=>{result.innerHTML='<div class="render-progress">Applying editable keyframes and rendering the requested preview…</div>';renderAnimatorAction(await api(`/api/crew-actions/${action.id}/approve`,{method:'POST'}));};
+  document.querySelector('#reject-animation').onclick=async()=>renderAnimatorAction(await api(`/api/crew-actions/${action.id}/reject`,{method:'POST'}));
+}
+
 async function openShotPlanner(projectId) {
   if (!projects.length) await loadProjects();
   if (!projects.length) { projectDialog.showModal(); return; }
@@ -765,7 +791,7 @@ async function openCompositor(projectId) {
 }
 
 async function loadCompositorStudio(projectId) {
-  activeCompositorStudio=await api(`/api/projects/${projectId}/compositor`);activeComposition=null;activeCompositionLayerId=null;renderCompositorShots();document.querySelector('#composition-editor').style.display='none';document.querySelector('#composition-empty').style.display='block';document.querySelector('#layer-form').style.display='none';document.querySelector('#layer-empty').style.display='block';if(activeCompositorStudio.shots.length)await selectCompositorShot(activeCompositorStudio.shots[0].id);
+  activeCompositorStudio=await api(`/api/projects/${projectId}/compositor`);activeComposition=null;activeCompositionLayerId=null;document.querySelector('#animator-result').innerHTML='';renderCompositorShots();document.querySelector('#composition-editor').style.display='none';document.querySelector('#composition-empty').style.display='block';document.querySelector('#layer-form').style.display='none';document.querySelector('#layer-empty').style.display='block';if(activeCompositorStudio.shots.length)await selectCompositorShot(activeCompositorStudio.shots[0].id);
 }
 
 function renderCompositorShots() {
@@ -773,7 +799,7 @@ function renderCompositorShots() {
 }
 
 async function selectCompositorShot(shotId) {
-  activeCompositorShotId=shotId;activeCompositionLayerId=null;renderCompositorShots();const shot=activeCompositorStudio.shots.find(item=>item.id===shotId);if(!shot?.composition_id){activeComposition=null;document.querySelector('#composition-editor').style.display='none';document.querySelector('#composition-empty').style.display='block';document.querySelector('#composition-empty').textContent='Build this shot to create its background and character layer stack.';return;} activeComposition=await api(`/api/shots/${shotId}/composition`);renderCompositionEditor();
+  if(activeCompositorShotId!==shotId)document.querySelector('#animator-result').innerHTML='';activeCompositorShotId=shotId;activeCompositionLayerId=null;renderCompositorShots();const shot=activeCompositorStudio.shots.find(item=>item.id===shotId);if(!shot?.composition_id){activeComposition=null;document.querySelector('#composition-editor').style.display='none';document.querySelector('#composition-empty').style.display='block';document.querySelector('#composition-empty').textContent='Build this shot to create its background and character layer stack.';return;} activeComposition=await api(`/api/shots/${shotId}/composition`);renderCompositionEditor();
 }
 
 function stageLayer(layer) {
@@ -827,6 +853,7 @@ document.querySelector('#ask-writer').onclick = askWriter;
 document.querySelector('#ask-director').onclick = askDirector;
 document.querySelector('#ask-character-designer').onclick = askCharacterDesigner;
 document.querySelector('#ask-background-artist').onclick = askBackgroundArtist;
+document.querySelector('#ask-animator').onclick = askAnimator;
 document.querySelector('#build-composition').onclick = async () => { if(!activeCompositorShotId)return;activeComposition=await api(`/api/shots/${activeCompositorShotId}/composition/build`,{method:'POST'});activeCompositorStudio=await api(`/api/projects/${activeCompositorStudio.project_id}/compositor`);renderCompositorShots();renderCompositionEditor();if(activeComposition.layers.length)selectCompositionLayer(activeComposition.layers[0].id); };
 document.querySelector('#save-composition').onclick = async () => { if(!activeComposition)return;activeComposition=await api(`/api/compositions/${activeComposition.id}`,{method:'PUT',body:JSON.stringify({camera:{...activeComposition.camera,move:document.querySelector('#comp-camera-move').value,start_scale:Number(document.querySelector('#comp-start-scale').value),end_scale:Number(document.querySelector('#comp-end-scale').value)},color_grade:{exposure:Number(document.querySelector('#comp-exposure').value),contrast:Number(document.querySelector('#comp-contrast').value),saturation:Number(document.querySelector('#comp-saturation').value)}})});renderCompositionEditor(); };
 document.querySelector('#add-composition-layer').onclick = async () => { if(!activeComposition)return;const asset=activeCompositorStudio.assets[Number(document.querySelector('#composition-asset').value)];if(!asset)return;const z=Math.max(0,...activeComposition.layers.map(layer=>layer.z_index))+10;const layer=await api(`/api/compositions/${activeComposition.id}/layers`,{method:'POST',body:JSON.stringify({name:asset.name,kind:asset.kind,source_kind:asset.source_kind,source_asset_id:asset.id,source_uri:asset.uri,z_index:z,visible:true,opacity:1,blend_mode:'normal',transform:{x:.5,y:.5,scale:1,rotation:0},animation:{intent:'hold'}})});activeCompositionLayerId=layer.id;await refreshComposition(); };

@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     openai_director_model: str = "gpt-5.6-terra"
     visual_agent_provider: str = "simulation"
     openai_visual_agent_model: str = "gpt-5.6-terra"
+    animator_provider: str = "simulation"
+    openai_animator_model: str = "gpt-5.6-terra"
 
 
 settings = Settings()

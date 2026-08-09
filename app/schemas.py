@@ -104,6 +104,47 @@ class DirectorProposal(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class AnimatorProposalRequest(BaseModel):
+    objective: str = "Create an economical, performance-led motion pass that preserves continuity."
+    provider: str = Field(default="simulation", pattern="^(simulation|openai)$")
+    render_preview: bool = False
+    quality: str = Field(default="proxy", pattern="^(proxy|full)$")
+    fps: int | None = Field(default=None, ge=1, le=60)
+
+
+class AnimatorCameraProposal(BaseModel):
+    move: str
+    start_scale: float = Field(default=1, ge=1, le=5)
+    end_scale: float = Field(default=1, ge=1, le=5)
+    pan_x: float = Field(default=0, ge=-0.5, le=0.5)
+    pan_y: float = Field(default=0, ge=-0.5, le=0.5)
+    easing: str = Field(default="ease-in-out", pattern="^(linear|ease-in|ease-out|ease-in-out)$")
+    intent: str = ""
+
+
+class AnimatorLayerProposal(BaseModel):
+    layer_id: int | None = None
+    layer_name: str
+    kind: str
+    intent: str
+    easing: str = Field(default="ease-in-out", pattern="^(linear|ease-in|ease-out|ease-in-out)$")
+    end_x: float = Field(ge=-1, le=2)
+    end_y: float = Field(ge=-1, le=2)
+    end_scale: float = Field(ge=0.05, le=5)
+    end_rotation: float = Field(ge=-360, le=360)
+    end_opacity: float = Field(ge=0, le=1)
+
+
+class AnimatorProposal(BaseModel):
+    approach: str
+    camera: AnimatorCameraProposal
+    layer_motions: list[AnimatorLayerProposal] = Field(min_length=1)
+    acting_beats: list[str] = Field(default_factory=list)
+    timing_notes: list[str] = Field(default_factory=list)
+    changes: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CharacterInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     role: str = "protagonist"

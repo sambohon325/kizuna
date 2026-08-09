@@ -463,3 +463,32 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):
     assert dispatched["status"] == "farm-queued"
     farm = client.get("/api/render-farm/status").json()
     assert any(segment["id"] == segment_id and segment["status"] == "completed" for segment in farm["master_segments"])
+
+
+def test_animator_bot_applies_editable_motion_and_renders_preview(client):
+    project_id = client.post("/api/projects", json={"title": "Motion Thread"}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Sora", "role": "signal runner"}).json()
+    location = client.post(f"/api/projects/{project_id}/locations", json={"name": "Relay Roof"}).json()
+    scene_id = client.post(f"/api/projects/{project_id}/scenes", json={"title": "The Reply", "position": 1}).json()["id"]
+    shot = client.post(f"/api/scenes/{scene_id}/shots", json={"title": "Sora hears the signal", "position": 1, "duration_seconds": 0.5}).json()
+    client.put(f"/api/shots/{shot['id']}/plan", json={"location_id": location["id"], "character_ids": [character["id"]], "action": "Sora stops, listens, and looks up.", "camera": {"movement": "slow push"}, "continuity_notes": "Keep Sora screen-left."})
+    client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 4, "width": 160, "height": 90})
+    deployed = client.post(f"/api/projects/{project_id}/crew/deploy", json={"roles": ["animator"], "autonomy": "propose"})
+    assert deployed.status_code == 200
+
+    proposed = client.post(f"/api/shots/{shot['id']}/crew/animate", json={"objective": "Make the listening beat readable with restrained motion.", "provider": "simulation", "render_preview": True, "quality": "proxy", "fps": 4})
+    assert proposed.status_code == 201
+    assert proposed.json()["status"] == "proposed"
+    assert len(proposed.json()["payload"]["proposal"]["layer_motions"]) == 2
+    assert client.get(f"/api/shots/{shot['id']}/composition").status_code == 404
+
+    approved = client.post(f"/api/crew-actions/{proposed.json()['id']}/approve")
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "completed"
+    assert approved.json()["result"]["preview_status"] == "completed", approved.json()["result"].get("preview_error")
+    assert client.get(approved.json()["result"]["preview_uri"]).headers["content-type"] == "video/mp4"
+    composition = client.get(f"/api/shots/{shot['id']}/composition").json()
+    assert composition["camera"]["end_scale"] == 1.08
+    assert all(layer["animation"]["intent"] for layer in composition["layers"])
+    assert composition["latest_motion_uri"] == approved.json()["result"]["preview_uri"]
+    assert client.get("/api/animation/providers").json()["providers"][0]["ready"] is True

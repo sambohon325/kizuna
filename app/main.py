@@ -23,10 +23,11 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIProviderRoute, AnimaticRender, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, IntegrationProfile, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
-from app.ai_router import AI_TASKS, AIRouterError, generate_text, provider_readiness, resolve_provider
+from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
+from app.usage_monitor import record_ai_usage, usage_savings_suggestions
 from app.storage import LocalProductionStorage
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
@@ -207,6 +208,122 @@ def update_ai_routing(task: str, payload: AIProviderRouteInput, db: Session = De
     db.commit(); db.refresh(route)
     profiles = {profile.key: profile} if profile else {}
     return ai_route_response(task, route, profiles)
+
+
+WORKLOADS = {
+    "writing": ("Writing & planning", "Drafting, analysis, scripts, and production coordination."),
+    "image_generation": ("Character & background generation", "Concept art, model sheets, backgrounds, and controlled image passes."),
+    "animation": ("Animation & motion", "Motion previews, interpolation, and generated animation passes."),
+    "audio": ("Audio & voices", "Speech, music, sound effects, cleanup, and mix operations."),
+    "video_editing": ("Editing & compositing", "Proxy playback, scene assembly, effects, and finishing."),
+    "rendering": ("Final rendering", "High-resolution frames, masters, and delivery encodes."),
+    "upscaling": ("Upscaling & restoration", "Resolution enhancement, denoise, and final cleanup."),
+}
+
+
+def node_response(node: KizunaNode) -> dict:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    online = (now - node.last_seen).total_seconds() < 150
+    strengths = []
+    if "local_ai" in (node.capabilities or []): strengths.append("private local AI")
+    if "gpu_render" in (node.capabilities or []): strengths.append("GPU rendering")
+    if "video_encode" in (node.capabilities or []): strengths.append("video encoding")
+    if node.ram_gb >= 32: strengths.append("large-memory work")
+    return {"id": node.id, "node_key": node.node_key, "name": node.name, "os_name": node.os_name, "os_version": node.os_version, "architecture": node.architecture, "cpu_name": node.cpu_name, "logical_cores": node.logical_cores, "ram_gb": node.ram_gb, "gpu": node.gpu, "software": node.software, "benchmark_score": node.benchmark_score, "capabilities": node.capabilities, "strengths": strengths, "status": "online" if online else "offline", "last_seen": node.last_seen, "created_at": node.created_at}
+
+
+def usage_dashboard(db: Session) -> dict:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    events = db.scalars(select(AIUsageEvent).where(AIUsageEvent.created_at >= month_start).order_by(AIUsageEvent.created_at.desc())).all()
+    grouped: dict[tuple[str, str], dict] = {}
+    for event in events:
+        row = grouped.setdefault((event.provider_key, event.model), {"provider_key": event.provider_key, "model": event.model, "requests": 0, "input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "estimated_cost": 0.0, "pricing_known": True})
+        row["requests"] += 1; row["input_tokens"] += event.input_tokens; row["cached_input_tokens"] += event.cached_input_tokens; row["output_tokens"] += event.output_tokens; row["estimated_cost"] += event.estimated_cost; row["pricing_known"] = row["pricing_known"] and event.pricing_known
+    for row in grouped.values(): row["estimated_cost"] = round(row["estimated_cost"], 6)
+    budget = db.scalar(select(StudioSpendSettings).where(StudioSpendSettings.scope == "studio"))
+    if budget is None: budget = StudioSpendSettings(scope="studio")
+    total = round(sum(event.estimated_cost for event in events), 6)
+    return {"month": month_start.strftime("%Y-%m"), "requests": len(events), "input_tokens": sum(event.input_tokens for event in events), "cached_input_tokens": sum(event.cached_input_tokens for event in events), "output_tokens": sum(event.output_tokens for event in events), "estimated_cost": total, "unpriced_requests": sum(not event.pricing_known for event in events), "by_model": list(grouped.values()), "budget": {"monthly_budget": budget.monthly_budget, "warning_percent": budget.warning_percent, "hard_stop": budget.hard_stop, "percent_used": round(total / budget.monthly_budget * 100, 1) if budget.monthly_budget else 0}}
+
+
+@app.get("/api/settings/compute")
+def get_compute_settings(db: Session = Depends(get_db)):
+    nodes = db.scalars(select(KizunaNode).order_by(KizunaNode.id)).all()
+    policies = {item.task: item for item in db.scalars(select(WorkloadPolicy).order_by(WorkloadPolicy.id)).all()}
+    rates = db.scalars(select(AIModelRate).order_by(AIModelRate.provider_key, AIModelRate.model)).all()
+    usage = usage_dashboard(db)
+    policy_rows = [{"task": task, "label": data[0], "description": data[1], "placement": policies[task].placement if task in policies else "auto", "node_key": policies[task].node_key if task in policies else "", "cloud_provider": policies[task].cloud_provider if task in policies else ""} for task, data in WORKLOADS.items()]
+    rate_rows = [{"id": rate.id, "provider_key": rate.provider_key, "model": rate.model, "input_per_million": rate.input_per_million, "cached_input_per_million": rate.cached_input_per_million, "output_per_million": rate.output_per_million, "currency": rate.currency, "source_url": rate.source_url, "updated_at": rate.updated_at} for rate in rates]
+    usage["suggestions"] = usage_savings_suggestions(nodes, list(policies.values()), rates, usage["by_model"])
+    return {"nodes": [node_response(node) for node in nodes], "workloads": policy_rows, "usage": usage, "rates": rate_rows, "privacy": {"sent": ["OS and architecture", "CPU name and logical cores", "total RAM", "detected GPUs", "selected installed-software names", "short local benchmark", "declared capabilities"], "never_sent": ["project files", "prompts or scripts", "passwords or API keys", "license keys", "documents or browser history"]}}
+
+
+@app.post("/api/settings/compute/enrollment")
+def create_node_enrollment(request: Request, db: Session = Depends(get_db)):
+    code = secrets.token_urlsafe(9)
+    enrollment = NodeEnrollment(code_hash=hashlib.sha256(code.encode()).hexdigest(), expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=20))
+    db.add(enrollment); db.commit()
+    base = str(request.base_url).rstrip("/")
+    return {"code": code, "expires_at": enrollment.expires_at, "download_url": "/api/nodes/download", "commands": {"preview": "python kizuna_node.py scan --software-level creative", "enroll": f'python kizuna_node.py enroll --server "{base}" --code "{code}" --software-level creative', "monitor": "python kizuna_node.py monitor --interval 60"}}
+
+
+@app.get("/api/nodes/download")
+def download_kizuna_node():
+    return FileResponse(Path(__file__).parent.parent / "node_agent" / "kizuna_node.py", media_type="text/x-python", filename="kizuna_node.py")
+
+
+@app.post("/api/nodes/enroll")
+def enroll_kizuna_node(payload: NodeProfileInput, db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    code_hash = hashlib.sha256(payload.code.encode()).hexdigest()
+    enrollment = db.scalar(select(NodeEnrollment).where(NodeEnrollment.code_hash == code_hash, NodeEnrollment.used_at.is_(None)))
+    if not enrollment or enrollment.expires_at < now: raise HTTPException(401, "Enrollment code is invalid or expired")
+    if db.scalar(select(KizunaNode).where(KizunaNode.node_key == payload.node_key)): raise HTTPException(409, "This node identity is already enrolled")
+    token = secrets.token_urlsafe(32)
+    data = payload.model_dump(exclude={"code"})
+    node = KizunaNode(**data, token_hash=hashlib.sha256(token.encode()).hexdigest(), last_seen=now)
+    enrollment.used_at = now; db.add(node); db.commit(); db.refresh(node)
+    return {"node_key": node.node_key, "name": node.name, "token": token, "status": "online"}
+
+
+@app.post("/api/nodes/{node_key}/heartbeat")
+def heartbeat_kizuna_node(node_key: str, payload: NodeHeartbeatInput, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    node = db.scalar(select(KizunaNode).where(KizunaNode.node_key == node_key))
+    token = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    if not node or not token or not secrets.compare_digest(node.token_hash, hashlib.sha256(token.encode()).hexdigest()): raise HTTPException(401, "Invalid node credentials")
+    if payload.benchmark_score is not None: node.benchmark_score = payload.benchmark_score
+    if payload.capabilities is not None: node.capabilities = payload.capabilities
+    node.last_seen = datetime.now(timezone.utc).replace(tzinfo=None); node.status = "online"; db.commit(); db.refresh(node)
+    return {"node_key": node.node_key, "status": "online", "last_seen": node.last_seen}
+
+
+@app.put("/api/settings/compute/workloads/{task}")
+def update_workload_policy(task: str, payload: WorkloadPolicyInput, db: Session = Depends(get_db)):
+    if task not in WORKLOADS: raise HTTPException(404, "Workload not found")
+    if payload.placement == "local" and payload.node_key and not db.scalar(select(KizunaNode).where(KizunaNode.node_key == payload.node_key)): raise HTTPException(400, "Selected local computer is unavailable")
+    policy = db.scalar(select(WorkloadPolicy).where(WorkloadPolicy.task == task))
+    if policy is None: policy = WorkloadPolicy(task=task); db.add(policy)
+    policy.placement = payload.placement; policy.node_key = payload.node_key; policy.cloud_provider = payload.cloud_provider; db.commit(); db.refresh(policy)
+    return {"task": task, **payload.model_dump()}
+
+
+@app.post("/api/settings/ai-rates")
+def save_ai_model_rate(payload: AIModelRateInput, db: Session = Depends(get_db)):
+    rate = db.scalar(select(AIModelRate).where(AIModelRate.provider_key == payload.provider_key, AIModelRate.model == payload.model))
+    if rate is None: rate = AIModelRate(provider_key=payload.provider_key, model=payload.model); db.add(rate)
+    for key, value in payload.model_dump(exclude={"provider_key", "model"}).items(): setattr(rate, key, value)
+    db.commit(); db.refresh(rate)
+    return {"id": rate.id, **payload.model_dump(), "updated_at": rate.updated_at}
+
+
+@app.put("/api/settings/spend")
+def update_spend_settings(payload: SpendSettingsInput, db: Session = Depends(get_db)):
+    budget = db.scalar(select(StudioSpendSettings).where(StudioSpendSettings.scope == "studio"))
+    if budget is None: budget = StudioSpendSettings(scope="studio"); db.add(budget)
+    for key, value in payload.model_dump().items(): setattr(budget, key, value)
+    db.commit(); db.refresh(budget)
+    return {"monthly_budget": budget.monthly_budget, "warning_percent": budget.warning_percent, "hard_stop": budget.hard_stop}
 
 
 @app.put("/api/settings/integrations/{integration_key}", response_model=IntegrationProfileRead)
@@ -399,13 +516,21 @@ def routed_assistant_reply(project: Project, scope: ProductionScope | None, requ
     if provider is None:
         content, actions = local_assistant_reply(project, scope, request)
         return content, actions, {"provider": "local", "provider_name": "Kizuna local"}
+    spend = usage_dashboard(db)
+    if spend["budget"]["hard_stop"] and spend["budget"]["monthly_budget"] and spend["estimated_cost"] >= spend["budget"]["monthly_budget"]:
+        raise AIRouterError("the studio AI budget limit has been reached")
     summary = assistant_project_summary(project, scope)
     scope_guidance = scope_response(scope)["writing_guidance"] if scope else []
     recent = db.scalars(select(AssistantMessage).where(AssistantMessage.project_id == project.id).order_by(AssistantMessage.id.desc()).limit(10)).all()[::-1]
     conversation = [{"role": item.role, "content": item.content} for item in recent]
     system = """You are Kizuna's embedded anime production assistant. You understand the full workflow from scope and writing through visual development, animation, sound, edit, render, and delivery. Give concise, concrete, professional guidance based only on the supplied project state and current screen. Collaborate at the creator's level, explain unfamiliar craft terms plainly, preserve approved work, and clearly distinguish suggestions from known project facts. Never claim that work is complete unless the project state says it is. When discussing style, describe transferable craft traits and original art direction rather than imitating a living artist."""
     prompt = json.dumps({"project": summary, "scope_guidance": scope_guidance, "current_workspace": page, "screen": request.screen_context, "recent_conversation": conversation, "creator_request": request.message}, ensure_ascii=False)
-    content = generate_text(provider, system=system, prompt=prompt)
+    generated = generate_text(provider, system=system, prompt=prompt)
+    if isinstance(generated, GeneratedText):
+        content = generated.text
+        record_ai_usage(db, provider, "assistant", project.id, generated)
+    else:
+        content = generated
     return content, actions, {"provider": provider.key, "provider_name": provider.name, "model": provider.model}
 
 

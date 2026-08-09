@@ -43,6 +43,14 @@ class ResolvedProvider:
     protocol: str
 
 
+@dataclass
+class GeneratedText:
+    text: str
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    output_tokens: int = 0
+
+
 def _profile_values(key: str, profile: IntegrationProfile | None) -> tuple[str, str, str]:
     definition = INTEGRATION_CATALOG.get(key, {})
     endpoint = profile.endpoint if profile and profile.endpoint else definition.get("default_endpoint", "")
@@ -96,7 +104,8 @@ def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str], timeo
         raise AIRouterError(f"Could not reach provider: {exc}") from exc
 
 
-def generate_text(provider: ResolvedProvider, *, system: str, prompt: str) -> str:
+def generate_text(provider: ResolvedProvider, *, system: str, prompt: str) -> GeneratedText:
+    input_tokens = cached_input_tokens = output_tokens = 0
     try:
         if provider.protocol == "openai":
             try:
@@ -106,24 +115,32 @@ def generate_text(provider: ResolvedProvider, *, system: str, prompt: str) -> st
             client = OpenAI(api_key=provider.api_key or "not-required", base_url=provider.endpoint or None, timeout=90)
             response = client.responses.create(model=provider.model, instructions=system, input=prompt)
             text = response.output_text
+            usage = getattr(response, "usage", None)
+            input_tokens = getattr(usage, "input_tokens", 0) or 0
+            output_tokens = getattr(usage, "output_tokens", 0) or 0
+            cached_input_tokens = getattr(getattr(usage, "input_tokens_details", None), "cached_tokens", 0) or 0
         elif provider.protocol == "anthropic":
             data = _post_json(f"{provider.endpoint}/v1/messages", {"model": provider.model, "max_tokens": 1800, "system": system, "messages": [{"role": "user", "content": prompt}]}, {"x-api-key": provider.api_key, "anthropic-version": "2023-06-01"})
             text = "\n".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text")
+            usage = data.get("usage", {}); cached_input_tokens = usage.get("cache_read_input_tokens", 0); input_tokens = usage.get("input_tokens", 0) + cached_input_tokens; output_tokens = usage.get("output_tokens", 0)
         elif provider.protocol == "google":
             model = provider.model.removeprefix("models/")
             data = _post_json(f"{provider.endpoint}/v1beta/models/{quote(model, safe='')}:generateContent", {"systemInstruction": {"parts": [{"text": system}]}, "contents": [{"role": "user", "parts": [{"text": prompt}]}]}, {"x-goog-api-key": provider.api_key})
             text = "\n".join(part.get("text", "") for candidate in data.get("candidates", []) for part in candidate.get("content", {}).get("parts", []))
+            usage = data.get("usageMetadata", {}); input_tokens = usage.get("promptTokenCount", 0); cached_input_tokens = usage.get("cachedContentTokenCount", 0); output_tokens = usage.get("candidatesTokenCount", 0)
         elif provider.protocol == "ollama":
             data = _post_json(f"{provider.endpoint}/api/generate", {"model": provider.model, "system": system, "prompt": prompt, "stream": False}, {})
             text = data.get("response", "")
+            input_tokens = data.get("prompt_eval_count", 0); output_tokens = data.get("eval_count", 0)
         else:
             headers = {"Authorization": f"Bearer {provider.api_key}"} if provider.api_key else {}
             data = _post_json(f"{provider.endpoint}/chat/completions", {"model": provider.model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}], "stream": False}, headers)
             text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            usage = data.get("usage", {}); input_tokens = usage.get("prompt_tokens", usage.get("input_tokens", 0)); cached_input_tokens = usage.get("prompt_tokens_details", {}).get("cached_tokens", 0); output_tokens = usage.get("completion_tokens", usage.get("output_tokens", 0))
     except AIRouterError:
         raise
     except Exception as exc:
         raise AIRouterError(str(exc)) from exc
     if not text or not text.strip():
         raise AIRouterError("Provider returned an empty response")
-    return text.strip()
+    return GeneratedText(text.strip(), int(input_tokens or 0), int(cached_input_tokens or 0), int(output_tokens or 0))

@@ -56,6 +56,49 @@ def test_ai_role_routing_drives_the_contextual_assistant(client, monkeypatch):
     assert client.put("/api/settings/ai-routing/not-a-role", json={"provider_key": "local"}).status_code == 404
 
 
+def test_kizuna_node_onboarding_workload_control_and_usage_budget(client, monkeypatch):
+    empty = client.get("/api/settings/compute")
+    assert empty.status_code == 200
+    assert empty.json()["nodes"] == []
+    assert len(empty.json()["workloads"]) == 7
+    assert "passwords or API keys" in empty.json()["privacy"]["never_sent"]
+
+    enrollment = client.post("/api/settings/compute/enrollment").json()
+    assert client.get(enrollment["download_url"]).status_code == 200
+    assert "kizuna-local-capability-check" in client.get(enrollment["download_url"]).text
+    profile = {"code": enrollment["code"], "node_key": "test-node-0001", "name": "Edit Suite", "os_name": "Windows", "os_version": "11", "architecture": "AMD64", "cpu_name": "Studio CPU", "logical_cores": 16, "ram_gb": 64, "gpu": [{"name": "Studio GPU", "memory_mb": 16384}], "software": ["ollama", "ffmpeg", "blender"], "benchmark_score": 123.4, "capabilities": ["local_ai", "gpu_render", "video_encode"]}
+    enrolled = client.post("/api/nodes/enroll", json=profile)
+    assert enrolled.status_code == 200
+    token = enrolled.json()["token"]
+    assert client.post("/api/nodes/test-node-0001/heartbeat", json={}, headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert client.post("/api/nodes/test-node-0001/heartbeat", json={"benchmark_score": 130}, headers={"Authorization": f"Bearer {token}"}).status_code == 200
+    compute = client.get("/api/settings/compute").json()
+    assert compute["nodes"][0]["status"] == "online"
+    assert "private local AI" in compute["nodes"][0]["strengths"]
+    assert "token" not in compute["nodes"][0]
+
+    policy = client.put("/api/settings/compute/workloads/rendering", json={"placement": "local", "node_key": "test-node-0001", "cloud_provider": ""})
+    assert policy.status_code == 200
+    assert policy.json()["placement"] == "local"
+    assert client.put("/api/settings/compute/workloads/rendering", json={"placement": "local", "node_key": "missing", "cloud_provider": ""}).status_code == 400
+
+    client.put("/api/settings/integrations/custom-metered", json={"display_name": "Metered AI", "category": "ai", "mode": "api", "endpoint": "http://studio-ai:9000/v1", "model": "efficient-v1", "secret_env_var": "", "configuration": {"protocol": "openai-compatible"}})
+    client.put("/api/settings/ai-routing/assistant", json={"provider_key": "custom-metered", "model_override": ""})
+    rate = client.post("/api/settings/ai-rates", json={"provider_key": "custom-metered", "model": "efficient-v1", "input_per_million": 1, "cached_input_per_million": 0.1, "output_per_million": 3, "currency": "USD", "source_url": "https://example.test/pricing"})
+    assert rate.status_code == 200
+    assert client.put("/api/settings/spend", json={"monthly_budget": 10, "warning_percent": 75, "hard_stop": True}).status_code == 200
+    from app.ai_router import GeneratedText
+    monkeypatch.setattr("app.main.generate_text", lambda provider, **kwargs: GeneratedText("Metered answer", 1000, 200, 500))
+    project = client.post("/api/projects", json={"title": "Metered Production", "logline": "Every creative choice has a visible cost."}).json()
+    answer = client.post(f"/api/projects/{project['id']}/assistant", json={"message": "Help me plan", "page": "productions", "screen_context": {}})
+    assert answer.status_code == 200
+    usage = client.get("/api/settings/compute").json()["usage"]
+    assert usage["requests"] == 1
+    assert usage["input_tokens"] == 1000
+    assert usage["estimated_cost"] == 0.00232
+    assert usage["budget"]["monthly_budget"] == 10
+
+
 def test_production_scope_changes_story_shape_and_assistant_context(client):
     project = client.post("/api/projects", json={"title": "Pocket Signal", "logline": "A courier receives one impossible message.", "scope": {"distribution_channel": "TikTok", "release_format": "ongoing_series", "aspect_ratio": "9:16", "width": 1080, "height": 1920, "target_duration_seconds": 60, "installment_count": 24, "season_count": 2, "notes": "Weekly vertical episodes"}})
     assert project.status_code == 201

@@ -985,3 +985,46 @@ class AIProviderRouteRead(AIProviderRouteInput):
 class AIRoutingSettingsRead(BaseModel):
     routes: list[AIProviderRouteRead] = Field(default_factory=list)
     providers: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class NodeProfileInput(BaseModel):
+    code: str = Field(min_length=6, max_length=100)
+    node_key: str = Field(min_length=8, max_length=64)
+    name: str = Field(min_length=1, max_length=160)
+    os_name: str = Field(default="", max_length=80)
+    os_version: str = Field(default="", max_length=160)
+    architecture: str = Field(default="", max_length=40)
+    cpu_name: str = Field(default="", max_length=255)
+    logical_cores: int = Field(default=1, ge=1, le=1024)
+    ram_gb: float = Field(default=0, ge=0, le=65536)
+    gpu: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
+    software: list[str] = Field(default_factory=list, max_length=2000)
+    benchmark_score: float = Field(default=0, ge=0)
+    capabilities: list[str] = Field(default_factory=list, max_length=100)
+
+
+class NodeHeartbeatInput(BaseModel):
+    benchmark_score: float | None = Field(default=None, ge=0)
+    capabilities: list[str] | None = Field(default=None, max_length=100)
+
+
+class WorkloadPolicyInput(BaseModel):
+    placement: str = Field(default="auto", pattern="^(auto|local|cloud)$")
+    node_key: str = Field(default="", max_length=64)
+    cloud_provider: str = Field(default="", max_length=120)
+
+
+class AIModelRateInput(BaseModel):
+    provider_key: str = Field(min_length=1, max_length=120)
+    model: str = Field(min_length=1, max_length=255)
+    input_per_million: float = Field(default=0, ge=0)
+    cached_input_per_million: float = Field(default=0, ge=0)
+    output_per_million: float = Field(default=0, ge=0)
+    currency: str = Field(default="USD", pattern="^[A-Z]{3}$")
+    source_url: str = Field(default="", max_length=2000)
+
+
+class SpendSettingsInput(BaseModel):
+    monthly_budget: float = Field(default=0, ge=0)
+    warning_percent: int = Field(default=80, ge=1, le=100)
+    hard_stop: bool = False

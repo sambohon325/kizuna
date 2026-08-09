@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -727,4 +727,90 @@ class AIProviderRoute(Base):
     provider_key: Mapped[str] = mapped_column(String(120), default="local")
     model_override: Mapped[str] = mapped_column(String(255), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class NodeEnrollment(Base):
+    __tablename__ = "node_enrollments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class KizunaNode(Base):
+    __tablename__ = "kizuna_nodes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    node_key: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(160))
+    os_name: Mapped[str] = mapped_column(String(80), default="")
+    os_version: Mapped[str] = mapped_column(String(160), default="")
+    architecture: Mapped[str] = mapped_column(String(40), default="")
+    cpu_name: Mapped[str] = mapped_column(String(255), default="")
+    logical_cores: Mapped[int] = mapped_column(default=1)
+    ram_gb: Mapped[float] = mapped_column(Float, default=0)
+    gpu: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    software: Mapped[list[str]] = mapped_column(JSON, default=list)
+    benchmark_score: Mapped[float] = mapped_column(Float, default=0)
+    capabilities: Mapped[list[str]] = mapped_column(JSON, default=list)
+    choices: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="online")
+    token_hash: Mapped[str] = mapped_column(String(64))
+    last_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class WorkloadPolicy(Base):
+    __tablename__ = "workload_policies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task: Mapped[str] = mapped_column(String(80), unique=True)
+    placement: Mapped[str] = mapped_column(String(24), default="auto")
+    node_key: Mapped[str] = mapped_column(String(64), default="")
+    cloud_provider: Mapped[str] = mapped_column(String(120), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class AIModelRate(Base):
+    __tablename__ = "ai_model_rates"
+    __table_args__ = (UniqueConstraint("provider_key", "model", name="uq_ai_model_rate"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider_key: Mapped[str] = mapped_column(String(120))
+    model: Mapped[str] = mapped_column(String(255))
+    input_per_million: Mapped[float] = mapped_column(Float, default=0)
+    cached_input_per_million: Mapped[float] = mapped_column(Float, default=0)
+    output_per_million: Mapped[float] = mapped_column(Float, default=0)
+    currency: Mapped[str] = mapped_column(String(8), default="USD")
+    source_url: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class AIUsageEvent(Base):
+    __tablename__ = "ai_usage_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    provider_key: Mapped[str] = mapped_column(String(120))
+    model: Mapped[str] = mapped_column(String(255))
+    task: Mapped[str] = mapped_column(String(80))
+    input_tokens: Mapped[int] = mapped_column(default=0)
+    cached_input_tokens: Mapped[int] = mapped_column(default=0)
+    output_tokens: Mapped[int] = mapped_column(default=0)
+    estimated_cost: Mapped[float] = mapped_column(Float, default=0)
+    pricing_known: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class StudioSpendSettings(Base):
+    __tablename__ = "studio_spend_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(40), unique=True, default="studio")
+    monthly_budget: Mapped[float] = mapped_column(Float, default=0)
+    warning_percent: Mapped[int] = mapped_column(default=80)
+    hard_stop: Mapped[bool] = mapped_column(default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

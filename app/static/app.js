@@ -4,9 +4,11 @@ const detailDialog = document.querySelector('#detail-dialog');
 const styleDialog = document.querySelector('#style-dialog');
 const writerDialog = document.querySelector('#writer-dialog');
 const characterDialog = document.querySelector('#character-dialog');
+const renderDialog = document.querySelector('#render-dialog');
 let projects = [];
 let catalog = null;
 let activeCharacterId = null;
+let generationProviders = [];
 
 async function api(path, options = {}) {
   const response = await fetch(path, {headers: {'Content-Type': 'application/json'}, ...options});
@@ -131,6 +133,7 @@ async function saveOutline() {
 async function openCharacterStudio(projectId) {
   if (!projects.length) await loadProjects();
   if (!projects.length) { projectDialog.showModal(); return; }
+  if (!generationProviders.length) generationProviders = (await api('/api/generation/providers')).providers;
   const projectSelect = document.querySelector('#character-project');
   projectSelect.innerHTML = options(projects.map(p => ({id:String(p.id), label:p.title})), String(projectId || projects[0].id));
   projectSelect.onchange = () => { activeCharacterId = null; clearCharacterForm(); renderCharacterRoster(Number(projectSelect.value)); };
@@ -181,7 +184,8 @@ function collectCharacterDesign(form) {
 }
 
 function renderCharacterDesign(character, design) {
-  document.querySelector('#character-result').innerHTML = `<div class="reference-brief"><b>GENERATION-READY REFERENCE BRIEF · V${design.version}</b>${safe(design.reference_brief)}</div><div class="anchor-list">${design.consistency_anchors.map(anchor => `<span>LOCK · ${safe(anchor)}</span>`).join('')}</div><div class="generation-actions"><button type="button" id="generate-character">Generate reference sheet</button><small>Simulation is the safe default; ComfyUI can be enabled through environment settings.</small></div><div id="generation-result"></div>`;
+  const providerOptions = generationProviders.map(provider => `<option value="${safe(provider.id)}" ${provider.id === 'mock' ? 'selected' : ''}>${safe(provider.label)}${provider.ready ? '' : ' · setup required'}</option>`).join('');
+  document.querySelector('#character-result').innerHTML = `<div class="reference-brief"><b>GENERATION-READY REFERENCE BRIEF · V${design.version}</b>${safe(design.reference_brief)}</div><div class="anchor-list">${design.consistency_anchors.map(anchor => `<span>LOCK · ${safe(anchor)}</span>`).join('')}</div><div class="generation-actions"><select id="generation-provider" aria-label="Generation provider">${providerOptions}</select><button type="button" id="generate-character">Generate reference sheet</button></div><div id="generation-result"></div>`;
   document.querySelector('#generate-character').onclick = generateCharacterReference;
 }
 
@@ -191,7 +195,8 @@ async function generateCharacterReference() {
   button.disabled = true;
   button.textContent = 'Queuing generation…';
   try {
-    const job = await api(`/api/characters/${activeCharacterId}/generate`, {method:'POST', body:JSON.stringify({})});
+    const provider = document.querySelector('#generation-provider').value;
+    const job = await api(`/api/characters/${activeCharacterId}/generate`, {method:'POST', body:JSON.stringify({provider})});
     renderGenerationJob(job);
   } catch (error) {
     document.querySelector('#generation-result').innerHTML = `<div class="job-error">${safe(error.message)}</div>`;
@@ -210,6 +215,21 @@ function renderGenerationJob(job) {
   if (sync) sync.onclick = async () => renderGenerationJob(await api(`/api/generation-jobs/${job.id}/sync`, {method:'POST'}));
 }
 
+async function openRenderFarm() {
+  renderDialog.showModal();
+  await refreshRenderFarm();
+}
+
+async function refreshRenderFarm() {
+  const farm = await api('/api/render-farm/status');
+  const queued = farm.jobs.filter(job => job.status === 'queued').length;
+  const running = farm.jobs.filter(job => job.status === 'running').length;
+  const online = farm.workers.filter(worker => ['online','busy'].includes(worker.status)).length;
+  document.querySelector('#farm-summary').innerHTML = `<div class="farm-stat"><b>${online}</b><span>WORKERS ONLINE</span></div><div class="farm-stat"><b>${running}</b><span>JOBS RENDERING</span></div><div class="farm-stat"><b>${queued}</b><span>JOBS QUEUED</span></div>`;
+  document.querySelector('#farm-workers').innerHTML = farm.workers.length ? farm.workers.map(worker => { const gpu = worker.capabilities.gpu || worker.capabilities.gpus?.map(item => item.name).join(', ') || 'CPU worker'; const vram = worker.capabilities.vram_gb ? `${worker.capabilities.vram_gb} GB VRAM` : ''; return `<article class="worker-card"><header><div><b>${safe(worker.name)}</b><br><small>${safe(worker.hostname)}</small></div><span class="worker-status ${safe(worker.status)}">${safe(worker.status)}</span></header><p>${safe(gpu)} ${safe(vram)}</p><small>${worker.supported_tasks.map(safe).join(' · ')}</small></article>`; }).join('') : '<div class="empty">No render workers enrolled yet.</div>';
+  document.querySelector('#farm-jobs').innerHTML = farm.jobs.length ? farm.jobs.map(job => `<div class="farm-job"><b>#${job.id}</b><span>Character ${job.character_id}</span><span>${safe(job.status)}</span><span>${job.assets} assets</span></div>`).join('') : '<div class="empty">No farm jobs yet. Choose Render farm in Character Studio to queue one.</div>';
+}
+
 function collectStory(form) {
   return {premise:form.elements.premise.value, format:form.elements.format.value, target_duration_minutes:Number(form.elements.target_duration_minutes.value), genre:form.elements.genre.value, audience:form.elements.audience.value, themes:form.elements.themes.value.split(',').map(value => value.trim()).filter(Boolean)};
 }
@@ -218,10 +238,13 @@ document.querySelector('#new-project').onclick = () => projectDialog.showModal()
 document.querySelector('#style-lab-nav').onclick = () => openStyleLab();
 document.querySelector('#writer-nav').onclick = () => openWriterRoom();
 document.querySelector('#characters-nav').onclick = () => openCharacterStudio();
+document.querySelector('#render-nav').onclick = () => openRenderFarm();
 document.querySelector('.close').onclick = () => projectDialog.close();
 document.querySelector('#style-close').onclick = () => styleDialog.close();
 document.querySelector('#writer-close').onclick = () => writerDialog.close();
 document.querySelector('#character-close').onclick = () => characterDialog.close();
+document.querySelector('#render-close').onclick = () => renderDialog.close();
+document.querySelector('#refresh-farm').onclick = () => refreshRenderFarm();
 document.querySelector('#project-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); await api('/api/projects', {method:'POST', body:JSON.stringify(data)}); event.target.reset(); projectDialog.close(); await loadProjects(); };
 document.querySelector('#style-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#style-project').value); await api(`/api/projects/${projectId}/style`, {method:'PUT', body:JSON.stringify(collectStyle(event.target))}); styleDialog.close(); await loadProjects(); openProject(projectId); };
 document.querySelector('#writer-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#writer-project').value); const brief = await api(`/api/projects/${projectId}/story`, {method:'PUT', body:JSON.stringify(collectStory(event.target))}); await loadProjects(); renderStory(brief); };

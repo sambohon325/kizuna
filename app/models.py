@@ -120,6 +120,33 @@ class MediaAsset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class RenderWorker(Base):
+    __tablename__ = "render_workers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    hostname: Mapped[str] = mapped_column(String(255))
+    token_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="offline")
+    capabilities: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    supported_tasks: Mapped[list[str]] = mapped_column(JSON, default=list)
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class WorkerAssignment(Base):
+    __tablename__ = "worker_assignments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    generation_job_id: Mapped[int] = mapped_column(ForeignKey("generation_jobs.id"), unique=True)
+    worker_id: Mapped[int] = mapped_column(ForeignKey("render_workers.id"))
+    status: Mapped[str] = mapped_column(String(32), default="leased")
+    attempts: Mapped[int] = mapped_column(default=1)
+    leased_until: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class Scene(Base):
     __tablename__ = "scenes"
 

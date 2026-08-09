@@ -98,6 +98,44 @@ class GenerationJobRead(BaseModel):
     assets: list[MediaAssetRead] = Field(default_factory=list)
 
 
+class WorkerRegistration(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    hostname: str = Field(min_length=1, max_length=255)
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    supported_tasks: list[str] = Field(default_factory=lambda: ["character_reference"])
+
+
+class WorkerRegistrationResult(BaseModel):
+    id: int
+    token: str
+    name: str
+
+
+class WorkerHeartbeat(BaseModel):
+    status: str = "online"
+    capabilities: dict[str, Any] | None = None
+
+
+class RenderWorkerRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    hostname: str
+    status: str
+    capabilities: dict[str, Any]
+    supported_tasks: list[str]
+    last_seen: datetime | None
+
+
+class JobCompletion(BaseModel):
+    result_data: dict[str, Any] = Field(default_factory=dict)
+
+
+class JobFailure(BaseModel):
+    error: str
+    retryable: bool = True
+
+
 class CharacterRead(CharacterInput):
     model_config = ConfigDict(from_attributes=True)
     id: int

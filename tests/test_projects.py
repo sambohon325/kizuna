@@ -86,3 +86,36 @@ def test_generation_requires_character_design(client):
     character_id = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ren"}).json()["id"]
     response = client.post(f"/api/characters/{character_id}/generate", json={"provider": "mock"})
     assert response.status_code == 409
+
+
+def test_render_worker_claims_uploads_and_completes_farm_job(client):
+    project_id = client.post("/api/projects", json={"title": "Farm Test"}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Iona", "role": "navigator"}).json()
+    client.put(f"/api/characters/{character['id']}/design", json={"appearance": {"silhouette": "short cape"}, "palette": ["navy", "gold"], "wardrobe": ["flight suit"], "consistency_anchors": ["star hair clip"]})
+    queued = client.post(f"/api/characters/{character['id']}/generate", json={"provider": "farm"})
+    assert queued.status_code == 201
+    assert queued.json()["status"] == "queued"
+
+    registration = client.post("/api/workers/register", headers={"X-Enrollment-Secret": "local-dev-enrollment"}, json={"name": "gpu-one", "hostname": "render-01", "capabilities": {"gpu": "RTX 4090", "vram_gb": 24}, "supported_tasks": ["character_reference"]})
+    assert registration.status_code == 201
+    worker = registration.json()
+    headers = {"Authorization": f"Bearer {worker['token']}"}
+    heartbeat = client.post(f"/api/workers/{worker['id']}/heartbeat", headers=headers, json={"status": "online"})
+    assert heartbeat.status_code == 200
+    claimed = client.post(f"/api/workers/{worker['id']}/claim", headers=headers)
+    assert claimed.status_code == 200
+    job_id = claimed.json()["id"]
+    upload = client.put(f"/api/workers/{worker['id']}/jobs/{job_id}/artifacts/reference.png", headers={**headers, "Content-Type": "image/png"}, content=b"fake-png-for-integration-test")
+    assert upload.status_code == 201
+    completed = client.post(f"/api/workers/{worker['id']}/jobs/{job_id}/complete", headers=headers, json={"result_data": {"render_seconds": 12.4}})
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["assets"][0]["asset_metadata"]["worker_id"] == worker["id"]
+    farm = client.get("/api/render-farm/status").json()
+    assert farm["workers"][0]["status"] == "online"
+    assert farm["jobs"][0]["assets"] == 1
+
+
+def test_worker_api_rejects_invalid_token(client):
+    response = client.post("/api/workers/999/claim", headers={"Authorization": "Bearer wrong"})
+    assert response.status_code == 401

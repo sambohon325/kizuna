@@ -1,0 +1,13 @@
+.render-dialog{width:min(940px,94vw);max-height:90vh}
+.render-panel{padding:38px;position:relative}
+.render-title{display:flex;justify-content:space-between;align-items:start}
+.render-title button{border:1px solid var(--line);background:#f7f4ee;border-radius:9px;padding:9px 13px;cursor:pointer}
+.farm-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:24px 0}
+.farm-stat{padding:16px;border-radius:12px;background:#211c29;color:white}
+.farm-stat b{display:block;font-size:28px}.farm-stat span{font-size:10px;letter-spacing:.12em;color:#c9bdd7}
+.farm-workers{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-bottom:25px}
+.worker-card{border:1px solid var(--line);border-radius:12px;background:#f7f4ee;padding:14px}
+.worker-card header{display:flex;justify-content:space-between;gap:10px}.worker-card small{color:var(--muted)}
+.worker-status{font-size:9px;text-transform:uppercase;border-radius:30px;padding:5px 8px;background:#ddd6cb}.worker-status.online{background:#d9eddf;color:#287440}.worker-status.busy{background:#f5dfb9;color:#8a5a08}
+.farm-jobs{border:1px solid var(--line);border-radius:12px;overflow:hidden}.farm-job{display:grid;grid-template-columns:70px 1fr 90px 80px;padding:12px 14px;border-bottom:1px solid var(--line);font-size:12px}.farm-job:last-child{border:0}.farm-job span:nth-child(3){text-transform:uppercase;font-size:9px;letter-spacing:.1em}.farm-note{margin-top:20px;padding:14px;border-radius:10px;background:#eee7f3;color:var(--purple);font-size:12px}
+@media(max-width:700px){.farm-summary{grid-template-columns:1fr}.farm-job{grid-template-columns:55px 1fr 70px}.farm-job span:last-child{display:none}}

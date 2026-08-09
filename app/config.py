@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     comfyui_negative_node: str = "7"
     comfyui_sampler_node: str = "3"
     render_directory: str = "renders"
+    worker_enrollment_secret: str = "local-dev-enrollment"
+    worker_lease_seconds: int = 300
+    max_artifact_bytes: int = 67_108_864
 
 
 settings = Settings()

@@ -4,6 +4,9 @@ services:
     environment:
       KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
       KIZUNA_ENVIRONMENT: production
+      KIZUNA_GENERATION_PROVIDER: ${KIZUNA_GENERATION_PROVIDER:-farm}
+      KIZUNA_WORKER_ENROLLMENT_SECRET: ${WORKER_ENROLLMENT_SECRET:?Set a strong worker enrollment secret}
+      KIZUNA_RENDER_DIRECTORY: /app/renders
     depends_on:
       postgres:
         condition: service_healthy
@@ -34,4 +37,3 @@ volumes:
   postgres_data:
   redis_data:
   render_data:
-

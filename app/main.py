@@ -1,6 +1,10 @@
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
@@ -10,8 +14,8 @@ from app.config import settings
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import Character, CharacterDesign, GenerationJob, MediaAsset, Project, Scene, Shot, StoryBrief, StyleProfile
-from app.schemas import CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, ProjectCreate, ProjectRead, SceneCreate, SceneRead, ShotCreate, ShotRead, StoryBriefInput, StoryBriefRead, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead
+from app.models import Character, CharacterDesign, GenerationJob, MediaAsset, Project, RenderWorker, Scene, Shot, StoryBrief, StyleProfile, WorkerAssignment
+from app.schemas import CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCreate, ShotRead, StoryBriefInput, StoryBriefRead, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
 
@@ -41,7 +45,7 @@ def style_catalog():
 @app.get("/api/generation/providers")
 def generation_providers():
     workflow_ready = bool(settings.comfyui_workflow_path and Path(settings.comfyui_workflow_path).exists())
-    return {"active": settings.generation_provider, "providers": [{"id": "mock", "label": "Simulation", "ready": True}, {"id": "comfyui", "label": "Local ComfyUI", "ready": workflow_ready, "base_url": settings.comfyui_url}]}
+    return {"active": settings.generation_provider, "providers": [{"id": "mock", "label": "Simulation", "ready": True}, {"id": "farm", "label": "Render farm", "ready": True}, {"id": "comfyui", "label": "Local ComfyUI", "ready": workflow_ready, "base_url": settings.comfyui_url}]}
 
 
 @app.get("/api/projects", response_model=list[ProjectRead])
@@ -199,6 +203,8 @@ def generate_character_reference(character_id: int, payload: GenerationRequest, 
     db.add(job)
     db.commit()
     db.refresh(job)
+    if provider_name == "farm":
+        return job_response(job, db)
     try:
         result = provider_for(provider_name).submit(job.id, character.name, job.prompt, negative_prompt=job.negative_prompt, seed=payload.seed)
         job.status = result.status
@@ -212,6 +218,158 @@ def generate_character_reference(character_id: int, payload: GenerationRequest, 
     db.commit()
     db.refresh(job)
     return job_response(job, db)
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def authenticate_worker(worker_id: int, authorization: str | None, db: Session) -> RenderWorker:
+    worker = db.get(RenderWorker, worker_id)
+    if not worker or not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Invalid worker credentials")
+    token_hash = hashlib.sha256(authorization.removeprefix("Bearer ").encode()).hexdigest()
+    if not secrets.compare_digest(token_hash, worker.token_hash):
+        raise HTTPException(401, "Invalid worker credentials")
+    return worker
+
+
+@app.post("/api/workers/register", response_model=WorkerRegistrationResult, status_code=status.HTTP_201_CREATED)
+def register_worker(payload: WorkerRegistration, x_enrollment_secret: str | None = Header(default=None), db: Session = Depends(get_db)):
+    if not x_enrollment_secret or not secrets.compare_digest(x_enrollment_secret, settings.worker_enrollment_secret):
+        raise HTTPException(403, "Invalid worker enrollment secret")
+    token = secrets.token_urlsafe(32)
+    worker = RenderWorker(name=payload.name, hostname=payload.hostname, token_hash=hashlib.sha256(token.encode()).hexdigest(), status="online", capabilities=payload.capabilities, supported_tasks=payload.supported_tasks, last_seen=utcnow())
+    db.add(worker)
+    db.commit()
+    db.refresh(worker)
+    return {"id": worker.id, "token": token, "name": worker.name}
+
+
+@app.post("/api/workers/{worker_id}/heartbeat", response_model=RenderWorkerRead)
+def worker_heartbeat(worker_id: int, payload: WorkerHeartbeat, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    worker = authenticate_worker(worker_id, authorization, db)
+    worker.status = payload.status
+    worker.last_seen = utcnow()
+    if payload.capabilities is not None:
+        worker.capabilities = payload.capabilities
+    for assignment in db.scalars(select(WorkerAssignment).where(WorkerAssignment.worker_id == worker.id, WorkerAssignment.status.in_(["leased", "running"]))).all():
+        assignment.leased_until = utcnow() + timedelta(seconds=settings.worker_lease_seconds)
+    db.commit()
+    db.refresh(worker)
+    return worker
+
+
+def recover_expired_assignments(db: Session):
+    expired = db.scalars(select(WorkerAssignment).where(WorkerAssignment.leased_until < utcnow(), WorkerAssignment.status.in_(["leased", "running"]))).all()
+    for assignment in expired:
+        assignment.status = "expired"
+        job = db.get(GenerationJob, assignment.generation_job_id)
+        if job and job.status == "running":
+            job.status = "queued"
+
+
+@app.post("/api/workers/{worker_id}/claim", response_model=GenerationJobRead | None)
+def claim_worker_job(worker_id: int, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    worker = authenticate_worker(worker_id, authorization, db)
+    recover_expired_assignments(db)
+    active = db.scalar(select(WorkerAssignment).where(WorkerAssignment.worker_id == worker.id, WorkerAssignment.status.in_(["leased", "running"])))
+    if active:
+        return job_response(db.get(GenerationJob, active.generation_job_id), db)
+    if "character_reference" not in worker.supported_tasks:
+        db.commit()
+        return None
+    job = db.scalar(select(GenerationJob).where(GenerationJob.provider == "farm", GenerationJob.status == "queued").order_by(GenerationJob.id).with_for_update(skip_locked=True))
+    if not job:
+        db.commit()
+        return None
+    assignment = db.scalar(select(WorkerAssignment).where(WorkerAssignment.generation_job_id == job.id))
+    if assignment:
+        assignment.worker_id = worker.id
+        assignment.status = "leased"
+        assignment.attempts += 1
+        assignment.leased_until = utcnow() + timedelta(seconds=settings.worker_lease_seconds)
+    else:
+        assignment = WorkerAssignment(generation_job_id=job.id, worker_id=worker.id, leased_until=utcnow() + timedelta(seconds=settings.worker_lease_seconds))
+        db.add(assignment)
+    job.status = "running"
+    worker.status = "busy"
+    worker.last_seen = utcnow()
+    db.commit()
+    return job_response(job, db)
+
+
+def worker_assignment(worker: RenderWorker, job_id: int, db: Session) -> WorkerAssignment:
+    assignment = db.scalar(select(WorkerAssignment).where(WorkerAssignment.worker_id == worker.id, WorkerAssignment.generation_job_id == job_id, WorkerAssignment.status.in_(["leased", "running"])))
+    if not assignment:
+        raise HTTPException(409, "Job is not leased to this worker")
+    return assignment
+
+
+@app.put("/api/workers/{worker_id}/jobs/{job_id}/artifacts/{filename}", status_code=status.HTTP_201_CREATED)
+async def upload_worker_artifact(worker_id: int, job_id: int, filename: str, request: Request, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    worker = authenticate_worker(worker_id, authorization, db)
+    assignment = worker_assignment(worker, job_id, db)
+    content = await request.body()
+    if not content or len(content) > settings.max_artifact_bytes:
+        raise HTTPException(413, f"Artifact must be between 1 byte and {settings.max_artifact_bytes} bytes")
+    job = db.get(GenerationJob, job_id)
+    character = db.get(Character, job.character_id)
+    safe_suffix = Path(Path(filename).name).suffix.lower()[:10] or ".bin"
+    stored_name = f"farm-job-{job_id}-{uuid4().hex[:12]}{safe_suffix}"
+    (render_dir / stored_name).write_bytes(content)
+    existing = db.scalars(select(MediaAsset).where(MediaAsset.character_id == character.id, MediaAsset.kind == "character_reference")).all()
+    asset = MediaAsset(project_id=character.project_id, character_id=character.id, generation_job_id=job.id, kind="character_reference", filename=stored_name, uri=f"/renders/{stored_name}", mime_type=request.headers.get("content-type", "application/octet-stream").split(";")[0], asset_metadata={"original_filename": Path(filename).name, "worker_id": worker.id}, version=len(existing) + 1)
+    db.add(asset)
+    assignment.status = "running"
+    assignment.leased_until = utcnow() + timedelta(seconds=settings.worker_lease_seconds)
+    db.commit()
+    db.refresh(asset)
+    return {"asset_id": asset.id, "uri": asset.uri, "version": asset.version}
+
+
+@app.post("/api/workers/{worker_id}/jobs/{job_id}/complete", response_model=GenerationJobRead)
+def complete_worker_job(worker_id: int, job_id: int, payload: JobCompletion, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    worker = authenticate_worker(worker_id, authorization, db)
+    assignment = worker_assignment(worker, job_id, db)
+    assets = db.scalars(select(MediaAsset).where(MediaAsset.generation_job_id == job_id)).all()
+    if not assets:
+        raise HTTPException(409, "Upload at least one artifact before completing the job")
+    job = db.get(GenerationJob, job_id)
+    job.status = "completed"
+    job.result_data = {**job.result_data, **payload.result_data, "worker_id": worker.id}
+    assignment.status = "completed"
+    worker.status = "online"
+    worker.last_seen = utcnow()
+    db.commit()
+    return job_response(job, db)
+
+
+@app.post("/api/workers/{worker_id}/jobs/{job_id}/fail", response_model=GenerationJobRead)
+def fail_worker_job(worker_id: int, job_id: int, payload: JobFailure, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    worker = authenticate_worker(worker_id, authorization, db)
+    assignment = worker_assignment(worker, job_id, db)
+    job = db.get(GenerationJob, job_id)
+    job.error = payload.error
+    job.status = "queued" if payload.retryable else "failed"
+    assignment.status = "failed_retryable" if payload.retryable else "failed"
+    worker.status = "online"
+    worker.last_seen = utcnow()
+    db.commit()
+    return job_response(job, db)
+
+
+@app.get("/api/render-farm/status")
+def render_farm_status(db: Session = Depends(get_db)):
+    recover_expired_assignments(db)
+    stale_before = utcnow() - timedelta(seconds=settings.worker_lease_seconds * 2)
+    workers = db.scalars(select(RenderWorker).order_by(RenderWorker.name)).all()
+    for worker in workers:
+        if not worker.last_seen or worker.last_seen < stale_before:
+            worker.status = "offline"
+    jobs = db.scalars(select(GenerationJob).where(GenerationJob.provider == "farm").order_by(GenerationJob.id.desc()).limit(20)).all()
+    db.commit()
+    return {"workers": [RenderWorkerRead.model_validate(worker).model_dump() for worker in workers], "jobs": [{"id": job.id, "character_id": job.character_id, "status": job.status, "error": job.error, "assets": len(db.scalars(select(MediaAsset).where(MediaAsset.generation_job_id == job.id)).all())} for job in jobs]}
 
 
 @app.post("/api/generation-jobs/{job_id}/sync", response_model=GenerationJobRead)

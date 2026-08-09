@@ -702,6 +702,41 @@ class BackupSchedule(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class MediaStoragePolicy(Base):
+    __tablename__ = "media_storage_policies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), unique=True)
+    original_strategy: Mapped[str] = mapped_column(String(32), default="server")
+    preferred_node_key: Mapped[str] = mapped_column(String(64), default="")
+    keep_server_proxies: Mapped[bool] = mapped_column(default=True)
+    thumbnail_width: Mapped[int] = mapped_column(default=480)
+    proxy_width: Mapped[int] = mapped_column(default=1280)
+    minimum_replicas: Mapped[int] = mapped_column(default=1)
+    evict_server_originals: Mapped[bool] = mapped_column(default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class AssetResidency(Base):
+    __tablename__ = "asset_residencies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    residency_key: Mapped[str] = mapped_column(String(64), unique=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    asset_key: Mapped[str] = mapped_column(String(160))
+    representation: Mapped[str] = mapped_column(String(24), default="original")
+    backend: Mapped[str] = mapped_column(String(24), default="server")
+    node_key: Mapped[str] = mapped_column(String(64), default="")
+    object_ref: Mapped[str] = mapped_column(Text, default="")
+    uri: Mapped[str] = mapped_column(Text, default="")
+    checksum_sha256: Mapped[str] = mapped_column(String(64), default="")
+    size_bytes: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String(24), default="available")
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class DeliveryLink(Base):
     __tablename__ = "delivery_links"
 

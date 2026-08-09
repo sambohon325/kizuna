@@ -922,6 +922,34 @@ class BackupScheduleRead(BackupScheduleInput):
     last_error: str = ""
 
 
+class MediaStoragePolicyInput(BaseModel):
+    original_strategy: str = Field(default="server", pattern="^(server|hive|s3)$")
+    preferred_node_key: str = Field(default="", max_length=64)
+    keep_server_proxies: bool = True
+    thumbnail_width: int = Field(default=480, ge=160, le=1920)
+    proxy_width: int = Field(default=1280, ge=320, le=3840)
+    minimum_replicas: int = Field(default=1, ge=1, le=5)
+    evict_server_originals: bool = False
+
+
+class MediaStoragePolicyRead(MediaStoragePolicyInput):
+    model_config = ConfigDict(from_attributes=True)
+    project_id: int
+
+
+class NodeResidencyInput(BaseModel):
+    asset_key: str = Field(min_length=1, max_length=160)
+    representation: str = Field(default="original", pattern="^(original|proxy|thumbnail)$")
+    object_ref: str = Field(pattern="^vault://[A-Za-z0-9._-]{1,240}$")
+    checksum_sha256: str = Field(default="", pattern="^$|^[a-fA-F0-9]{64}$")
+    size_bytes: int = Field(default=0, ge=0)
+    status: str = Field(default="available", pattern="^(available|missing|verifying)$")
+
+
+class NodeResidencyBatch(BaseModel):
+    items: list[NodeResidencyInput] = Field(default_factory=list, max_length=1000)
+
+
 class ProjectBackupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

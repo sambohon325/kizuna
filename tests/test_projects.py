@@ -919,3 +919,39 @@ def test_s3_compatible_storage_upload_download_and_delete():
     storage.delete(key)
     assert client.objects == {}
     shutil.rmtree(temp_path)
+
+
+def test_media_index_keeps_thumbnails_and_tracks_hive_originals(client, monkeypatch):
+    import shutil
+    from pathlib import Path
+    import app.main as main_module
+
+    thumbnail_root = Path("work/test-media-thumbnails").resolve()
+    if thumbnail_root.exists(): shutil.rmtree(thumbnail_root)
+    thumbnail_root.mkdir(parents=True)
+    monkeypatch.setattr(main_module, "thumbnail_dir", thumbnail_root)
+    project_id = client.post("/api/projects", json={"title": "Local First Media"}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Mika"}).json()
+    client.put(f"/api/characters/{character['id']}/design", json={"appearance": {"silhouette": "radio coat"}, "consistency_anchors": ["blue headset"]})
+    generated = client.post(f"/api/characters/{character['id']}/generate", json={"provider": "mock", "seed": 41}).json()
+    index = client.get(f"/api/projects/{project_id}/media-index")
+    assert index.status_code == 200
+    media = index.json(); item = next(entry for entry in media["assets"] if entry["source_kind"] == "media_asset")
+    assert media["summary"]["server_original_bytes"] > 0
+    assert media["summary"]["lightweight_server_bytes"] > 0
+    assert item["preview_uri"].startswith("/api/media/thumbnails/")
+    assert client.get(item["preview_uri"]).headers["content-type"] in {"image/jpeg", "image/svg+xml"}
+
+    enrollment = client.post("/api/settings/compute/enrollment").json()
+    profile = {"code": enrollment["code"], "node_key": "media-node-0001", "name": "Creator Workstation", "os_name": "Linux", "architecture": "x86_64", "logical_cores": 12, "ram_gb": 32, "capabilities": ["video_encode"]}
+    enrolled = client.post("/api/nodes/enroll", json=profile).json(); headers = {"Authorization": f"Bearer {enrolled['token']}"}
+    original = next(place for place in item["residencies"] if place["representation"] == "original" and place["backend"] == "server")
+    registered = client.post(f"/api/nodes/media-node-0001/projects/{project_id}/media-residencies", headers=headers, json={"items": [{"asset_key": item["asset_key"], "representation": "original", "object_ref": "vault://mika-reference-v1", "checksum_sha256": original["checksum_sha256"], "size_bytes": original["size_bytes"], "status": "available"}]})
+    assert registered.json()["registered"] == 1
+    policy = client.put(f"/api/projects/{project_id}/media-storage-policy", json={"original_strategy": "hive", "preferred_node_key": "media-node-0001", "keep_server_proxies": True, "thumbnail_width": 480, "proxy_width": 1280, "minimum_replicas": 1, "evict_server_originals": True})
+    assert policy.status_code == 200
+    refreshed = client.get(f"/api/projects/{project_id}/media-index").json()
+    assert refreshed["summary"]["hive_original_bytes"] == original["size_bytes"]
+    assert refreshed["summary"]["hive_assets"] == 1
+    assert client.get(generated["assets"][0]["uri"]).status_code == 200
+    shutil.rmtree(thumbnail_root)

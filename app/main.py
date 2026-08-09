@@ -10,6 +10,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -23,8 +24,8 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaStoragePolicy, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaStoragePolicyInput, MediaStoragePolicyRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
@@ -47,6 +48,8 @@ render_dir = Path(settings.render_directory).resolve()
 render_dir.mkdir(parents=True, exist_ok=True)
 production_storage = LocalProductionStorage(Path(settings.storage_directory))
 s3_production_storage = S3ProductionStorage(settings.s3_bucket, settings.s3_endpoint_url, settings.s3_region, settings.s3_prefix)
+thumbnail_dir = (Path(settings.storage_directory) / "thumbnails").resolve()
+thumbnail_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 app.mount("/renders", StaticFiles(directory=render_dir), name="renders")
 
@@ -1670,6 +1673,110 @@ def project_asset_library(project_id: int, db: Session):
         active = choose_reviewed_asset("storyboard", db.scalars(select(StoryboardAsset).where(StoryboardAsset.shot_id == asset.shot_id).order_by(StoryboardAsset.version.desc(), StoryboardAsset.id.desc())).all(), db)
         item.update({"asset_type": "storyboard", "group_id": asset.shot_id, "mime_type": asset.mime_type, "review_status": review.status if review else "pending", "review_notes": review.notes if review else "", "selected": bool(review and review.selected), "active": bool(active and active.id == asset.id)})
     return assets
+
+
+def media_policy_for(project_id: int, db: Session) -> MediaStoragePolicy:
+    policy = db.scalar(select(MediaStoragePolicy).where(MediaStoragePolicy.project_id == project_id))
+    if policy is None:
+        policy = MediaStoragePolicy(project_id=project_id); db.add(policy); db.flush()
+    return policy
+
+
+def residency_identity(project_id: int, asset_key: str, representation: str, backend: str, node_key: str = "") -> str:
+    return hashlib.sha256(f"{project_id}|{asset_key}|{representation}|{backend}|{node_key}".encode()).hexdigest()
+
+
+def upsert_residency(db: Session, project_id: int, asset_key: str, representation: str, backend: str, *, node_key: str = "", object_ref: str = "", uri: str = "", checksum: str = "", size: int = 0, status_value: str = "available") -> AssetResidency:
+    key = residency_identity(project_id, asset_key, representation, backend, node_key)
+    item = db.scalar(select(AssetResidency).where(AssetResidency.residency_key == key))
+    if item is None:
+        item = AssetResidency(residency_key=key, project_id=project_id, asset_key=asset_key, representation=representation, backend=backend, node_key=node_key); db.add(item)
+    item.object_ref, item.uri, item.checksum_sha256, item.size_bytes, item.status = object_ref, uri, checksum, size, status_value
+    item.last_verified_at = utcnow()
+    return item
+
+
+def ensure_thumbnail(project_id: int, asset_key: str, path: Path, width: int, db: Session) -> AssetResidency | None:
+    svg_source = path.suffix.lower() == ".svg"
+    filename = f"{hashlib.sha256(asset_key.encode()).hexdigest()[:24]}{'.svg' if svg_source else '.jpg'}"
+    destination = (thumbnail_dir / f"project-{project_id}" / filename).resolve()
+    project_root = (thumbnail_dir / f"project-{project_id}").resolve()
+    if project_root not in destination.parents: return None
+    if not destination.is_file():
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if svg_source:
+                shutil.copyfile(path, destination)
+            else:
+                with Image.open(path) as image:
+                    image.thumbnail((width, width)); image.convert("RGB").save(destination, "JPEG", quality=76, optimize=True)
+        except (OSError, UnidentifiedImageError):
+            return None
+    return upsert_residency(db, project_id, asset_key, "thumbnail", "server", object_ref=str(destination.relative_to(thumbnail_dir)).replace("\\", "/"), uri=f"/api/media/thumbnails/{project_id}/{filename}", checksum=sha256_file(destination), size=destination.stat().st_size)
+
+
+def build_media_index(project_id: int, db: Session) -> dict:
+    policy = media_policy_for(project_id, db); catalog = project_asset_library(project_id, db); used_uris = {item.get("uri", "") for item in catalog}
+    for uri in sorted(project_owned_uris(project_id, db) - used_uris):
+        catalog.append({"id": 0, "source_kind": "production_media", "kind": "production media", "name": Path(uri).name or "Production media", "uri": uri, "mime_type": "", "version": 1})
+    result = []
+    for asset in catalog:
+        asset_key = f"{asset['source_kind']}:{asset.get('id') or hashlib.sha256(asset.get('uri', '').encode()).hexdigest()[:20]}"
+        uri = asset.get("uri", ""); path = local_render_path(uri)
+        if path:
+            existing_original = db.scalar(select(AssetResidency).where(AssetResidency.residency_key == residency_identity(project_id, asset_key, "original", "server")))
+            checksum = existing_original.checksum_sha256 if existing_original and existing_original.size_bytes == path.stat().st_size and existing_original.checksum_sha256 else sha256_file(path)
+            upsert_residency(db, project_id, asset_key, "original", "server", object_ref=uri, uri=uri, checksum=checksum, size=path.stat().st_size)
+            if (asset.get("mime_type", "").startswith("image/") or path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}): ensure_thumbnail(project_id, asset_key, path, policy.thumbnail_width, db)
+        elif uri:
+            upsert_residency(db, project_id, asset_key, "original", "external", object_ref=uri, uri=uri, status_value="available")
+        db.flush()
+        residencies = db.scalars(select(AssetResidency).where(AssetResidency.project_id == project_id, AssetResidency.asset_key == asset_key).order_by(AssetResidency.representation, AssetResidency.backend)).all()
+        thumbnail_uri = next((item.uri for item in residencies if item.representation == "thumbnail" and item.status == "available"), "")
+        image_fallback = uri if asset.get("mime_type", "").startswith("image/") or Path(uri).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".svg"} else ""
+        result.append({"asset_key": asset_key, "name": asset.get("name", "Production media"), "kind": asset.get("kind", "media"), "source_kind": asset["source_kind"], "preview_uri": thumbnail_uri or image_fallback, "residencies": [{"representation": item.representation, "backend": item.backend, "node_key": item.node_key, "size_bytes": item.size_bytes, "status": item.status, "checksum_sha256": item.checksum_sha256, "last_verified_at": item.last_verified_at} for item in residencies]})
+    db.commit()
+    rows = db.scalars(select(AssetResidency).where(AssetResidency.project_id == project_id)).all()
+    original_rows = [item for item in rows if item.representation == "original" and item.status == "available"]
+    nodes = db.scalars(select(KizunaNode).order_by(KizunaNode.name)).all()
+    return {"project_id": project_id, "policy": MediaStoragePolicyRead.model_validate(policy).model_dump(), "nodes": [{"node_key": node.node_key, "name": node.name, "status": node.status} for node in nodes], "assets": result, "summary": {"assets": len(result), "server_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "server"), "hive_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "hive"), "s3_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "s3"), "lightweight_server_bytes": sum(item.size_bytes for item in rows if item.backend == "server" and item.representation in {"thumbnail", "proxy"}), "hive_assets": len({item.asset_key for item in original_rows if item.backend == "hive"}), "verified_originals": len({item.asset_key for item in original_rows})}}
+
+
+@app.get("/api/projects/{project_id}/media-index")
+def get_media_index(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    return build_media_index(project_id, db)
+
+
+@app.put("/api/projects/{project_id}/media-storage-policy", response_model=MediaStoragePolicyRead)
+def update_media_storage_policy(project_id: int, payload: MediaStoragePolicyInput, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    if payload.preferred_node_key and not db.scalar(select(KizunaNode).where(KizunaNode.node_key == payload.preferred_node_key)): raise HTTPException(422, "Preferred Hive computer not found")
+    if payload.original_strategy == "s3" and not s3_production_storage.configured: raise HTTPException(409, "Configure S3-compatible storage first")
+    if payload.original_strategy == "server" and payload.evict_server_originals: raise HTTPException(422, "Server originals cannot be removed when the server is their intended home")
+    policy = media_policy_for(project_id, db)
+    for key, value in payload.model_dump().items(): setattr(policy, key, value)
+    db.commit(); db.refresh(policy)
+    return policy
+
+
+@app.get("/api/media/thumbnails/{project_id}/{filename}")
+def get_media_thumbnail(project_id: int, filename: str):
+    if Path(filename).name != filename: raise HTTPException(404, "Thumbnail not found")
+    path = (thumbnail_dir / f"project-{project_id}" / filename).resolve(); project_root = (thumbnail_dir / f"project-{project_id}").resolve()
+    if project_root not in path.parents or not path.is_file(): raise HTTPException(404, "Thumbnail not found")
+    return FileResponse(path, media_type="image/svg+xml" if path.suffix.lower() == ".svg" else "image/jpeg")
+
+
+@app.post("/api/nodes/{node_key}/projects/{project_id}/media-residencies")
+def register_node_media_residencies(node_key: str, project_id: int, payload: NodeResidencyBatch, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    node = db.scalar(select(KizunaNode).where(KizunaNode.node_key == node_key)); token = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    if not node or not token or not secrets.compare_digest(node.token_hash, hashlib.sha256(token.encode()).hexdigest()): raise HTTPException(401, "Invalid node credentials")
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    for item in payload.items:
+        upsert_residency(db, project_id, item.asset_key, item.representation, "hive", node_key=node_key, object_ref=item.object_ref, checksum=item.checksum_sha256.lower(), size=item.size_bytes, status_value=item.status)
+    db.commit()
+    return {"project_id": project_id, "node_key": node_key, "registered": len(payload.items)}
 
 
 @app.get("/api/projects/{project_id}/asset-reviews")

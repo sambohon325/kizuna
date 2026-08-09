@@ -8,4 +8,5 @@ anime_studio.db
 test_anime_studio.db
 data/
 renders/
+storage/
 node_modules/

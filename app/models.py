@@ -386,6 +386,65 @@ class AudioCue(Base):
     track: Mapped[AudioTrack] = relationship(back_populates="cues")
 
 
+class CrewAssignment(Base):
+    __tablename__ = "crew_assignments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    role: Mapped[str] = mapped_column(String(48))
+    name: Mapped[str] = mapped_column(String(120))
+    enabled: Mapped[bool] = mapped_column(default=True)
+    autonomy: Mapped[str] = mapped_column(String(24), default="propose")
+    instructions: Mapped[str] = mapped_column(Text, default="")
+    capabilities: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class CrewAction(Base):
+    __tablename__ = "crew_actions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    assignment_id: Mapped[int | None] = mapped_column(ForeignKey("crew_assignments.id"), nullable=True)
+    role: Mapped[str] = mapped_column(String(48))
+    action_type: Mapped[str] = mapped_column(String(80))
+    title: Mapped[str] = mapped_column(String(180))
+    summary: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="proposed")
+    requires_approval: Mapped[bool] = mapped_column(default=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class VoiceConsent(Base):
+    __tablename__ = "voice_consents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"))
+    source_type: Mapped[str] = mapped_column(String(48), default="built_in_ai")
+    subject_name: Mapped[str] = mapped_column(String(160), default="")
+    consent_confirmed: Mapped[bool] = mapped_column(default=False)
+    disclosure_required: Mapped[bool] = mapped_column(default=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PronunciationEntry(Base):
+    __tablename__ = "pronunciation_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    character_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id"), nullable=True)
+    term: Mapped[str] = mapped_column(String(160))
+    pronunciation: Mapped[str] = mapped_column(String(240))
+    language: Mapped[str] = mapped_column(String(40), default="English")
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
 class ShotComposition(Base):
     __tablename__ = "shot_compositions"
 

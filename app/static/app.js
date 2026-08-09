@@ -1,6 +1,7 @@
 const projectsEl = document.querySelector('#projects');
 const projectDialog = document.querySelector('#project-dialog');
 const detailDialog = document.querySelector('#detail-dialog');
+const crewDialog = document.querySelector('#crew-dialog');
 const styleDialog = document.querySelector('#style-dialog');
 const writerDialog = document.querySelector('#writer-dialog');
 const characterDialog = document.querySelector('#character-dialog');
@@ -12,9 +13,9 @@ const audioDialog = document.querySelector('#audio-dialog');
 const compositorDialog = document.querySelector('#compositor-dialog');
 const workspaceMain = document.querySelector('#workspace-main');
 const dashboardHome = document.querySelector('#dashboard-home');
-const workspaceDialogs = [detailDialog, styleDialog, writerDialog, characterDialog, renderDialog, worldDialog, shotDialog, timelineDialog, audioDialog, compositorDialog];
+const workspaceDialogs = [detailDialog, crewDialog, styleDialog, writerDialog, characterDialog, renderDialog, worldDialog, shotDialog, timelineDialog, audioDialog, compositorDialog];
 const workspaceNav = new Map([
-  [detailDialog, 'productions-nav'], [styleDialog, 'style-lab-nav'], [writerDialog, 'writer-nav'],
+  [detailDialog, 'productions-nav'], [crewDialog, 'crew-nav'], [styleDialog, 'style-lab-nav'], [writerDialog, 'writer-nav'],
   [characterDialog, 'characters-nav'], [renderDialog, 'render-nav'], [worldDialog, 'worlds-nav'],
   [shotDialog, 'shots-nav'], [timelineDialog, 'timeline-nav'], [audioDialog, 'audio-nav'],
   [compositorDialog, 'compositor-nav'],
@@ -71,6 +72,7 @@ document.querySelector('#render-animatic').insertAdjacentHTML('beforebegin','<se
 document.querySelector('#render-animatic').insertAdjacentHTML('afterend','<button id="render-master" type="button">Export continuous master</button>');
 document.querySelector('#render-master').insertAdjacentHTML('afterend','<select id="segment-size" aria-label="Segment size"><option value="4">4 clips / segment</option><option value="2">2 clips / segment</option><option value="8">8 clips / segment</option></select><button id="plan-segmented-export" type="button">Start farm export</button>');
 document.querySelector('#timeline-summary').insertAdjacentHTML('afterend','<div id="segmented-export-result"></div>');
+document.querySelector('#save-voice').insertAdjacentHTML('afterend','<section class="voice-automation"><p class="eyebrow">AI PERFORMANCE</p><div class="voice-grid"><label>Provider<select id="voice-provider"><option value="simulation">Timing slate</option><option value="openai">OpenAI voice</option></select></label><label>Voice ID<input id="voice-provider-id" placeholder="coral"></label><label class="voice-rights"><input id="voice-consent" type="checkbox"> Rights / AI disclosure confirmed</label><button id="save-voice-rights" type="button">Save rights record</button></div><div class="pronunciation-row"><input id="pronunciation-term" placeholder="Term, e.g. Kizuna"><input id="pronunciation-value" placeholder="Pronunciation, e.g. kee-zoo-nah"><button id="add-pronunciation" type="button">Add pronunciation</button></div><div class="ai-disclosure">AI-generated performances must be disclosed to the audience. Only use voices you are authorized to use.</div></section>');
 let projects = [];
 let catalog = null;
 let activeCharacterId = null;
@@ -81,6 +83,8 @@ let activeClipId = null;
 let activeAudioStudio = null;
 let activeAudioTimeline = null;
 let activeAudioCueId = null;
+let activeCrew = null;
+let crewRoles = [];
 let activeCompositorStudio = null;
 let activeComposition = null;
 let activeCompositorShotId = null;
@@ -566,6 +570,51 @@ async function runExportAction(action) {
   } catch(error) { panel.insertAdjacentHTML('beforeend',`<div class="job-error">${safe(error.message)}</div>`); }
 }
 
+async function openCrewStudio(projectId) {
+  if (!projects.length) await loadProjects();
+  if (!projects.length) { projectDialog.showModal(); return; }
+  const select=document.querySelector('#crew-project');
+  select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(projectId||projects[0].id));
+  select.onchange=()=>loadCrew(Number(select.value));
+  openWorkspace(crewDialog);
+  await loadCrew(Number(select.value));
+}
+
+async function loadCrew(projectId) {
+  const [roles, crew, briefing]=await Promise.all([api('/api/crew/roles'),api(`/api/projects/${projectId}/crew`),api(`/api/projects/${projectId}/crew/briefing`)]);
+  crewRoles=roles; activeCrew=crew; renderCrew(briefing);
+}
+
+function renderCrew(briefing) {
+  document.querySelector('#crew-briefing').innerHTML=`<p class="eyebrow">AI ASSISTANT BRIEFING</p><h3>${safe(briefing.headline)}</h3><div class="crew-suggestions">${briefing.suggestions.map(item=>`<span><b>${safe(crewRoles.find(role=>role.id===item.role)?.name||item.role)}</b> · ${safe(item.reason)}</span>`).join('')||'<span>No blocking production gaps detected.</span>'}</div>`;
+  document.querySelector('#crew-roles').innerHTML=crewRoles.map(role=>{
+    const assignment=activeCrew.assignments.find(item=>item.role===role.id);
+    const autonomy=assignment?.autonomy||'propose';
+    return `<article class="crew-role ${assignment?.enabled?'deployed':''}" data-role-card="${safe(role.id)}"><header><div><h3>${safe(role.name)}</h3><small>${assignment?.enabled?'DEPLOYED':'AVAILABLE'}</small></div><input type="checkbox" data-crew-role="${safe(role.id)}" ${assignment?.enabled?'checked':''} aria-label="Deploy ${safe(role.name)}"></header><p>${safe(role.description)}</p><small>${role.capabilities.map(safe).join(' · ')}</small><label>Autonomy<select data-role-autonomy="${safe(role.id)}"><option value="assist" ${autonomy==='assist'?'selected':''}>Assist only</option><option value="propose" ${autonomy==='propose'?'selected':''}>Propose for approval</option><option value="execute" ${autonomy==='execute'?'selected':''}>Execute automatically</option></select></label><label>Standing direction<textarea data-role-instructions="${safe(role.id)}" placeholder="What should this bot always protect or prioritize?">${safe(assignment?.instructions||'')}</textarea></label>${assignment?`<button type="button" data-save-role="${assignment.id}">Save role settings</button>`:''}</article>`;
+  }).join('');
+  document.querySelectorAll('[data-save-role]').forEach(button=>button.onclick=()=>saveCrewRole(Number(button.dataset.saveRole)));
+  document.querySelector('#crew-actions').innerHTML=activeCrew.actions.length?activeCrew.actions.map(action=>`<article class="crew-action"><div><b>${safe(action.title)}</b><small>${safe(action.summary)}</small>${action.error?`<div class="job-error">${safe(action.error)}</div>`:''}${action.status==='proposed'?`<div class="crew-action-buttons"><button data-crew-action="approve" data-action-id="${action.id}" class="primary">Approve</button><button data-crew-action="reject" data-action-id="${action.id}">Reject</button></div>`:''}</div><span class="status">${safe(action.status)}</span></article>`).join(''):'<div class="crew-empty">Crew proposals, approvals, automatic work, and failures will appear here.</div>';
+  document.querySelectorAll('[data-crew-action]').forEach(button=>button.onclick=()=>reviewCrewAction(button.dataset.crewAction,Number(button.dataset.actionId)));
+}
+
+async function saveCrewRole(assignmentId) {
+  const assignment=activeCrew.assignments.find(item=>item.id===assignmentId), role=assignment.role;
+  await api(`/api/crew-assignments/${assignmentId}`,{method:'PUT',body:JSON.stringify({enabled:document.querySelector(`[data-crew-role="${role}"]`).checked,autonomy:document.querySelector(`[data-role-autonomy="${role}"]`).value,instructions:document.querySelector(`[data-role-instructions="${role}"]`).value})});
+  await loadCrew(activeCrew.project_id);
+}
+
+async function deploySelectedCrew() {
+  const roles=[...document.querySelectorAll('[data-crew-role]:checked')].map(input=>input.dataset.crewRole);
+  if(!roles.length){document.querySelector('#crew-actions').innerHTML='<div class="job-error">Select at least one studio role.</div>';return;}
+  await api(`/api/projects/${activeCrew.project_id}/crew/deploy`,{method:'POST',body:JSON.stringify({roles,autonomy:document.querySelector('#crew-default-autonomy').value})});
+  await loadCrew(activeCrew.project_id);
+}
+
+async function reviewCrewAction(decision, actionId) {
+  await api(`/api/crew-actions/${actionId}/${decision}`,{method:'POST'});
+  await loadCrew(activeCrew.project_id);
+}
+
 async function openAudioStudio(projectId) {
   if (!projects.length) await loadProjects();
   if (!projects.length) { projectDialog.showModal(); return; }
@@ -595,6 +644,7 @@ function fillVoiceBible(projectId) {
 function fillVoiceProfile(characterId) {
   const profile=activeAudioStudio?.voice_profiles.find(item=>item.character_id===characterId);
   document.querySelector('#voice-texture').value=profile?.texture||'clear and grounded'; document.querySelector('#voice-energy').value=profile?.energy||'restrained'; document.querySelector('#voice-pace').value=profile?.pace||1; document.querySelector('#voice-pitch').value=profile?.pitch||0; document.querySelector('#voice-direction').value=profile?.direction_notes||'';
+  document.querySelector('#voice-provider').value=profile?.provider||'simulation'; document.querySelector('#voice-provider-id').value=profile?.provider_voice_id||'';
 }
 
 function findAudioCue(cueId) { for(const track of activeAudioStudio?.tracks||[]){const cue=track.cues.find(item=>item.id===cueId);if(cue)return {track,cue};} return null; }
@@ -614,11 +664,13 @@ function selectAudioCue(cueId,rerender=true) {
 }
 
 function renderCueResult(cue) {
-  document.querySelector('#cue-result').innerHTML=`<div class="audio-actions"><button type="button" id="generate-scratch">Generate timing slate</button><label class="audio-upload">Upload performance<input id="audio-file" type="file" accept=".wav,.mp3,.m4a,.ogg,audio/*"></label>${cue.uri?`<audio controls src="${safe(cue.uri)}"></audio>`:''}</div>${cue.uri?`<div class="sound-ready">${safe(cue.status)} · ${safe(cue.filename)}</div>`:''}`;
-  document.querySelector('#generate-scratch').onclick=generateScratchAudio; document.querySelector('#audio-file').onchange=uploadCueAudio;
+  document.querySelector('#cue-result').innerHTML=`<div class="audio-actions"><button type="button" id="ask-sound-producer" class="primary">Ask Sound Producer</button><button type="button" id="generate-scratch">Generate timing slate</button><label class="audio-upload">Upload performance<input id="audio-file" type="file" accept=".wav,.mp3,.m4a,.ogg,audio/*"></label>${cue.uri?`<audio controls src="${safe(cue.uri)}"></audio>`:''}</div><div id="sound-producer-result"></div>${cue.uri?`<div class="sound-ready">${safe(cue.status)} · ${safe(cue.filename)}</div>`:''}`;
+  document.querySelector('#ask-sound-producer').onclick=askSoundProducer; document.querySelector('#generate-scratch').onclick=generateScratchAudio; document.querySelector('#audio-file').onchange=uploadCueAudio;
 }
 
 async function generateScratchAudio() { if(!activeAudioCueId)return; const cue=await api(`/api/audio-cues/${activeAudioCueId}/generate-scratch`,{method:'POST'}); await refreshAudioAndSelect(cue.id); }
+async function askSoundProducer() { if(!activeAudioCueId)return; const result=document.querySelector('#sound-producer-result');result.innerHTML='<div class="render-progress">Sound Producer is preparing the performance…</div>';try{const action=await api(`/api/audio-cues/${activeAudioCueId}/crew/generate-voice`,{method:'POST',body:JSON.stringify({provider:document.querySelector('#voice-provider').value,voice:document.querySelector('#voice-provider-id').value||null})});renderSoundAction(action);}catch(error){result.innerHTML=`<div class="job-error">${safe(error.message)}</div>`;} }
+function renderSoundAction(action) { const result=document.querySelector('#sound-producer-result');if(action.status==='proposed'){result.innerHTML=`<div class="crew-action"><div><b>${safe(action.title)}</b><small>${safe(action.summary)}</small><div class="crew-action-buttons"><button id="approve-sound-action" class="primary">Approve performance</button></div></div><span class="status">proposed</span></div>`;document.querySelector('#approve-sound-action').onclick=async()=>{const updated=await api(`/api/crew-actions/${action.id}/approve`,{method:'POST'});renderSoundAction(updated);if(updated.status==='completed')await refreshAudioAndSelect(activeAudioCueId);};}else if(action.status==='completed'){result.innerHTML='<div class="sound-ready">Sound Producer completed and placed the performance.</div>';}else{result.innerHTML=`<div class="job-error">${safe(action.error||action.status)}</div>`;} }
 async function uploadCueAudio(event) { const file=event.target.files[0];if(!file||!activeAudioCueId)return; const response=await fetch(`/api/audio-cues/${activeAudioCueId}/upload?filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file}); if(!response.ok)throw new Error(await response.text()); const cue=await response.json(); await refreshAudioAndSelect(cue.id); }
 async function refreshAudioAndSelect(cueId) { activeAudioStudio=await api(`/api/projects/${activeAudioStudio.project_id}/audio-studio`); renderAudioStudio(activeAudioStudio.project_id); selectAudioCue(cueId); }
 
@@ -662,6 +714,7 @@ function collectStory(form) {
 
 document.querySelector('#new-project').onclick = () => projectDialog.showModal();
 document.querySelector('#productions-nav').onclick = showDashboard;
+document.querySelector('#crew-nav').onclick = () => openCrewStudio();
 document.querySelector('.brand').onclick = event => { event.preventDefault(); showDashboard(); };
 document.querySelector('#style-lab-nav').onclick = () => openStyleLab();
 document.querySelector('#writer-nav').onclick = () => openWriterRoom();
@@ -674,6 +727,7 @@ document.querySelector('#audio-nav').onclick = () => openAudioStudio();
 document.querySelector('#compositor-nav').onclick = () => openCompositor();
 document.querySelector('.close').onclick = () => projectDialog.close();
 document.querySelector('#style-close').onclick = showDashboard;
+document.querySelector('#crew-close').onclick = showDashboard;
 document.querySelector('#writer-close').onclick = showDashboard;
 document.querySelector('#character-close').onclick = showDashboard;
 document.querySelector('#render-close').onclick = showDashboard;
@@ -682,6 +736,7 @@ document.querySelector('#shot-close').onclick = showDashboard;
 document.querySelector('#timeline-close').onclick = showDashboard;
 document.querySelector('#audio-close').onclick = showDashboard;
 document.querySelector('#compositor-close').onclick = showDashboard;
+document.querySelector('#deploy-crew').onclick = deploySelectedCrew;
 document.querySelector('#build-composition').onclick = async () => { if(!activeCompositorShotId)return;activeComposition=await api(`/api/shots/${activeCompositorShotId}/composition/build`,{method:'POST'});activeCompositorStudio=await api(`/api/projects/${activeCompositorStudio.project_id}/compositor`);renderCompositorShots();renderCompositionEditor();if(activeComposition.layers.length)selectCompositionLayer(activeComposition.layers[0].id); };
 document.querySelector('#save-composition').onclick = async () => { if(!activeComposition)return;activeComposition=await api(`/api/compositions/${activeComposition.id}`,{method:'PUT',body:JSON.stringify({camera:{...activeComposition.camera,move:document.querySelector('#comp-camera-move').value,start_scale:Number(document.querySelector('#comp-start-scale').value),end_scale:Number(document.querySelector('#comp-end-scale').value)},color_grade:{exposure:Number(document.querySelector('#comp-exposure').value),contrast:Number(document.querySelector('#comp-contrast').value),saturation:Number(document.querySelector('#comp-saturation').value)}})});renderCompositionEditor(); };
 document.querySelector('#add-composition-layer').onclick = async () => { if(!activeComposition)return;const asset=activeCompositorStudio.assets[Number(document.querySelector('#composition-asset').value)];if(!asset)return;const z=Math.max(0,...activeComposition.layers.map(layer=>layer.z_index))+10;const layer=await api(`/api/compositions/${activeComposition.id}/layers`,{method:'POST',body:JSON.stringify({name:asset.name,kind:asset.kind,source_kind:asset.source_kind,source_asset_id:asset.id,source_uri:asset.uri,z_index:z,visible:true,opacity:1,blend_mode:'normal',transform:{x:.5,y:.5,scale:1,rotation:0},animation:{intent:'hold'}})});activeCompositionLayerId=layer.id;await refreshComposition(); };
@@ -689,7 +744,9 @@ document.querySelector('#layer-form').onsubmit = async event => { event.preventD
 document.querySelector('#render-composition').onclick = async () => { if(!activeComposition)return;const button=document.querySelector('#render-composition');button.disabled=true;button.textContent='Rendering…';try{const result=await api(`/api/compositions/${activeComposition.id}/render`,{method:'POST'});if(result.status==='failed')document.querySelector('#composite-result').innerHTML=`<div class="job-error">${safe(result.error)}</div>`;else await refreshComposition();}finally{button.disabled=false;button.textContent='Render preview';} };
 document.querySelector('#render-motion').onclick = async () => { if(!activeComposition)return;const button=document.querySelector('#render-motion');button.disabled=true;button.textContent='Rendering motion…';document.querySelector('#composite-result').innerHTML='<div class="render-progress">Interpolating layers and encoding the shot preview…</div>';try{const result=await api(`/api/compositions/${activeComposition.id}/render-video`,{method:'POST',body:JSON.stringify({quality:'proxy'})});if(result.status==='failed')document.querySelector('#composite-result').innerHTML=`<div class="job-error">${safe(result.error)}</div>`;else await refreshComposition();}finally{button.disabled=false;button.textContent='Render motion preview';} };
 document.querySelector('#build-audio').onclick = async () => { const projectId=Number(document.querySelector('#audio-project').value); try { if(!activeAudioTimeline)activeAudioTimeline=await api(`/api/projects/${projectId}/timeline`); activeAudioStudio=await api(`/api/timelines/${activeAudioTimeline.id}/audio/build`,{method:'POST'}); renderAudioStudio(projectId); } catch(error) { document.querySelector('#audio-tracks').innerHTML=`<div class="job-error">${safe(error.message)}</div>`; } };
-document.querySelector('#save-voice').onclick = async () => { const characterId=Number(document.querySelector('#voice-character').value);if(!characterId)return; const existing=activeAudioStudio?.voice_profiles.find(item=>item.character_id===characterId); await api(`/api/characters/${characterId}/voice`,{method:'PUT',body:JSON.stringify({vocal_age:existing?.vocal_age||'young adult',texture:document.querySelector('#voice-texture').value,energy:document.querySelector('#voice-energy').value,accent:existing?.accent||'neutral',language:existing?.language||'English',pace:Number(document.querySelector('#voice-pace').value),pitch:Number(document.querySelector('#voice-pitch').value),provider:existing?.provider||'simulation',provider_voice_id:existing?.provider_voice_id||'',direction_notes:document.querySelector('#voice-direction').value})}); if(activeAudioStudio){activeAudioStudio=await api(`/api/projects/${activeAudioStudio.project_id}/audio-studio`);renderAudioStudio(activeAudioStudio.project_id);} };
+document.querySelector('#save-voice').onclick = async () => { const characterId=Number(document.querySelector('#voice-character').value);if(!characterId)return; const existing=activeAudioStudio?.voice_profiles.find(item=>item.character_id===characterId); await api(`/api/characters/${characterId}/voice`,{method:'PUT',body:JSON.stringify({vocal_age:existing?.vocal_age||'young adult',texture:document.querySelector('#voice-texture').value,energy:document.querySelector('#voice-energy').value,accent:existing?.accent||'neutral',language:existing?.language||'English',pace:Number(document.querySelector('#voice-pace').value),pitch:Number(document.querySelector('#voice-pitch').value),provider:document.querySelector('#voice-provider').value,provider_voice_id:document.querySelector('#voice-provider-id').value,direction_notes:document.querySelector('#voice-direction').value})}); if(activeAudioStudio){activeAudioStudio=await api(`/api/projects/${activeAudioStudio.project_id}/audio-studio`);renderAudioStudio(activeAudioStudio.project_id);} };
+document.querySelector('#save-voice-rights').onclick = async () => { const characterId=Number(document.querySelector('#voice-character').value);if(!characterId)return;await api(`/api/characters/${characterId}/voice-consent`,{method:'PUT',body:JSON.stringify({source_type:'built_in_ai',subject_name:'',consent_confirmed:document.querySelector('#voice-consent').checked,disclosure_required:true,notes:'Creator confirmed authorized AI voice use.'})}); };
+document.querySelector('#add-pronunciation').onclick = async () => { const term=document.querySelector('#pronunciation-term').value.trim(), pronunciation=document.querySelector('#pronunciation-value').value.trim();if(!term||!pronunciation||!activeAudioStudio)return;await api(`/api/projects/${activeAudioStudio.project_id}/pronunciations`,{method:'POST',body:JSON.stringify({character_id:Number(document.querySelector('#voice-character').value)||null,term,pronunciation,language:'English',notes:''})});document.querySelector('#pronunciation-term').value='';document.querySelector('#pronunciation-value').value=''; };
 document.querySelector('#cue-form').onsubmit = async event => { event.preventDefault(); const form=event.target; const payload={clip_id:null,character_id:form.elements.cue_character.value?Number(form.elements.cue_character.value):null,start_seconds:Number(form.elements.cue_start.value),duration_seconds:Number(form.elements.cue_duration.value),text:form.elements.cue_text.value,direction:form.elements.cue_direction.value}; const cue=activeAudioCueId?await api(`/api/audio-cues/${activeAudioCueId}`,{method:'PUT',body:JSON.stringify(payload)}):await api(`/api/audio-tracks/${Number(form.elements.cue_track.value)}/cues`,{method:'POST',body:JSON.stringify(payload)}); await refreshAudioAndSelect(cue.id); };
 document.querySelector('#build-timeline').onclick = async () => { const projectId=Number(document.querySelector('#timeline-project').value); try { activeTimeline=await api(`/api/projects/${projectId}/timeline/build`,{method:'POST',body:JSON.stringify({fps:24,width:1920,height:1080})}); renderTimeline(); } catch(error) { document.querySelector('#timeline-clips').innerHTML=`<div class="job-error">${safe(error.message)}</div>`; } };
 document.querySelector('#clip-form').onsubmit = async event => { event.preventDefault(); const form=event.target; activeTimeline=await api(`/api/timeline-clips/${activeClipId}`,{method:'PUT',body:JSON.stringify({duration_seconds:Number(form.elements.clip_duration.value),transition:form.elements.clip_transition.value,transition_duration:Number(form.elements.clip_transition_duration.value),audio_cue:form.elements.clip_audio_cue.value})}); renderTimeline(); };

@@ -427,6 +427,77 @@ class AudioStudioRead(BaseModel):
     tracks: list[AudioTrackRead] = Field(default_factory=list)
 
 
+class CrewDeployRequest(BaseModel):
+    roles: list[str] = Field(min_length=1)
+    autonomy: str = Field(default="propose", pattern="^(assist|propose|execute)$")
+
+
+class CrewAssignmentUpdate(BaseModel):
+    enabled: bool = True
+    autonomy: str = Field(default="propose", pattern="^(assist|propose|execute)$")
+    instructions: str = ""
+
+
+class CrewAssignmentRead(CrewAssignmentUpdate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    role: str
+    name: str
+    capabilities: list[str] = Field(default_factory=list)
+
+
+class CrewActionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    assignment_id: int | None
+    role: str
+    action_type: str
+    title: str
+    summary: str
+    status: str
+    requires_approval: bool
+    payload: dict[str, Any]
+    result: dict[str, Any]
+    error: str
+    created_at: datetime
+    reviewed_at: datetime | None
+
+
+class VoiceConsentInput(BaseModel):
+    source_type: str = Field(default="built_in_ai", pattern="^(built_in_ai|licensed|creator_owned|uploaded_performance)$")
+    subject_name: str = ""
+    consent_confirmed: bool = False
+    disclosure_required: bool = True
+    notes: str = ""
+
+
+class VoiceConsentRead(VoiceConsentInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    character_id: int
+
+
+class PronunciationInput(BaseModel):
+    character_id: int | None = None
+    term: str = Field(min_length=1, max_length=160)
+    pronunciation: str = Field(min_length=1, max_length=240)
+    language: str = "English"
+    notes: str = ""
+
+
+class PronunciationRead(PronunciationInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+
+
+class CrewVoiceRequest(BaseModel):
+    provider: str | None = None
+    voice: str | None = None
+
+
 class CompositionInput(BaseModel):
     camera: dict[str, Any] = Field(default_factory=dict)
     color_grade: dict[str, Any] = Field(default_factory=dict)

@@ -129,6 +129,7 @@ dialog.workspace-view[open] {
 .workspace-view > .shot-panel,
 .workspace-view > .timeline-panel,
 .workspace-view > .audio-panel,
+.workspace-view > .crew-panel,
 .workspace-view > .compositor-panel,
 .workspace-view > #detail {
   width: 100%;

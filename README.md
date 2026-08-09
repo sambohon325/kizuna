@@ -1,6 +1,6 @@
 # Kizuna Studio
 
-Kizuna Studio is a browser-based, AI-assisted anime production workspace. The current vertical slice manages productions, Creative DNA style bibles, structured story development, characters, worlds, shots, picture editing, and proxy animatics. It is intentionally model-provider agnostic so local and hosted generation engines can be added without changing the editor.
+Kizuna Studio is a browser-based, AI-powered anime production workspace. Creators can direct every detail or delegate selected departments to an AI Crew while keeping proposals, approvals, outputs, and failures visible. The platform is intentionally provider agnostic so local and hosted generation engines can be added without changing the editor.
 
 ## Run locally
 
@@ -36,6 +36,8 @@ pytest
 - Storyboard and Shot Planner with beat expansion, camera language, cast/location assignment, continuity prompts, and storyboard assets
 - Timeline editor with clip timing, cuts/dissolves/fades, sound cues, reordering, and downloadable H.264 proxy animatics
 - Audio & Voice Studio with versioned character voice bibles, dialogue/music/SFX/ambience lanes, timed cues, timing-slate generation, performance uploads, and animatic mixing
+- AI Crew Control Room with Writer, Director, Character Designer, Background Artist, Animator, Sound Producer, and Editor roles; assist/propose/execute autonomy; standing instructions; workflow briefings; and an auditable approval feed
+- Provider-neutral dialogue generation with a safe local timing-slate mode, optional OpenAI speech adapter, voice-rights records, required AI disclosure metadata, and per-character pronunciation entries
 - Scene Compositor with shot-specific layer stacks, asset-library reuse, transforms, visibility, opacity, blend modes, virtual camera/grade plans, and flattened preview renders
 - Keyframed layer motion with linear/eased interpolation, animated opacity and transforms, virtual-camera motion, and versioned H.264 shot previews
 - Continuous master export that combines current motion clips, safe still-frame fallbacks, Timeline transitions, and the Audio Studio mix at Preview, 1080p, or 4K UHD
@@ -45,8 +47,10 @@ pytest
 
 ## Next milestones
 
-1. AI voice-provider adapters with consent metadata and pronunciation controls
-2. Production object storage, review states, and asset approval
-3. Redis-backed scheduling, concurrency controls, and worker scaling
-4. Delivery presets for festival, streaming, broadcast, captions, and archival masters
-5. Team review links, timecoded notes, and approval gates
+1. Connect Writer and Director bots to structured story and shot proposals
+2. Add production object storage, review states, and asset approval
+3. Add Redis-backed crew/render scheduling, concurrency controls, and worker scaling
+4. Add delivery presets for festival, streaming, broadcast, captions, and archival masters
+5. Add team review links, timecoded notes, and approval gates
+
+See [AI Crew and voice setup](docs/AI_CREW.md) for autonomy behavior and optional hosted speech configuration.

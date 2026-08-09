@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     worker_lease_seconds: int = 300
     max_artifact_bytes: int = 67_108_864
     ffmpeg_path: str = ""
+    openai_api_key: str = ""
+    voice_provider: str = "simulation"
+    openai_voice_model: str = "gpt-4o-mini-tts"
+    openai_voice: str = "coral"
 
 
 settings = Settings()

@@ -21,12 +21,13 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, Project, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
+from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, Project, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
 from app.world_development import compile_background_brief
+from app.voice import VoiceProviderError, generate_voice
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -35,6 +36,16 @@ render_dir = Path(settings.render_directory).resolve()
 render_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 app.mount("/renders", StaticFiles(directory=render_dir), name="renders")
+
+CREW_ROLES = {
+    "writer": {"name": "Writer", "description": "Develops premise, structure, scenes, dialogue, and revisions.", "capabilities": ["story outline", "scene draft", "dialogue pass"]},
+    "director": {"name": "Director", "description": "Translates story intent into staging, coverage, camera, and performance notes.", "capabilities": ["shot strategy", "performance direction", "continuity review"]},
+    "character_designer": {"name": "Character Designer", "description": "Builds consistent visual identities, expressions, wardrobe, and model sheets.", "capabilities": ["character brief", "model sheet", "consistency review"]},
+    "background_artist": {"name": "Background Artist", "description": "Designs locations, reusable layers, lighting variants, and world continuity.", "capabilities": ["location brief", "background plates", "lighting variants"]},
+    "animator": {"name": "Animator", "description": "Plans motion, acting beats, camera moves, timing, and render-ready shot animation.", "capabilities": ["motion plan", "acting pass", "shot animation"]},
+    "sound_producer": {"name": "Sound Producer", "description": "Directs voices, pronunciation, music, ambience, sound effects, and the final mix.", "capabilities": ["voice direction", "dialogue generation", "sound plan"]},
+    "editor": {"name": "Editor", "description": "Shapes pacing, transitions, assembly, quality review, and master delivery.", "capabilities": ["timeline assembly", "pacing pass", "master review"]},
+}
 
 
 def project_query():
@@ -921,6 +932,185 @@ def audio_studio_response(timeline: Timeline, db: Session):
     tracks = db.scalars(select(AudioTrack).options(selectinload(AudioTrack.cues)).where(AudioTrack.timeline_id == timeline.id).order_by(AudioTrack.position)).unique().all()
     profiles = db.scalars(select(VoiceProfile).join(Character).where(Character.project_id == project.id).order_by(VoiceProfile.id)).all()
     return {"timeline_id": timeline.id, "project_id": project.id, "total_duration_seconds": timeline_response(timeline, db)["total_duration_seconds"], "voice_profiles": profiles, "tracks": tracks}
+
+
+def cue_project_id(cue: AudioCue, db: Session) -> int:
+    track = db.get(AudioTrack, cue.track_id)
+    return db.get(Timeline, track.timeline_id).project_id
+
+
+def perform_voice_action(action: CrewAction, db: Session) -> CrewAction:
+    cue = db.get(AudioCue, int(action.payload.get("cue_id", 0)))
+    if not cue:
+        action.status, action.error = "failed", "Audio cue not found"
+        db.commit()
+        return action
+    profile = db.scalar(select(VoiceProfile).where(VoiceProfile.character_id == cue.character_id)) if cue.character_id else None
+    provider = action.payload.get("provider") or (profile.provider if profile else settings.voice_provider)
+    if provider != "simulation":
+        consent = db.scalar(select(VoiceConsent).where(VoiceConsent.character_id == cue.character_id, VoiceConsent.consent_confirmed.is_(True)).order_by(VoiceConsent.id.desc())) if cue.character_id else None
+        if not consent:
+            action.status, action.error = "failed", "Confirm voice rights and AI disclosure before generating a performance"
+            db.commit()
+            return action
+    pronunciations = db.scalars(select(PronunciationEntry).where(PronunciationEntry.project_id == action.project_id)).all()
+    dictionary = "; ".join(f"pronounce {entry.term} as {entry.pronunciation}" for entry in pronunciations if entry.character_id in (None, cue.character_id))
+    instructions = ". ".join(part for part in [profile.direction_notes if profile else "", cue.direction, dictionary] if part)
+    action.status = "running"
+    db.commit()
+    try:
+        base = render_dir / f"audio-cue-{cue.id}-{uuid4().hex[:8]}"
+        filename, mime_type = generate_voice(
+            provider, base, cue.text, instructions, api_key=settings.openai_api_key,
+            model=settings.openai_voice_model, voice=action.payload.get("voice") or (profile.provider_voice_id if profile and profile.provider_voice_id else settings.openai_voice),
+            duration=cue.duration_seconds, pitch=profile.pitch if profile else 0, pace=profile.pace if profile else 1,
+        )
+        cue.filename, cue.uri, cue.mime_type, cue.status = filename, f"/renders/{filename}", mime_type, "voice-ready"
+        action.status, action.error = "completed", ""
+        action.result = {"cue_id": cue.id, "provider": provider, "uri": cue.uri, "mime_type": mime_type, "ai_generated": provider != "simulation", "disclosure_required": provider != "simulation"}
+    except VoiceProviderError as exc:
+        action.status, action.error = "failed", str(exc)
+    db.commit(); db.refresh(action)
+    return action
+
+
+@app.get("/api/crew/roles")
+def crew_roles():
+    return [{"id": role, **data} for role, data in CREW_ROLES.items()]
+
+
+@app.get("/api/voice/providers")
+def voice_providers():
+    return {"active": settings.voice_provider, "providers": [
+        {"id": "simulation", "label": "Timing slate", "ready": True, "ai_generated": False},
+        {"id": "openai", "label": "OpenAI voices", "ready": bool(settings.openai_api_key), "ai_generated": True, "model": settings.openai_voice_model},
+    ]}
+
+
+@app.get("/api/projects/{project_id}/crew")
+def get_project_crew(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    assignments = db.scalars(select(CrewAssignment).where(CrewAssignment.project_id == project_id).order_by(CrewAssignment.id)).all()
+    actions = db.scalars(select(CrewAction).where(CrewAction.project_id == project_id).order_by(CrewAction.id.desc()).limit(30)).all()
+    return {"project_id": project_id, "assignments": [CrewAssignmentRead.model_validate(item) for item in assignments], "actions": [CrewActionRead.model_validate(item) for item in actions]}
+
+
+@app.post("/api/projects/{project_id}/crew/deploy")
+def deploy_crew(project_id: int, payload: CrewDeployRequest, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    invalid = [role for role in payload.roles if role not in CREW_ROLES]
+    if invalid:
+        raise HTTPException(422, f"Unknown crew roles: {', '.join(invalid)}")
+    for role in payload.roles:
+        assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == project_id, CrewAssignment.role == role))
+        if assignment:
+            assignment.enabled, assignment.autonomy = True, payload.autonomy
+        else:
+            data = CREW_ROLES[role]
+            db.add(CrewAssignment(project_id=project_id, role=role, name=data["name"], autonomy=payload.autonomy, capabilities=data["capabilities"]))
+    db.commit()
+    return get_project_crew(project_id, db)
+
+
+@app.put("/api/crew-assignments/{assignment_id}", response_model=CrewAssignmentRead)
+def update_crew_assignment(assignment_id: int, payload: CrewAssignmentUpdate, db: Session = Depends(get_db)):
+    assignment = db.get(CrewAssignment, assignment_id)
+    if not assignment:
+        raise HTTPException(404, "Crew assignment not found")
+    for key, value in payload.model_dump().items():
+        setattr(assignment, key, value)
+    db.commit(); db.refresh(assignment)
+    return assignment
+
+
+@app.get("/api/projects/{project_id}/crew/briefing")
+def crew_briefing(project_id: int, db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    suggestions = []
+    if not db.scalar(select(StoryBrief).where(StoryBrief.project_id == project_id)):
+        suggestions.append({"role": "writer", "title": "Develop the story brief", "reason": "The production does not have a structured story yet."})
+    if not db.scalar(select(Character).where(Character.project_id == project_id)):
+        suggestions.append({"role": "character_designer", "title": "Create the principal cast", "reason": "No character models are locked."})
+    if not db.scalar(select(WorldLocation).where(WorldLocation.project_id == project_id)):
+        suggestions.append({"role": "background_artist", "title": "Design the first location", "reason": "The world library is empty."})
+    if not db.scalar(select(Scene).where(Scene.project_id == project_id)):
+        suggestions.append({"role": "director", "title": "Break the story into shots", "reason": "No scenes or camera coverage are planned."})
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == project_id))
+    if not timeline:
+        suggestions.append({"role": "editor", "title": "Build the working timeline", "reason": "Picture has not been assembled."})
+    elif not db.scalar(select(AudioTrack).where(AudioTrack.timeline_id == timeline.id)):
+        suggestions.append({"role": "sound_producer", "title": "Initialize sound production", "reason": "Dialogue, music, effects, and ambience tracks are not prepared."})
+    return {"project_id": project_id, "headline": suggestions[0]["title"] if suggestions else "Production is ready for the next creative pass", "suggestions": suggestions}
+
+
+@app.put("/api/characters/{character_id}/voice-consent", response_model=VoiceConsentRead)
+def set_voice_consent(character_id: int, payload: VoiceConsentInput, db: Session = Depends(get_db)):
+    if not db.get(Character, character_id):
+        raise HTTPException(404, "Character not found")
+    consent = db.scalar(select(VoiceConsent).where(VoiceConsent.character_id == character_id).order_by(VoiceConsent.id.desc()))
+    if consent is None:
+        consent = VoiceConsent(character_id=character_id)
+        db.add(consent)
+    for key, value in payload.model_dump().items():
+        setattr(consent, key, value)
+    db.commit(); db.refresh(consent)
+    return consent
+
+
+@app.post("/api/projects/{project_id}/pronunciations", response_model=PronunciationRead, status_code=status.HTTP_201_CREATED)
+def add_pronunciation(project_id: int, payload: PronunciationInput, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    if payload.character_id:
+        character = db.get(Character, payload.character_id)
+        if not character or character.project_id != project_id:
+            raise HTTPException(422, "Character does not belong to this production")
+    entry = PronunciationEntry(project_id=project_id, **payload.model_dump())
+    db.add(entry); db.commit(); db.refresh(entry)
+    return entry
+
+
+@app.post("/api/audio-cues/{cue_id}/crew/generate-voice", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
+def ask_sound_producer(cue_id: int, payload: CrewVoiceRequest, db: Session = Depends(get_db)):
+    cue = db.get(AudioCue, cue_id)
+    if not cue:
+        raise HTTPException(404, "Audio cue not found")
+    if not cue.text.strip():
+        raise HTTPException(422, "Add dialogue before asking the Sound Producer")
+    project_id = cue_project_id(cue, db)
+    assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == project_id, CrewAssignment.role == "sound_producer", CrewAssignment.enabled.is_(True)))
+    if not assignment:
+        raise HTTPException(409, "Deploy the Sound Producer bot first")
+    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="sound_producer", action_type="generate_voice", title="Produce dialogue performance", summary=f"Generate and place: {cue.text[:120]}", status="proposed", requires_approval=assignment.autonomy != "execute", payload={"cue_id": cue.id, "provider": payload.provider, "voice": payload.voice})
+    db.add(action); db.commit(); db.refresh(action)
+    return perform_voice_action(action, db) if assignment.autonomy == "execute" else action
+
+
+@app.post("/api/crew-actions/{action_id}/approve", response_model=CrewActionRead)
+def approve_crew_action(action_id: int, db: Session = Depends(get_db)):
+    action = db.get(CrewAction, action_id)
+    if not action:
+        raise HTTPException(404, "Crew action not found")
+    if action.status != "proposed":
+        raise HTTPException(409, "Only proposed work can be approved")
+    action.reviewed_at = datetime.now(timezone.utc)
+    return perform_voice_action(action, db) if action.action_type == "generate_voice" else action
+
+
+@app.post("/api/crew-actions/{action_id}/reject", response_model=CrewActionRead)
+def reject_crew_action(action_id: int, db: Session = Depends(get_db)):
+    action = db.get(CrewAction, action_id)
+    if not action:
+        raise HTTPException(404, "Crew action not found")
+    if action.status != "proposed":
+        raise HTTPException(409, "Only proposed work can be rejected")
+    action.status, action.reviewed_at = "rejected", datetime.now(timezone.utc)
+    db.commit(); db.refresh(action)
+    return action
 
 
 @app.get("/api/projects/{project_id}/audio-studio", response_model=AudioStudioRead)

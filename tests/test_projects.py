@@ -227,6 +227,38 @@ def test_audio_studio_builds_voice_cues_and_mixes_animatic(client):
     assert rendered.json()["render_settings"]["audio_cues"] == 1
 
 
+def test_ai_crew_delegates_and_approves_sound_producer_work(client):
+    project_id = client.post("/api/projects", json={"title": "Delegated Signal"}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Mika", "role": "radio operator"}).json()
+    client.put(f"/api/characters/{character['id']}/voice", json={"provider": "simulation", "provider_voice_id": "coral", "direction_notes": "Quiet confidence."})
+    scene_id = client.post(f"/api/projects/{project_id}/scenes", json={"title": "Contact", "position": 1}).json()["id"]
+    client.post(f"/api/scenes/{scene_id}/shots", json={"title": "Mika responds", "position": 1, "duration_seconds": 1})
+    timeline = client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 12, "width": 320, "height": 180}).json()
+    studio = client.post(f"/api/timelines/{timeline['id']}/audio/build").json()
+    cue = client.post(f"/api/audio-tracks/{studio['tracks'][0]['id']}/cues", json={"character_id": character["id"], "duration_seconds": 0.6, "text": "Kizuna, do you copy?", "direction": "A close-mic whisper."}).json()
+
+    roles = client.get("/api/crew/roles")
+    assert roles.status_code == 200
+    assert {role["id"] for role in roles.json()} >= {"writer", "animator", "sound_producer", "editor"}
+    deployed = client.post(f"/api/projects/{project_id}/crew/deploy", json={"roles": ["writer", "sound_producer"], "autonomy": "propose"})
+    assert deployed.status_code == 200
+    assert len(deployed.json()["assignments"]) == 2
+    pronunciation = client.post(f"/api/projects/{project_id}/pronunciations", json={"character_id": character["id"], "term": "Kizuna", "pronunciation": "kee-zoo-nah"})
+    assert pronunciation.status_code == 201
+
+    proposed = client.post(f"/api/audio-cues/{cue['id']}/crew/generate-voice", json={"provider": "simulation"})
+    assert proposed.status_code == 201
+    assert proposed.json()["status"] == "proposed"
+    approved = client.post(f"/api/crew-actions/{proposed.json()['id']}/approve")
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "completed"
+    assert approved.json()["result"]["provider"] == "simulation"
+    assert client.get(approved.json()["result"]["uri"]).headers["content-type"] == "audio/wav"
+    crew = client.get(f"/api/projects/{project_id}/crew").json()
+    assert crew["actions"][0]["status"] == "completed"
+    assert client.get("/api/voice/providers").json()["providers"][0]["ready"] is True
+
+
 def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):
     project_id = client.post("/api/projects", json={"title": "Layer Test"}).json()["id"]
     character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "pilot"}).json()

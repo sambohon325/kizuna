@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     voice_provider: str = "simulation"
     openai_voice_model: str = "gpt-4o-mini-tts"
     openai_voice: str = "coral"
+    writer_provider: str = "simulation"
+    openai_writer_model: str = "gpt-5.6-terra"
 
 
 settings = Settings()

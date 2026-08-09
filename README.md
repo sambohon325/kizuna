@@ -27,7 +27,7 @@ pytest
 - FastAPI API and browser application
 - SQLAlchemy persistence (SQLite locally, PostgreSQL-ready)
 - Structured Creative DNA rather than opaque prompt presets
-- Writer's Room with project briefs, generated dramatic beats, and editable outlines
+- Writer's Room with project briefs, editable outlines, and a deployable Writer bot that produces schema-validated story proposals through approval or automatic execution
 - Character Studio with narrative identity, visual anchors, versioned designs, and style-aware reference briefs
 - Provider-neutral image generation jobs with versioned media assets
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
@@ -47,7 +47,7 @@ pytest
 
 ## Next milestones
 
-1. Connect Writer and Director bots to structured story and shot proposals
+1. Connect the Director bot to structured scene, coverage, and shot proposals
 2. Add production object storage, review states, and asset approval
 3. Add Redis-backed crew/render scheduling, concurrency controls, and worker scaling
 4. Add delivery presets for festival, streaming, broadcast, captions, and archival masters

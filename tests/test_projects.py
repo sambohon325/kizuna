@@ -52,6 +52,35 @@ def test_writer_room_develops_structured_story_and_character(client):
     assert edited.json()["beats"][0]["summary"].startswith("A silent train")
 
 
+def test_writer_bot_proposes_auditable_story_before_applying_it(client):
+    project_id = client.post("/api/projects", json={"title": "Neon Pilgrim", "logline": "A shrine courier carries the last sunrise through an underground city."}).json()["id"]
+    deployed = client.post(f"/api/projects/{project_id}/crew/deploy", json={"roles": ["writer"], "autonomy": "propose"})
+    assert deployed.status_code == 200
+    payload = {"premise": "A courier must deliver a captured sunrise before the city forgets daylight.", "format": "feature film", "target_duration_minutes": 96, "audience": "teen and adult", "genre": "science fantasy", "themes": ["memory", "chosen duty"], "objective": "Build a visual, emotionally decisive feature outline.", "provider": "simulation"}
+    proposed = client.post(f"/api/projects/{project_id}/crew/writer/propose", json=payload)
+    assert proposed.status_code == 201
+    action = proposed.json()
+    assert action["status"] == "proposed"
+    assert action["payload"]["proposal"]["target_duration_minutes"] == 96
+    assert len(action["payload"]["proposal"]["beats"]) == 8
+    assert client.get(f"/api/projects/{project_id}").json()["story_brief"] is None
+
+    approved = client.post(f"/api/crew-actions/{action['id']}/approve")
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "completed"
+    brief = client.get(f"/api/projects/{project_id}").json()["story_brief"]
+    assert brief["format"] == "feature film"
+    assert brief["themes"] == ["memory", "chosen duty"]
+    providers = client.get("/api/writer/providers").json()
+    assert providers["providers"][0]["ready"] is True
+    assignment = deployed.json()["assignments"][0]
+    client.put(f"/api/crew-assignments/{assignment['id']}", json={"enabled": True, "autonomy": "execute", "instructions": "Favor visual storytelling."})
+    payload["target_duration_minutes"] = 97
+    automatic = client.post(f"/api/projects/{project_id}/crew/writer/propose", json=payload)
+    assert automatic.json()["status"] == "completed"
+    assert client.get(f"/api/projects/{project_id}").json()["story_brief"]["target_duration_minutes"] == 97
+
+
 def test_character_design_compiles_style_aware_reference_brief(client):
     project_id = client.post("/api/projects", json={"title": "Red Current"}).json()["id"]
     character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "quiet protector", "want": "Keep the crew alive", "need": "Trust their judgment", "contradiction": "Protects everyone while refusing care"}).json()

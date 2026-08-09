@@ -8,7 +8,7 @@ Kizuna supports two equally important ways to create: direct the production manu
 - **Propose for approval** lets the bot prepare work, but a creator must approve it before Kizuna writes the result into the production.
 - **Execute automatically** lets the bot complete supported tasks immediately. Every action and failure is still recorded in the activity feed.
 
-The first end-to-end automated role is Sound Producer. It can take a saved dialogue cue, combine its character voice bible, line direction, and pronunciation dictionary, generate a performance, and attach the result to the timeline cue.
+The Writer can read the production logline, Creative DNA, existing story, cast, assignment, and standing direction; produce a schema-validated synopsis and beat proposal; and apply it after approval or automatically. The Sound Producer can take a saved dialogue cue, combine its character voice bible, line direction, and pronunciation dictionary, generate a performance, and attach the result to the timeline cue.
 
 ## Voice providers
 

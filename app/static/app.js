@@ -72,6 +72,7 @@ document.querySelector('#render-animatic').insertAdjacentHTML('beforebegin','<se
 document.querySelector('#render-animatic').insertAdjacentHTML('afterend','<button id="render-master" type="button">Export continuous master</button>');
 document.querySelector('#render-master').insertAdjacentHTML('afterend','<select id="segment-size" aria-label="Segment size"><option value="4">4 clips / segment</option><option value="2">2 clips / segment</option><option value="8">8 clips / segment</option></select><button id="plan-segmented-export" type="button">Start farm export</button>');
 document.querySelector('#timeline-summary').insertAdjacentHTML('afterend','<div id="segmented-export-result"></div>');
+document.querySelector('#writer-form > .primary').insertAdjacentHTML('afterend','<section class="writer-agent-panel"><div><p class="eyebrow">AI WRITER</p><h3>Delegate the story pass</h3><p>Give the Writer a goal, then review its complete proposal before it touches the outline.</p></div><div class="writer-agent-controls"><label>Engine<select id="writer-provider"><option value="simulation">Local story planner</option><option value="openai">OpenAI Writer</option></select></label><label>Assignment<textarea id="writer-objective" rows="2">Develop a production-ready story foundation with strong visual causality and an emotionally decisive climax.</textarea></label><button id="ask-writer" type="button">Ask Writer</button></div><div id="writer-ai-result"></div></section>');
 document.querySelector('#save-voice').insertAdjacentHTML('afterend','<section class="voice-automation"><p class="eyebrow">AI PERFORMANCE</p><div class="voice-grid"><label>Provider<select id="voice-provider"><option value="simulation">Timing slate</option><option value="openai">OpenAI voice</option></select></label><label>Voice ID<input id="voice-provider-id" placeholder="coral"></label><label class="voice-rights"><input id="voice-consent" type="checkbox"> Rights / AI disclosure confirmed</label><button id="save-voice-rights" type="button">Save rights record</button></div><div class="pronunciation-row"><input id="pronunciation-term" placeholder="Term, e.g. Kizuna"><input id="pronunciation-value" placeholder="Pronunciation, e.g. kee-zoo-nah"><button id="add-pronunciation" type="button">Add pronunciation</button></div><div class="ai-disclosure">AI-generated performances must be disclosed to the audience. Only use voices you are authorized to use.</div></section>');
 let projects = [];
 let catalog = null;
@@ -95,7 +96,7 @@ let generationProviders = [];
 
 async function api(path, options = {}) {
   const response = await fetch(path, {headers: {'Content-Type': 'application/json'}, ...options});
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) { const text=await response.text();try{throw new Error(JSON.parse(text).detail||text);}catch(error){if(error instanceof SyntaxError)throw new Error(text);throw error;} }
   return response.json();
 }
 
@@ -194,6 +195,7 @@ function fillStory(projectId) {
   form.elements.genre.value = brief?.genre || 'science fantasy';
   form.elements.audience.value = brief?.audience || 'general';
   form.elements.themes.value = (brief?.themes || []).join(', ');
+  document.querySelector('#writer-ai-result').innerHTML = '';
   renderStory(brief);
 }
 
@@ -211,6 +213,25 @@ async function saveOutline() {
   const brief = await api(`/api/projects/${projectId}/story/outline`, {method:'PATCH', body:JSON.stringify({synopsis, beats})});
   await loadProjects();
   renderStory(brief);
+}
+
+async function askWriter() {
+  const projectId=Number(document.querySelector('#writer-project').value), form=document.querySelector('#writer-form'), result=document.querySelector('#writer-ai-result');
+  const payload={...collectStory(form),objective:document.querySelector('#writer-objective').value,provider:document.querySelector('#writer-provider').value};
+  result.innerHTML='<div class="render-progress">Writer is reading the production bible and developing a structured proposal…</div>';
+  try { renderWriterAction(await api(`/api/projects/${projectId}/crew/writer/propose`,{method:'POST',body:JSON.stringify(payload)})); }
+  catch(error) { result.innerHTML=`<div class="job-error">${safe(error.message)}</div>${error.message.includes('Deploy the Writer')?'<button id="deploy-writer-here" type="button">Deploy Writer for this production</button>':''}`;const deploy=document.querySelector('#deploy-writer-here');if(deploy)deploy.onclick=async()=>{await api(`/api/projects/${projectId}/crew/deploy`,{method:'POST',body:JSON.stringify({roles:['writer'],autonomy:'propose'})});await askWriter();}; }
+}
+
+function renderWriterAction(action) {
+  const result=document.querySelector('#writer-ai-result'), proposal=action.payload?.proposal;
+  if(action.status==='failed'){result.innerHTML=`<div class="job-error">${safe(action.error)}</div>`;return;}
+  if(action.status==='rejected'){result.innerHTML='<div class="crew-empty">Writer proposal rejected. The working outline was not changed.</div>';return;}
+  if(action.status==='completed'){result.innerHTML='<div class="writer-applied">Writer completed the assignment and updated the working outline.</div>';loadProjects().then(()=>fillStory(action.project_id));return;}
+  if(!proposal){result.innerHTML='<div class="job-error">Writer proposal is unavailable.</div>';return;}
+  result.innerHTML=`<article class="writer-proposal"><header><div><p class="eyebrow">PROPOSED STORY PACKAGE</p><h3>${safe(proposal.genre)} · ${safe(proposal.format)} · ${proposal.target_duration_minutes} min</h3></div><span>Awaiting approval</span></header><p class="proposal-rationale">${safe(proposal.rationale)}</p><div class="proposal-synopsis"><b>Synopsis</b><p>${safe(proposal.synopsis)}</p></div><div class="proposal-beats">${proposal.beats.map(beat=>`<div><b>${safe(beat.position)} · ${safe(beat.name)}</b><p>${safe(beat.summary)}</p></div>`).join('')}</div><div class="proposal-notes"><span><b>Changes</b>${proposal.changes.map(item=>`<small>${safe(item)}</small>`).join('')}</span><span><b>Review notes</b>${proposal.warnings.map(item=>`<small>${safe(item)}</small>`).join('')}</span></div><div class="crew-action-buttons"><button id="approve-writer-action" class="primary" type="button">Approve & apply outline</button><button id="reject-writer-action" type="button">Reject proposal</button></div></article>`;
+  document.querySelector('#approve-writer-action').onclick=async()=>renderWriterAction(await api(`/api/crew-actions/${action.id}/approve`,{method:'POST'}));
+  document.querySelector('#reject-writer-action').onclick=async()=>renderWriterAction(await api(`/api/crew-actions/${action.id}/reject`,{method:'POST'}));
 }
 
 async function openCharacterStudio(projectId) {
@@ -737,6 +758,7 @@ document.querySelector('#timeline-close').onclick = showDashboard;
 document.querySelector('#audio-close').onclick = showDashboard;
 document.querySelector('#compositor-close').onclick = showDashboard;
 document.querySelector('#deploy-crew').onclick = deploySelectedCrew;
+document.querySelector('#ask-writer').onclick = askWriter;
 document.querySelector('#build-composition').onclick = async () => { if(!activeCompositorShotId)return;activeComposition=await api(`/api/shots/${activeCompositorShotId}/composition/build`,{method:'POST'});activeCompositorStudio=await api(`/api/projects/${activeCompositorStudio.project_id}/compositor`);renderCompositorShots();renderCompositionEditor();if(activeComposition.layers.length)selectCompositionLayer(activeComposition.layers[0].id); };
 document.querySelector('#save-composition').onclick = async () => { if(!activeComposition)return;activeComposition=await api(`/api/compositions/${activeComposition.id}`,{method:'PUT',body:JSON.stringify({camera:{...activeComposition.camera,move:document.querySelector('#comp-camera-move').value,start_scale:Number(document.querySelector('#comp-start-scale').value),end_scale:Number(document.querySelector('#comp-end-scale').value)},color_grade:{exposure:Number(document.querySelector('#comp-exposure').value),contrast:Number(document.querySelector('#comp-contrast').value),saturation:Number(document.querySelector('#comp-saturation').value)}})});renderCompositionEditor(); };
 document.querySelector('#add-composition-layer').onclick = async () => { if(!activeComposition)return;const asset=activeCompositorStudio.assets[Number(document.querySelector('#composition-asset').value)];if(!asset)return;const z=Math.max(0,...activeComposition.layers.map(layer=>layer.z_index))+10;const layer=await api(`/api/compositions/${activeComposition.id}/layers`,{method:'POST',body:JSON.stringify({name:asset.name,kind:asset.kind,source_kind:asset.source_kind,source_asset_id:asset.id,source_uri:asset.uri,z_index:z,visible:true,opacity:1,blend_mode:'normal',transform:{x:.5,y:.5,scale:1,rotation:0},animation:{intent:'hold'}})});activeCompositionLayerId=layer.id;await refreshComposition(); };

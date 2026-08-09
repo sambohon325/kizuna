@@ -22,12 +22,13 @@ from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
 from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, Project, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
+from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
 from app.world_development import compile_background_brief
 from app.voice import VoiceProviderError, generate_voice
+from app.writer_agent import WriterAgentError, create_writer_proposal
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -974,6 +975,40 @@ def perform_voice_action(action: CrewAction, db: Session) -> CrewAction:
     return action
 
 
+def writer_project_context(project: Project, db: Session) -> dict:
+    style = db.scalar(select(StyleProfile).where(StyleProfile.project_id == project.id))
+    brief = db.scalar(select(StoryBrief).where(StoryBrief.project_id == project.id))
+    characters = db.scalars(select(Character).where(Character.project_id == project.id).order_by(Character.id)).all()
+    return {
+        "title": project.title,
+        "logline": project.logline,
+        "style": {"era_primary": style.era_primary, "era_secondary": style.era_secondary, "direction": style.direction, "narrative": style.narrative, "archetypes": style.archetypes} if style else {},
+        "story_brief": {"premise": brief.premise, "format": brief.format, "target_duration_minutes": brief.target_duration_minutes, "audience": brief.audience, "genre": brief.genre, "themes": brief.themes, "synopsis": brief.synopsis, "beats": brief.beats} if brief else None,
+        "characters": [{"name": character.name, "role": character.role, "want": character.want, "need": character.need, "contradiction": character.contradiction} for character in characters],
+    }
+
+
+def perform_writer_action(action: CrewAction, db: Session) -> CrewAction:
+    proposal = action.payload.get("proposal") or {}
+    required = {"premise", "format", "target_duration_minutes", "audience", "genre", "themes", "synopsis", "beats"}
+    if not required.issubset(proposal):
+        action.status, action.error = "failed", "Writer proposal is incomplete"
+        db.commit()
+        return action
+    brief = db.scalar(select(StoryBrief).where(StoryBrief.project_id == action.project_id))
+    if brief is None:
+        brief = StoryBrief(project_id=action.project_id)
+        db.add(brief)
+    for key in required:
+        setattr(brief, key, proposal[key])
+    action.status, action.error = "completed", ""
+    action.result = {"story_brief_id": brief.id, "provider": action.payload.get("provider", "simulation"), "applied_fields": sorted(required), "changes": proposal.get("changes", [])}
+    db.commit(); db.refresh(brief)
+    action.result = {**action.result, "story_brief_id": brief.id}
+    db.commit(); db.refresh(action)
+    return action
+
+
 @app.get("/api/crew/roles")
 def crew_roles():
     return [{"id": role, **data} for role, data in CREW_ROLES.items()]
@@ -984,6 +1019,14 @@ def voice_providers():
     return {"active": settings.voice_provider, "providers": [
         {"id": "simulation", "label": "Timing slate", "ready": True, "ai_generated": False},
         {"id": "openai", "label": "OpenAI voices", "ready": bool(settings.openai_api_key), "ai_generated": True, "model": settings.openai_voice_model},
+    ]}
+
+
+@app.get("/api/writer/providers")
+def writer_providers():
+    return {"active": settings.writer_provider, "providers": [
+        {"id": "simulation", "label": "Local story planner", "ready": True},
+        {"id": "openai", "label": "OpenAI Writer", "ready": bool(settings.openai_api_key), "model": settings.openai_writer_model},
     ]}
 
 
@@ -1090,6 +1133,30 @@ def ask_sound_producer(cue_id: int, payload: CrewVoiceRequest, db: Session = Dep
     return perform_voice_action(action, db) if assignment.autonomy == "execute" else action
 
 
+@app.post("/api/projects/{project_id}/crew/writer/propose", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
+def ask_writer(project_id: int, payload: WriterProposalRequest, db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == project_id, CrewAssignment.role == "writer", CrewAssignment.enabled.is_(True)))
+    if not assignment:
+        raise HTTPException(409, "Deploy the Writer bot first")
+    provider = payload.provider or settings.writer_provider
+    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="writer", action_type="develop_story", title="Develop story package", summary=f"{payload.objective[:180]}", status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "request": payload.model_dump()})
+    db.add(action); db.commit(); db.refresh(action)
+    try:
+        proposal = create_writer_proposal(writer_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_writer_model, instructions=assignment.instructions)
+        action.payload = {**action.payload, "proposal": proposal.model_dump()}
+        action.summary = proposal.rationale
+        action.status = "proposed"
+        db.commit(); db.refresh(action)
+    except WriterAgentError as exc:
+        action.status, action.error = "failed", str(exc)
+        db.commit(); db.refresh(action)
+        return action
+    return perform_writer_action(action, db) if assignment.autonomy == "execute" else action
+
+
 @app.post("/api/crew-actions/{action_id}/approve", response_model=CrewActionRead)
 def approve_crew_action(action_id: int, db: Session = Depends(get_db)):
     action = db.get(CrewAction, action_id)
@@ -1098,7 +1165,11 @@ def approve_crew_action(action_id: int, db: Session = Depends(get_db)):
     if action.status != "proposed":
         raise HTTPException(409, "Only proposed work can be approved")
     action.reviewed_at = datetime.now(timezone.utc)
-    return perform_voice_action(action, db) if action.action_type == "generate_voice" else action
+    if action.action_type == "generate_voice":
+        return perform_voice_action(action, db)
+    if action.action_type == "develop_story":
+        return perform_writer_action(action, db)
+    return action
 
 
 @app.post("/api/crew-actions/{action_id}/reject", response_model=CrewActionRead)

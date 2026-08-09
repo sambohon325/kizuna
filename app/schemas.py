@@ -41,6 +41,25 @@ class StoryOutlineUpdate(BaseModel):
     beats: list[dict[str, Any]]
 
 
+class WriterProposalRequest(StoryBriefInput):
+    objective: str = "Develop a production-ready story foundation."
+    provider: str = Field(default="simulation", pattern="^(simulation|openai)$")
+
+
+class WriterProposal(BaseModel):
+    premise: str
+    format: str
+    target_duration_minutes: int = Field(ge=1, le=240)
+    audience: str
+    genre: str
+    themes: list[str]
+    synopsis: str
+    beats: list[dict[str, Any]]
+    rationale: str
+    changes: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CharacterInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     role: str = "protagonist"

@@ -11,6 +11,7 @@ dependencies = [
   "pillow>=11,<13",
   "imageio-ffmpeg>=0.6,<1",
   "openai>=1.99,<3",
+  "boto3>=1.40,<2",
 ]
 
 [project.optional-dependencies]

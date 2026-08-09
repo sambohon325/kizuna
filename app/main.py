@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -23,12 +23,12 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
-from app.storage import LocalProductionStorage
+from app.storage import LocalProductionStorage, S3ProductionStorage
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -46,6 +46,7 @@ static_dir = Path(__file__).parent / "static"
 render_dir = Path(settings.render_directory).resolve()
 render_dir.mkdir(parents=True, exist_ok=True)
 production_storage = LocalProductionStorage(Path(settings.storage_directory))
+s3_production_storage = S3ProductionStorage(settings.s3_bucket, settings.s3_endpoint_url, settings.s3_region, settings.s3_prefix)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 app.mount("/renders", StaticFiles(directory=render_dir), name="renders")
 
@@ -703,8 +704,40 @@ def project_owned_uris(project_id: int, db: Session) -> set[str]:
     return uris
 
 
+def split_storage_key(value: str) -> tuple[str, str]:
+    backend, separator, key = value.partition(":")
+    return (backend, key) if separator and backend in {"local", "s3"} else ("local", value)
+
+
+def storage_for_backend(backend: str):
+    if backend == "s3":
+        if not s3_production_storage.configured: raise RuntimeError("Off-server storage is not configured")
+        return s3_production_storage
+    return production_storage
+
+
 def backup_response(backup: ProjectBackup) -> dict:
-    return {"id": backup.id, "project_id": backup.project_id, "filename": backup.filename, "checksum_sha256": backup.checksum_sha256, "size_bytes": backup.size_bytes, "asset_count": backup.asset_count, "status": backup.status, "download_url": f"/api/backups/{backup.id}/download", "created_at": backup.created_at}
+    backend, _ = split_storage_key(backup.storage_key)
+    return {"id": backup.id, "project_id": backup.project_id, "filename": backup.filename, "checksum_sha256": backup.checksum_sha256, "size_bytes": backup.size_bytes, "asset_count": backup.asset_count, "status": backup.status, "backend": backend, "download_url": f"/api/backups/{backup.id}/download", "created_at": backup.created_at}
+
+
+def backup_schedule_for(project_id: int, db: Session) -> BackupSchedule:
+    schedule = db.scalar(select(BackupSchedule).where(BackupSchedule.project_id == project_id))
+    if schedule is None:
+        schedule = BackupSchedule(project_id=project_id); db.add(schedule); db.flush()
+    return schedule
+
+
+@app.get("/api/settings/storage")
+def storage_settings():
+    return {"local": {"ready": True, "directory": str(Path(settings.storage_directory))}, "s3": {"ready": s3_production_storage.configured, "bucket": settings.s3_bucket, "endpoint": settings.s3_endpoint_url, "region": settings.s3_region, "prefix": settings.s3_prefix, "credential_source": "AWS SDK credential chain", "secret_values_exposed": False}}
+
+
+@app.post("/api/settings/storage/s3/test")
+def test_s3_storage():
+    ready, message = s3_production_storage.test_connection()
+    if not ready: raise HTTPException(409, message)
+    return {"ready": True, "message": message}
 
 
 @app.get("/api/projects/{project_id}/storage-policy", response_model=StoragePolicyRead)
@@ -719,11 +752,29 @@ def get_storage_policy(project_id: int, db: Session = Depends(get_db)):
 def update_storage_policy(project_id: int, payload: StoragePolicyUpdate, db: Session = Depends(get_db)):
     if not db.get(Project, project_id):
         raise HTTPException(404, "Project not found")
+    if payload.backend == "s3" and not s3_production_storage.configured: raise HTTPException(409, "Configure an S3-compatible bucket in Studio Settings first")
     policy = storage_policy_for(project_id, db)
-    for key, value in payload.model_dump().items():
+    for key, value in payload.model_dump(exclude_none=True).items():
         setattr(policy, key, value)
     db.commit(); db.refresh(policy)
     return policy
+
+
+@app.get("/api/projects/{project_id}/backup-schedule", response_model=BackupScheduleRead)
+def get_backup_schedule(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    schedule = backup_schedule_for(project_id, db); db.commit(); db.refresh(schedule)
+    return schedule
+
+
+@app.put("/api/projects/{project_id}/backup-schedule", response_model=BackupScheduleRead)
+def update_backup_schedule(project_id: int, payload: BackupScheduleInput, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    schedule = backup_schedule_for(project_id, db)
+    schedule.enabled, schedule.interval_hours = payload.enabled, payload.interval_hours
+    schedule.next_run_at = utcnow() + timedelta(hours=payload.interval_hours) if payload.enabled else None
+    db.commit(); db.refresh(schedule)
+    return schedule
 
 
 @app.get("/api/projects/{project_id}/backups", response_model=list[ProjectBackupRead])
@@ -733,8 +784,7 @@ def list_project_backups(project_id: int, db: Session = Depends(get_db)):
     return [backup_response(item) for item in db.scalars(select(ProjectBackup).where(ProjectBackup.project_id == project_id).order_by(ProjectBackup.id.desc())).all()]
 
 
-@app.post("/api/projects/{project_id}/backups", response_model=ProjectBackupRead, status_code=status.HTTP_201_CREATED)
-def create_project_backup(project_id: int, db: Session = Depends(get_db)):
+def create_project_backup_record(project_id: int, db: Session) -> dict:
     project = db.scalars(project_query().where(Project.id == project_id)).one_or_none()
     if not project:
         raise HTTPException(404, "Project not found")
@@ -742,8 +792,9 @@ def create_project_backup(project_id: int, db: Session = Depends(get_db)):
     manifest = {"format": "kizuna-project-backup", "version": 1, "created_at": utcnow().isoformat() + "Z", "project": ProjectRead.model_validate(project).model_dump(mode="json"), "assets": project_asset_library(project_id, db), "storage": {"backend": policy.backend, "include_media": policy.include_media}}
     assets = [path for uri in project_owned_uris(project_id, db) if (path := local_render_path(uri))] if policy.include_media else []
     filename = f"kizuna-project-{project_id}-{utcnow().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}.zip"
-    key, size, checksum, asset_count = production_storage.create_backup(project_id, filename, manifest, assets)
-    backup = ProjectBackup(project_id=project_id, filename=filename, storage_key=key, checksum_sha256=checksum, size_bytes=size, asset_count=asset_count)
+    store = storage_for_backend(policy.backend)
+    key, size, checksum, asset_count = store.create_backup(project_id, filename, manifest, assets)
+    backup = ProjectBackup(project_id=project_id, filename=filename, storage_key=f"{policy.backend}:{key}", checksum_sha256=checksum, size_bytes=size, asset_count=asset_count)
     db.add(backup); db.flush()
     backups = db.scalars(select(ProjectBackup).where(ProjectBackup.project_id == project_id).order_by(ProjectBackup.created_at.desc(), ProjectBackup.id.desc())).all()
     cutoff = utcnow() - timedelta(days=policy.retention_days)
@@ -751,9 +802,18 @@ def create_project_backup(project_id: int, db: Session = Depends(get_db)):
         if old.id == backup.id:
             continue
         if index >= policy.max_backups or old.created_at < cutoff:
-            production_storage.delete(old.storage_key); db.delete(old)
+            old_backend, old_key = split_storage_key(old.storage_key)
+            try: storage_for_backend(old_backend).delete(old_key)
+            except Exception: continue
+            db.delete(old)
     db.commit(); db.refresh(backup)
     return backup_response(backup)
+
+
+@app.post("/api/projects/{project_id}/backups", response_model=ProjectBackupRead, status_code=status.HTTP_201_CREATED)
+def create_project_backup(project_id: int, db: Session = Depends(get_db)):
+    try: return create_project_backup_record(project_id, db)
+    except RuntimeError as exc: raise HTTPException(409, str(exc)) from exc
 
 
 @app.get("/api/backups/{backup_id}/download")
@@ -761,7 +821,11 @@ def download_project_backup(backup_id: int, db: Session = Depends(get_db)):
     backup = db.get(ProjectBackup, backup_id)
     if not backup:
         raise HTTPException(404, "Backup not found")
-    path = production_storage.resolve(backup.storage_key)
+    backend, key = split_storage_key(backup.storage_key)
+    if backend == "s3":
+        try: return RedirectResponse(s3_production_storage.presigned_download(key, backup.filename, settings.s3_presign_seconds), status_code=307)
+        except Exception as exc: raise HTTPException(410, f"Off-server backup is unavailable: {str(exc)[:180]}") from exc
+    path = production_storage.resolve(key)
     if not path.is_file():
         raise HTTPException(410, "Backup file is no longer available")
     return FileResponse(path, filename=backup.filename, media_type="application/zip")
@@ -1142,6 +1206,22 @@ def generate_character_reference(character_id: int, payload: GenerationRequest, 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def run_due_backups(db: Session) -> dict:
+    now = utcnow(); completed, failed = 0, 0
+    schedules = db.scalars(select(BackupSchedule).where(BackupSchedule.enabled.is_(True), BackupSchedule.next_run_at.is_not(None), BackupSchedule.next_run_at <= now).order_by(BackupSchedule.next_run_at)).all()
+    for schedule in schedules:
+        project_id = schedule.project_id
+        try:
+            create_project_backup_record(project_id, db)
+            schedule.last_status, schedule.last_error, completed = "completed", "", completed + 1
+        except Exception as exc:
+            db.rollback(); schedule = db.scalar(select(BackupSchedule).where(BackupSchedule.project_id == project_id))
+            schedule.last_status, schedule.last_error, failed = "failed", str(exc)[:1000], failed + 1
+        schedule.last_run_at = now; schedule.next_run_at = now + timedelta(hours=schedule.interval_hours)
+        db.commit()
+    return {"due": len(schedules), "completed": completed, "failed": failed}
 
 
 def authenticate_worker(worker_id: int, authorization: str | None, db: Session) -> RenderWorker:

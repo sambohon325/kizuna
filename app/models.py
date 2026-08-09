@@ -688,6 +688,20 @@ class ProjectBackup(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class BackupSchedule(Base):
+    __tablename__ = "backup_schedules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), unique=True)
+    enabled: Mapped[bool] = mapped_column(default=False)
+    interval_hours: Mapped[int] = mapped_column(default=24)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_status: Mapped[str] = mapped_column(String(32), default="never")
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class DeliveryLink(Base):
     __tablename__ = "delivery_links"
 

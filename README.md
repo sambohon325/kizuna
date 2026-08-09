@@ -31,7 +31,7 @@ pytest
 - Character Studio with narrative identity, visual anchors, versioned designs, style-aware reference briefs, and a Character Designer bot that can propose or apply a complete character bible before optionally queuing reference-sheet generation
 - Provider-neutral image generation jobs with versioned media assets
 - Unified asset review with side-by-side versions, approval and rejection notes, an explicit production master, and non-destructive rollback that invalidates stale composites
-- Production vault with configurable retention, media-inclusive project ZIPs, SHA-256 verification, automatic backup pruning, and revocable download-limited delivery links
+- Production vault with local or S3-compatible destinations, automatic off-server schedules, configurable retention, media-inclusive project ZIPs, SHA-256 verification, backup pruning, and revocable download-limited delivery links
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
 - Authenticated network workers with capability reporting, heartbeats, leased jobs, retries, and artifact upload
 - Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, background assets, and a Background Artist bot that can propose or apply a production-ready location bible before optionally queuing background generation
@@ -60,11 +60,10 @@ pytest
 
 ## Next milestones
 
-1. Add S3-compatible remote object storage and scheduled off-server backups
-2. Add Redis-backed crew/render scheduling, concurrency controls, and worker scaling
-3. Add delivery presets for festival, streaming, broadcast, captions, and archival masters
-4. Add team review pages, timecoded notes, and approval gates
-5. Add automated continuity and technical quality-control passes before master export
+1. Add Redis-backed crew/render scheduling, concurrency controls, and worker scaling
+2. Add delivery presets for festival, streaming, broadcast, captions, and archival masters
+3. Add team review pages, timecoded notes, and approval gates
+4. Add automated continuity and technical quality-control passes before master export
 
 See [AI Crew and voice setup](docs/AI_CREW.md) for autonomy behavior and optional hosted speech configuration.
 See [AI provider routing](docs/AI_PROVIDER_ROUTING.md) for assigning OpenAI, Claude, Gemini, Ollama, or custom engines to studio roles.

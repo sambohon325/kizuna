@@ -895,6 +895,7 @@ class ProductionStatusRead(BaseModel):
 
 
 class StoragePolicyUpdate(BaseModel):
+    backend: str | None = Field(default=None, pattern="^(local|s3)$")
     retention_days: int = Field(default=30, ge=1, le=3650)
     max_backups: int = Field(default=10, ge=1, le=100)
     include_media: bool = True
@@ -907,6 +908,20 @@ class StoragePolicyRead(StoragePolicyUpdate):
     backend: str
 
 
+class BackupScheduleInput(BaseModel):
+    enabled: bool = False
+    interval_hours: int = Field(default=24, ge=1, le=8760)
+
+
+class BackupScheduleRead(BackupScheduleInput):
+    model_config = ConfigDict(from_attributes=True)
+    project_id: int
+    next_run_at: datetime | None = None
+    last_run_at: datetime | None = None
+    last_status: str = "never"
+    last_error: str = ""
+
+
 class ProjectBackupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -916,6 +931,7 @@ class ProjectBackupRead(BaseModel):
     size_bytes: int
     asset_count: int
     status: str
+    backend: str = "local"
     download_url: str = ""
     created_at: datetime
 

@@ -8,7 +8,34 @@ services:
       KIZUNA_WORKER_ENROLLMENT_SECRET: ${WORKER_ENROLLMENT_SECRET:?Set a strong worker enrollment secret}
       KIZUNA_RENDER_DIRECTORY: /app/renders
       KIZUNA_STORAGE_DIRECTORY: /app/storage
+      KIZUNA_S3_BUCKET: ${KIZUNA_S3_BUCKET:-}
+      KIZUNA_S3_ENDPOINT_URL: ${KIZUNA_S3_ENDPOINT_URL:-}
+      KIZUNA_S3_REGION: ${KIZUNA_S3_REGION:-}
+      KIZUNA_S3_PREFIX: ${KIZUNA_S3_PREFIX:-kizuna}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       KIZUNA_FFMPEG_PATH: /usr/bin/ffmpeg
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - render_data:/app/renders
+      - storage_data:/app/storage
+
+  backup-scheduler:
+    build: .
+    command: python -m app.backup_scheduler
+    environment:
+      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
+      KIZUNA_STORAGE_DIRECTORY: /app/storage
+      KIZUNA_S3_BUCKET: ${KIZUNA_S3_BUCKET:-}
+      KIZUNA_S3_ENDPOINT_URL: ${KIZUNA_S3_ENDPOINT_URL:-}
+      KIZUNA_S3_REGION: ${KIZUNA_S3_REGION:-}
+      KIZUNA_S3_PREFIX: ${KIZUNA_S3_PREFIX:-kizuna}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy

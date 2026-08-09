@@ -16,8 +16,14 @@ class Settings(BaseSettings):
     render_directory: str = "renders"
     storage_backend: str = "local"
     storage_directory: str = "storage"
+    s3_bucket: str = ""
+    s3_endpoint_url: str = ""
+    s3_region: str = ""
+    s3_prefix: str = "kizuna"
+    s3_presign_seconds: int = 900
     backup_retention_days: int = 30
     backup_max_copies: int = 10
+    backup_scheduler_interval_seconds: int = 60
     worker_enrollment_secret: str = "local-dev-enrollment"
     worker_lease_seconds: int = 300
     max_artifact_bytes: int = 67_108_864

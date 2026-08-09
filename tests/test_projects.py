@@ -865,10 +865,24 @@ def test_project_backups_retention_and_expiring_delivery_links(client, monkeypat
     second = client.post(f"/api/projects/{project_id}/backups").json()
     backups = client.get(f"/api/projects/{project_id}/backups").json()
     assert [item["id"] for item in backups] == [second["id"]]
+    assert backups[0]["backend"] == "local"
     assert second["asset_count"] == 1
     assert len(second["checksum_sha256"]) == 64
     assert client.get(second["download_url"]).headers["content-type"] == "application/zip"
     assert client.get(f"/api/backups/{first['id']}/download").status_code == 404
+
+    scheduled = client.put(f"/api/projects/{project_id}/backup-schedule", json={"enabled": True, "interval_hours": 24})
+    assert scheduled.status_code == 200
+    from datetime import timedelta
+    from sqlalchemy import select
+    from app.database import SessionLocal
+    from app.models import BackupSchedule
+    with SessionLocal() as db:
+        schedule = db.scalar(select(BackupSchedule).where(BackupSchedule.project_id == project_id))
+        schedule.next_run_at = main_module.utcnow() - timedelta(minutes=1); db.commit()
+        result = main_module.run_due_backups(db)
+    assert result == {"due": 1, "completed": 1, "failed": 0}
+    assert client.get(f"/api/projects/{project_id}/backup-schedule").json()["last_status"] == "completed"
 
     delivery = client.post(f"/api/projects/{project_id}/delivery-links", json={"asset_uri": asset["uri"], "label": "Studio review", "expires_hours": 24, "max_downloads": 1})
     assert delivery.status_code == 201
@@ -878,3 +892,30 @@ def test_project_backups_retention_and_expiring_delivery_links(client, monkeypat
     revoked = client.post(f"/api/delivery-links/{delivery.json()['id']}/revoke")
     assert revoked.json()["revoked"] is True
     shutil.rmtree(storage_path)
+
+
+def test_s3_compatible_storage_upload_download_and_delete():
+    from pathlib import Path
+    import shutil
+    from app.storage import S3ProductionStorage
+
+    class FakeS3:
+        def __init__(self): self.objects = {}
+        def upload_file(self, source, bucket, key, ExtraArgs=None): self.objects[(bucket, key)] = Path(source).read_bytes()
+        def delete_object(self, Bucket, Key): self.objects.pop((Bucket, Key), None)
+        def generate_presigned_url(self, method, Params, ExpiresIn): return f"https://vault.test/{Params['Key']}?expires={ExpiresIn}"
+        def head_bucket(self, Bucket): return {"bucket": Bucket}
+
+    temp_path = Path("work/test-s3-storage").resolve()
+    if temp_path.exists(): shutil.rmtree(temp_path)
+    temp_path.mkdir(parents=True)
+    client = FakeS3(); storage = S3ProductionStorage("studio-vault", "https://s3.example", "auto", "productions", client=client)
+    asset = temp_path / "frame.png"; asset.write_bytes(b"frame")
+    key, size, checksum, count = storage.create_backup(7, "project.zip", {"project": {"title": "Signal"}}, [asset])
+    assert ("studio-vault", f"productions/{key}") in client.objects
+    assert size > 0 and len(checksum) == 64 and count == 1
+    assert storage.presigned_download(key, "project.zip", 300).endswith("expires=300")
+    assert storage.test_connection() == (True, "Off-server storage is ready.")
+    storage.delete(key)
+    assert client.objects == {}
+    shutil.rmtree(temp_path)

@@ -614,7 +614,7 @@ class AudioStudioRead(BaseModel):
 
 
 class CrewDeployRequest(BaseModel):
-    roles: list[str] = Field(min_length=1)
+    roles: list[str] = Field(default_factory=list)
     autonomy: str = Field(default="propose", pattern="^(assist|propose|execute)$")
 
 

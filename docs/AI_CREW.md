@@ -2,6 +2,15 @@
 
 Kizuna supports two equally important ways to create: direct the production manually, or delegate specific departments to an AI Crew. Deploy only the roles you want for each production.
 
+## Working modes
+
+- **Guided** deploys every department in approval mode. Bots prepare work, but the creator decides what becomes part of the production.
+- **Autopilot** deploys every department with automatic execution. Actions and failures remain visible in the activity history.
+- **Manual** disables every AI department. The creator keeps full hands-on control.
+- **Custom** lets the creator toggle individual departments. Independence and standing directions live inside each department's Advanced section.
+
+The main Crew screen emphasizes three things: how much help is active, the Producer's next step, and decisions waiting for approval. Workflow providers, output profiles, role-level autonomy, standing directions, and completed activity remain available without crowding the default view.
+
 ## Producer workflow
 
 The Producer assistant coordinates the department bots you choose to deploy. Its workflow persists with the production and continuously re-checks eight stages: story, character bibles, environment bibles, direction, animation, picture edit, sound, and delivery. Advancing dispatches only one eligible department task at a time. If that role uses proposal autonomy, the workflow pauses until the creator approves or rejects the work in the shared activity feed.

@@ -1628,6 +1628,8 @@ def deploy_crew(project_id: int, payload: CrewDeployRequest, db: Session = Depen
     invalid = [role for role in payload.roles if role not in CREW_ROLES]
     if invalid:
         raise HTTPException(422, f"Unknown crew roles: {', '.join(invalid)}")
+    for assignment in db.scalars(select(CrewAssignment).where(CrewAssignment.project_id == project_id)).all():
+        assignment.enabled = assignment.role in payload.roles
     for role in payload.roles:
         assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == project_id, CrewAssignment.role == role))
         if assignment:

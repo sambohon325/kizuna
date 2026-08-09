@@ -100,7 +100,7 @@ function productionReadiness(project) {
 
 function renderProductionFlow() {
   const host=document.querySelector('#production-flow');if(!host)return;const project=currentFlowProject(),ready=productionReadiness(project),current=currentFlowStage();
-  host.innerHTML=`<span class="flow-label">${project?safe(project.title):'PRODUCTION FLOW'}</span>${productionStages.map((stage,index)=>`<button type="button" class="flow-node ${ready[stage.key]?'ready':''} ${current===stage.key?'current':''}" data-flow-nav="${stage.nav}" title="Open ${stage.label}"><i>${ready[stage.key]?'âœ“':String(index+1).padStart(2,'0')}</i>${stage.label}</button>`).join('')}`;
+  host.innerHTML=`<span class="flow-label">${project?safe(project.title):'PRODUCTION FLOW'}</span>${productionStages.map((stage,index)=>`<button type="button" class="flow-node ${ready[stage.key]?'ready':''} ${current===stage.key?'current':''}" data-flow-nav="${stage.nav}" title="Open ${stage.label}"><i>${ready[stage.key]?'&#10003;':String(index+1).padStart(2,'0')}</i>${stage.label}</button>`).join('')}`;
   host.querySelectorAll('[data-flow-nav]').forEach(button=>button.onclick=()=>document.querySelector(`#${button.dataset.flowNav}`)?.click());
 }
 
@@ -110,8 +110,18 @@ function setupCraftWorkspaces() {
     const heading=form.querySelector(':scope > .eyebrow'),title=form.querySelector(':scope > h2'),intro=form.querySelector(':scope > .form-intro'),labels=[...form.querySelectorAll(':scope > label')],agent=form.querySelector(':scope > .writer-agent-panel');
     [heading,title,intro,labels[0],agent].forEach(node=>node&&sidebar.appendChild(node));[labels[1],form.querySelector(':scope > .writer-grid'),labels[2],form.querySelector(':scope > button.primary'),form.querySelector(':scope > .story-result')].forEach(node=>node&&page.appendChild(node));canvas.appendChild(page);form.append(sidebar,canvas);
   }
-  const shell=document.querySelector('.shell'),toggle=document.querySelector('#rail-toggle'),collapsed=localStorage.getItem('kizuna-rail-collapsed')==='true';shell.classList.toggle('rail-collapsed',collapsed);toggle.setAttribute('aria-expanded',String(!collapsed));toggle.setAttribute('aria-label',collapsed?'Expand navigation':'Collapse navigation');
+  const shell=document.querySelector('.shell'),toggle=document.querySelector('#rail-toggle'),collapsed=localStorage.getItem('kizuna-rail-collapsed')==='true';toggle.firstChild.nodeValue='\u2039';shell.classList.toggle('rail-collapsed',collapsed);toggle.setAttribute('aria-expanded',String(!collapsed));toggle.setAttribute('aria-label',collapsed?'Expand navigation':'Collapse navigation');
   toggle.onclick=()=>{const next=!shell.classList.contains('rail-collapsed');shell.classList.toggle('rail-collapsed',next);localStorage.setItem('kizuna-rail-collapsed',String(next));toggle.setAttribute('aria-expanded',String(!next));toggle.setAttribute('aria-label',next?'Expand navigation':'Collapse navigation');};
+  const timelineControls=document.querySelector('.timeline-project-control');if(timelineControls&&!timelineControls.querySelector('.advanced-settings')){const details=document.createElement('details'),body=document.createElement('div');details.className='advanced-settings header-advanced';details.innerHTML='<summary>Master export</summary>';['master-profile','render-master','segment-size','plan-segmented-export'].forEach(id=>{const node=document.querySelector(`#${id}`);if(node)body.appendChild(node);});details.appendChild(body);timelineControls.appendChild(details);}
+  const voice=document.querySelector('.voice-bible');if(voice&&!voice.closest('.advanced-settings')){const details=document.createElement('details');details.className='advanced-settings voice-setup';details.innerHTML='<summary>Voice setup & rights</summary>';voice.before(details);details.appendChild(voice);}
+  setupSimplifiedCrew();
+}
+
+function setupSimplifiedCrew() {
+  const panel=document.querySelector('.crew-panel');if(!panel||panel.querySelector('.crew-mode-panel'))return;panel.querySelector('.crew-title h2').textContent='AI Crew';panel.querySelector('.crew-title .form-intro').textContent='Choose how much help you want. You can change this at any time.';
+  const producer=document.querySelector('.producer-console'),controls=producer.querySelector('.producer-controls'),settings=document.createElement('details'),settingsBody=document.createElement('div'),actions=document.createElement('div');settings.className='advanced-settings producer-settings';settings.innerHTML='<summary>Optional workflow settings</summary>';[...controls.querySelectorAll(':scope > label')].forEach(label=>settingsBody.appendChild(label));settings.appendChild(settingsBody);actions.className='producer-simple-actions';[...controls.querySelectorAll(':scope > button')].forEach(button=>actions.appendChild(button));controls.append(actions,settings);producer.querySelector('.producer-head h3').textContent='Make the next step';producer.querySelector('.producer-head p:not(.eyebrow)').textContent='Kizuna coordinates one reviewable step at a time.';document.querySelector('#start-producer').textContent='Start guided workflow';
+  producer.insertAdjacentHTML('afterend','<section class="crew-mode-panel"><header><div><p class="eyebrow">HOW MUCH HELP?</p><h3>Choose your working style</h3><p>Guided is the safest default. Kizuna prepares the work and waits for your approval.</p></div><span id="crew-mode-status">Custom</span></header><div class="crew-modes"><button type="button" data-crew-preset="guided"><b>Guided</b><small>Recommended &middot; review every change</small></button><button type="button" data-crew-preset="autopilot"><b>Autopilot</b><small>Let the full crew execute</small></button><button type="button" data-crew-preset="manual"><b>Manual</b><small>No active AI departments</small></button><button type="button" data-crew-preset="custom"><b>Custom</b><small>Choose departments below</small></button></div></section><div class="crew-section-heading"><div><p class="eyebrow">YOUR STUDIO</p><h3>Departments</h3></div><small>Open a card only when you need advanced control.</small></div>');
+  document.querySelectorAll('[data-crew-preset]').forEach(button=>button.onclick=()=>applyCrewPreset(button.dataset.crewPreset));document.querySelector('.crew-deploy button').textContent='Save custom crew';document.querySelector('.crew-deploy label').classList.add('advanced-only');
 }
 document.querySelector('#render-composition').insertAdjacentHTML('afterend','<button id="render-motion" type="button">Render motion preview</button>');
 document.querySelector('.compositor-title').insertAdjacentHTML('afterend','<section class="visual-agent-panel animator-agent-panel"><div class="visual-agent-head"><div><p class="eyebrow">AI ANIMATOR</p><h3>Delegate the motion pass</h3><p>Select a shot, then review camera movement, acting beats, and editable layer keyframes.</p></div></div><div class="visual-agent-controls"><label>Engine<select id="animator-provider"><option value="simulation">Local motion planner</option><option value="openai">OpenAI Animator</option></select></label><label>Assignment<textarea id="animator-objective" rows="2">Create an economical, performance-led motion pass that preserves continuity.</textarea></label><label>Output<select id="animator-output"><option value="plan">Motion plan only</option><option value="proxy">Plan + proxy preview</option><option value="full">Plan + full-resolution preview</option></select></label><button id="ask-animator" type="button">Ask Animator</button></div><div id="animator-result"></div></section>');
@@ -188,7 +198,7 @@ async function openProject(id) {
 }
 
 async function setupStorageConsole(projectId) {
-  const detail=document.querySelector('#detail');if(!detail.querySelector('#storage-console'))detail.insertAdjacentHTML('beforeend','<section id="storage-console" class="production-storage"><div class="storage-loading">Loading production storageâ€¦</div></section>');
+  const detail=document.querySelector('#detail');if(!detail.querySelector('#storage-console'))detail.insertAdjacentHTML('beforeend','<section id="storage-console" class="production-storage"><div class="storage-loading">Loading production storage...</div></section>');
   const host=detail.querySelector('#storage-console');
   try {
     const [policy,backups,links,studio]=await Promise.all([api(`/api/projects/${projectId}/storage-policy`),api(`/api/projects/${projectId}/backups`),api(`/api/projects/${projectId}/delivery-links`),api(`/api/projects/${projectId}/compositor`)]);
@@ -795,7 +805,7 @@ async function loadCrew(projectId) {
   crewRoles=roles; activeCrew=crew; activeProducerWorkflow=workflow; renderCrew(briefing);renderProducerWorkflow(workflow);
 }
 
-function renderProducerWorkflow(workflow) {
+function renderProducerWorkflowLegacy(workflow) {
   const panel=document.querySelector('#producer-workflow'), status=document.querySelector('#producer-status'), advance=document.querySelector('#advance-producer');
   if(!workflow){status.textContent='Not started';panel.innerHTML='<div class="crew-empty">Set a production goal, deploy the departments you want, then start a resumable workflow.</div>';advance.disabled=true;document.querySelector('#start-producer').textContent='Start workflow';return;}
   status.textContent=workflow.status.replaceAll('_',' ');document.querySelector('#producer-objective').value=workflow.objective;document.querySelector('#producer-provider').value=workflow.settings.provider||'simulation';document.querySelector('#producer-review-profile').value=workflow.settings.review_profile||'preview';document.querySelector('#producer-motion-previews').checked=workflow.settings.render_motion_previews!==false;document.querySelector('#producer-final-review').checked=workflow.settings.render_final_review!==false;document.querySelector('#start-producer').textContent='Update workflow';
@@ -812,7 +822,7 @@ async function advanceProducerWorkflow() {
   if(!activeProducerWorkflow)return;const button=document.querySelector('#advance-producer');button.disabled=true;button.textContent='Coordinating next stage…';try{activeProducerWorkflow=await api(`/api/producer-workflows/${activeProducerWorkflow.id}/advance`,{method:'POST'});await loadCrew(activeCrew.project_id);}catch(error){renderProducerWorkflow(activeProducerWorkflow);document.querySelector('#producer-workflow').insertAdjacentHTML('beforeend',`<div class="job-error">${safe(error.message)}</div>`);}
 }
 
-function renderCrew(briefing) {
+function renderCrewLegacy(briefing) {
   document.querySelector('#crew-briefing').innerHTML=`<p class="eyebrow">AI ASSISTANT BRIEFING</p><h3>${safe(briefing.headline)}</h3><div class="crew-suggestions">${briefing.suggestions.map(item=>`<span><b>${safe(crewRoles.find(role=>role.id===item.role)?.name||item.role)}</b> · ${safe(item.reason)}</span>`).join('')||'<span>No blocking production gaps detected.</span>'}</div>`;
   document.querySelector('#crew-roles').innerHTML=crewRoles.map(role=>{
     const assignment=activeCrew.assignments.find(item=>item.role===role.id);
@@ -824,6 +834,33 @@ function renderCrew(briefing) {
   document.querySelectorAll('[data-crew-action]').forEach(button=>button.onclick=()=>reviewCrewAction(button.dataset.crewAction,Number(button.dataset.actionId)));
 }
 
+function crewMode() {
+  const enabled=activeCrew.assignments.filter(item=>item.enabled);if(!enabled.length)return'manual';if(enabled.length===crewRoles.length&&enabled.every(item=>item.autonomy==='execute'))return'autopilot';if(enabled.length===crewRoles.length&&enabled.every(item=>item.autonomy==='propose'))return'guided';return'custom';
+}
+
+function renderProducerWorkflow(workflow) {
+  const panel=document.querySelector('#producer-workflow'),status=document.querySelector('#producer-status'),advance=document.querySelector('#advance-producer'),start=document.querySelector('#start-producer');
+  if(!workflow){status.textContent='Ready';panel.innerHTML='<div class="producer-next"><i>01</i><div><b>Start when your crew is ready</b><small>Kizuna will prepare one step, then pause for review.</small></div></div>';advance.disabled=true;start.textContent='Start guided workflow';return;}
+  status.textContent=workflow.status.replaceAll('_',' ');document.querySelector('#producer-objective').value=workflow.objective;document.querySelector('#producer-provider').value=workflow.settings.provider||'simulation';document.querySelector('#producer-review-profile').value=workflow.settings.review_profile||'preview';document.querySelector('#producer-motion-previews').checked=workflow.settings.render_motion_previews!==false;document.querySelector('#producer-final-review').checked=workflow.settings.render_final_review!==false;start.textContent='Update workflow';
+  const current=workflow.stages.find(stage=>stage.key===workflow.current_stage),complete=workflow.stages.filter(stage=>stage.status==='complete').length;panel.innerHTML=`<div class="producer-progress" aria-label="Production workflow">${workflow.stages.map((stage,index)=>`<span class="${safe(stage.status)}"><i>${stage.status==='complete'?'&#10003;':index+1}</i>${safe(stage.label)}</span>`).join('')}</div><div class="producer-next"><i>${String(Math.min(complete+1,workflow.stages.length)).padStart(2,'0')}</i><div><b>${safe(current?.label||'Production complete')}</b><small>${safe(current?.reason||'Every planned stage is complete.')}</small></div><em>${safe(current?.status?.replaceAll('_',' ')||workflow.status)}</em></div>`;
+  advance.disabled=workflow.status!=='active'||current?.status!=='ready';advance.textContent=workflow.status==='complete'?'Production complete':current?.status==='awaiting_approval'?'Review pending work':current?.status==='ready'?`Continue to ${current.label}`:'Resolve current blocker';
+}
+
+function renderCrew(briefing) {
+  const icons={writer:'W',director:'D',character_designer:'C',background_artist:'B',animator:'A',sound_producer:'S',editor:'E'},mode=crewMode(),pending=activeCrew.actions.filter(action=>action.status==='proposed'),history=activeCrew.actions.filter(action=>action.status!=='proposed');
+  document.querySelector('#crew-mode-status').textContent={guided:'Guided',autopilot:'Autopilot',manual:'Manual',custom:'Custom'}[mode];document.querySelectorAll('[data-crew-preset]').forEach(button=>button.classList.toggle('active',button.dataset.crewPreset===mode));
+  document.querySelector('#crew-briefing').innerHTML=`<i>${briefing.suggestions.length?'!':'&#10003;'}</i><div><b>${safe(briefing.headline)}</b><small>${safe(briefing.suggestions[0]?.reason||'Nothing is blocking the next creative pass.')}</small></div>`;
+  document.querySelector('#crew-roles').innerHTML=crewRoles.map(role=>{const assignment=activeCrew.assignments.find(item=>item.role===role.id),autonomy=assignment?.autonomy||'propose';return `<article class="crew-role ${assignment?.enabled?'deployed':''}" data-role-card="${safe(role.id)}"><header><i>${icons[role.id]||'AI'}</i><div><h3>${safe(role.name)}</h3><small>${assignment?.enabled?'ON':'OFF'}</small></div><label class="crew-switch"><input type="checkbox" data-crew-role="${safe(role.id)}" ${assignment?.enabled?'checked':''} aria-label="Use ${safe(role.name)}"><span></span></label></header><p>${safe(role.description)}</p><details class="advanced-settings crew-role-advanced"><summary>Advanced</summary><div><label>How independently?<select data-role-autonomy="${safe(role.id)}"><option value="assist" ${autonomy==='assist'?'selected':''}>Only when asked</option><option value="propose" ${autonomy==='propose'?'selected':''}>Ask before changing anything</option><option value="execute" ${autonomy==='execute'?'selected':''}>Work automatically</option></select></label><label>Always remember<textarea data-role-instructions="${safe(role.id)}" placeholder="Optional creative rule">${safe(assignment?.instructions||'')}</textarea></label>${assignment?`<button type="button" data-save-role="${assignment.id}">Save department settings</button>`:''}</div></details></article>`;}).join('');
+  document.querySelectorAll('[data-save-role]').forEach(button=>button.onclick=()=>saveCrewRole(Number(button.dataset.saveRole)));
+  const actionCard=action=>`<article class="crew-action"><div><b>${safe(action.title)}</b><small>${safe(action.summary)}</small>${action.error?`<div class="job-error">${safe(action.error)}</div>`:''}${action.status==='proposed'?`<div class="crew-action-buttons"><button data-crew-action="approve" data-action-id="${action.id}" class="primary">Approve</button><button data-crew-action="reject" data-action-id="${action.id}">Reject</button></div>`:''}</div><span class="status">${safe(action.status)}</span></article>`;
+  document.querySelector('#crew-actions').innerHTML=`${pending.length?`<div class="approval-summary"><b>${pending.length} decision${pending.length===1?'':'s'} waiting</b><small>Approve only the work you want to keep.</small></div>${pending.map(actionCard).join('')}`:'<div class="crew-empty">Nothing needs your attention right now.</div>'}${history.length?`<details class="advanced-settings crew-history"><summary>Recent activity &middot; ${history.length}</summary><div>${history.map(actionCard).join('')}</div></details>`:''}`;
+  document.querySelectorAll('[data-crew-action]').forEach(button=>button.onclick=()=>reviewCrewAction(button.dataset.crewAction,Number(button.dataset.actionId)));
+}
+
+async function applyCrewPreset(preset) {
+  if(preset==='custom'){document.querySelector('#crew-roles').scrollIntoView({behavior:'smooth',block:'start'});return;}const roles=preset==='manual'?[]:crewRoles.map(role=>role.id),autonomy=preset==='autopilot'?'execute':'propose',status=document.querySelector('#crew-mode-status');status.textContent='Saving...';document.querySelector('#crew-default-autonomy').value=autonomy;await api(`/api/projects/${activeCrew.project_id}/crew/deploy`,{method:'POST',body:JSON.stringify({roles,autonomy})});await loadCrew(activeCrew.project_id);
+}
+
 async function saveCrewRole(assignmentId) {
   const assignment=activeCrew.assignments.find(item=>item.id===assignmentId), role=assignment.role;
   await api(`/api/crew-assignments/${assignmentId}`,{method:'PUT',body:JSON.stringify({enabled:document.querySelector(`[data-crew-role="${role}"]`).checked,autonomy:document.querySelector(`[data-role-autonomy="${role}"]`).value,instructions:document.querySelector(`[data-role-instructions="${role}"]`).value})});
@@ -832,9 +869,9 @@ async function saveCrewRole(assignmentId) {
 
 async function deploySelectedCrew() {
   const roles=[...document.querySelectorAll('[data-crew-role]:checked')].map(input=>input.dataset.crewRole);
-  if(!roles.length){document.querySelector('#crew-actions').innerHTML='<div class="job-error">Select at least one studio role.</div>';return;}
-  await api(`/api/projects/${activeCrew.project_id}/crew/deploy`,{method:'POST',body:JSON.stringify({roles,autonomy:document.querySelector('#crew-default-autonomy').value})});
+  const button=document.querySelector('#deploy-crew');button.disabled=true;button.textContent='Saving...';await api(`/api/projects/${activeCrew.project_id}/crew/deploy`,{method:'POST',body:JSON.stringify({roles,autonomy:document.querySelector('#crew-default-autonomy').value})});
   await loadCrew(activeCrew.project_id);
+  button.disabled=false;button.textContent='Save custom crew';
 }
 
 async function reviewCrewAction(decision, actionId) {
@@ -950,7 +987,7 @@ async function refreshComposition() { activeComposition=await api(`/api/shots/${
 
 function renderCharacterRoster(projectId) {
   const roster=projects.find(project=>project.id===projectId)?.characters||[],host=document.querySelector('#character-roster');
-  host.innerHTML=`<button type="button" class="character-pill ${activeCharacterId===null?'active':''}" data-new-character data-initial="+">ï¼‹ Build a new character</button>${roster.map(character=>`<button type="button" class="character-pill ${activeCharacterId===character.id?'active':''}" data-character-id="${character.id}" data-initial="${safe(character.name.slice(0,1).toUpperCase())}"><b>${safe(character.name)}</b><small>${safe(character.role)}${character.design?` Â· model sheet v${character.design.version}`:' Â· identity open'}</small><small>${safe(character.want||'History and motivation ready to define')}</small></button>`).join('')}`;
+  host.innerHTML=`<button type="button" class="character-pill ${activeCharacterId===null?'active':''}" data-new-character data-initial="+">&#43; Build a new character</button>${roster.map(character=>`<button type="button" class="character-pill ${activeCharacterId===character.id?'active':''}" data-character-id="${character.id}" data-initial="${safe(character.name.slice(0,1).toUpperCase())}"><b>${safe(character.name)}</b><small>${safe(character.role)}${character.design?` &middot; model sheet v${character.design.version}`:' &middot; identity open'}</small><small>${safe(character.want||'History and motivation ready to define')}</small></button>`).join('')}`;
   host.querySelector('[data-new-character]').onclick=()=>{activeCharacterId=null;clearCharacterForm();renderCharacterRoster(projectId);};
   host.querySelectorAll('[data-character-id]').forEach(button=>button.onclick=()=>selectCharacter(projectId,Number(button.dataset.characterId)));
 }

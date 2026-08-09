@@ -81,6 +81,31 @@ def test_writer_bot_proposes_auditable_story_before_applying_it(client):
     assert client.get(f"/api/projects/{project_id}").json()["story_brief"]["target_duration_minutes"] == 97
 
 
+def test_crew_modes_replace_active_departments_and_allow_manual_mode(client):
+    project_id = client.post("/api/projects", json={"title": "Small Crew"}).json()["id"]
+    deployed = client.post(
+        f"/api/projects/{project_id}/crew/deploy",
+        json={"roles": ["writer", "director"], "autonomy": "propose"},
+    )
+    assert deployed.status_code == 200
+    assert {item["role"] for item in deployed.json()["assignments"] if item["enabled"]} == {"writer", "director"}
+
+    manual = client.post(
+        f"/api/projects/{project_id}/crew/deploy",
+        json={"roles": [], "autonomy": "propose"},
+    )
+    assert manual.status_code == 200
+    assert not any(item["enabled"] for item in manual.json()["assignments"])
+
+    custom = client.post(
+        f"/api/projects/{project_id}/crew/deploy",
+        json={"roles": ["editor", "sound_producer"], "autonomy": "execute"},
+    )
+    enabled = [item for item in custom.json()["assignments"] if item["enabled"]]
+    assert {item["role"] for item in enabled} == {"editor", "sound_producer"}
+    assert all(item["autonomy"] == "execute" for item in enabled)
+
+
 def test_character_design_compiles_style_aware_reference_brief(client):
     project_id = client.post("/api/projects", json={"title": "Red Current"}).json()["id"]
     character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "quiet protector", "want": "Keep the crew alive", "need": "Trust their judgment", "contradiction": "Protects everyone while refusing care"}).json()

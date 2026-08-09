@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StyleProfileInput(BaseModel):
@@ -1001,11 +1001,13 @@ class NodeProfileInput(BaseModel):
     software: list[str] = Field(default_factory=list, max_length=2000)
     benchmark_score: float = Field(default=0, ge=0)
     capabilities: list[str] = Field(default_factory=list, max_length=100)
+    timezone_offset_minutes: int = Field(default=0, ge=-840, le=840)
 
 
 class NodeHeartbeatInput(BaseModel):
     benchmark_score: float | None = Field(default=None, ge=0)
     capabilities: list[str] | None = Field(default=None, max_length=100)
+    metrics: dict[str, float] = Field(default_factory=dict)
 
 
 class WorkloadPolicyInput(BaseModel):
@@ -1028,3 +1030,23 @@ class SpendSettingsInput(BaseModel):
     monthly_budget: float = Field(default=0, ge=0)
     warning_percent: int = Field(default=80, ge=1, le=100)
     hard_stop: bool = False
+
+
+class HiveNodeControlInput(BaseModel):
+    paused: bool = False
+    drain: bool = False
+    max_concurrency: int = Field(default=1, ge=1, le=32)
+    cpu_limit_percent: int = Field(default=75, ge=10, le=100)
+    gpu_limit_percent: int = Field(default=90, ge=10, le=100)
+    memory_limit_gb: float = Field(default=0, ge=0, le=65536)
+    available_days: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6], min_length=1, max_length=7)
+    start_hour: int = Field(default=0, ge=0, le=23)
+    end_hour: int = Field(default=24, ge=1, le=24)
+    priority: int = Field(default=50, ge=1, le=100)
+    allowed_tasks: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_hive_window(self):
+        if any(day < 0 or day > 6 for day in self.available_days):
+            raise ValueError("Available days must be between 0 and 6")
+        return self

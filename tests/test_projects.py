@@ -66,16 +66,29 @@ def test_kizuna_node_onboarding_workload_control_and_usage_budget(client, monkey
     enrollment = client.post("/api/settings/compute/enrollment").json()
     assert client.get(enrollment["download_url"]).status_code == 200
     assert "kizuna-local-capability-check" in client.get(enrollment["download_url"]).text
-    profile = {"code": enrollment["code"], "node_key": "test-node-0001", "name": "Edit Suite", "os_name": "Windows", "os_version": "11", "architecture": "AMD64", "cpu_name": "Studio CPU", "logical_cores": 16, "ram_gb": 64, "gpu": [{"name": "Studio GPU", "memory_mb": 16384}], "software": ["ollama", "ffmpeg", "blender"], "benchmark_score": 123.4, "capabilities": ["local_ai", "gpu_render", "video_encode"]}
+    profile = {"code": enrollment["code"], "node_key": "test-node-0001", "name": "Edit Suite", "os_name": "Windows", "os_version": "11", "architecture": "AMD64", "cpu_name": "Studio CPU", "logical_cores": 16, "ram_gb": 64, "gpu": [{"name": "Studio GPU", "memory_mb": 16384}], "software": ["ollama", "ffmpeg", "blender"], "benchmark_score": 123.4, "capabilities": ["local_ai", "gpu_render", "video_encode"], "timezone_offset_minutes": -300}
     enrolled = client.post("/api/nodes/enroll", json=profile)
     assert enrolled.status_code == 200
     token = enrolled.json()["token"]
     assert client.post("/api/nodes/test-node-0001/heartbeat", json={}, headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert client.post("/api/nodes/test-node-0001/heartbeat", json={"benchmark_score": 130}, headers={"Authorization": f"Bearer {token}"}).status_code == 200
+    heartbeat = client.post("/api/nodes/test-node-0001/heartbeat", json={"benchmark_score": 130, "metrics": {"cpu_percent": 22, "gpu_percent": 10, "memory_used_gb": 12}}, headers={"Authorization": f"Bearer {token}"})
+    assert heartbeat.status_code == 200
+    assert heartbeat.json()["hive"]["accepting_work"] is True
     compute = client.get("/api/settings/compute").json()
     assert compute["nodes"][0]["status"] == "online"
     assert "private local AI" in compute["nodes"][0]["strengths"]
     assert "token" not in compute["nodes"][0]
+    assert compute["hive"] == {"devices": 1, "online": 1, "accepting_work": 1, "active_jobs": 0, "queued_jobs": 0, "capacity": 1, "platforms": ["Windows"]}
+    assert compute["nodes"][0]["hive"]["metrics"]["cpu_percent"] == 22
+    control_payload = {"paused": True, "drain": False, "max_concurrency": 3, "cpu_limit_percent": 70, "gpu_limit_percent": 85, "memory_limit_gb": 48, "available_days": [0, 1, 2, 3, 4, 5, 6], "start_hour": 0, "end_hour": 24, "priority": 75, "allowed_tasks": ["master_segment"]}
+    control = client.put("/api/settings/compute/nodes/test-node-0001/control", json=control_payload)
+    assert control.status_code == 200
+    assert control.json()["reason"] == "Paused"
+    assert client.get("/api/settings/compute").json()["hive"]["capacity"] == 3
+    control_payload["paused"] = False
+    assert client.put("/api/settings/compute/nodes/test-node-0001/control", json=control_payload).json()["accepting_work"] is True
+    throttled = client.post("/api/nodes/test-node-0001/heartbeat", json={"metrics": {"cpu_percent": 75, "gpu_percent": 10, "memory_used_gb": 12}}, headers={"Authorization": f"Bearer {token}"})
+    assert throttled.json()["hive"]["reason"] == "CPU throttle reached"
 
     policy = client.put("/api/settings/compute/workloads/rendering", json={"placement": "local", "node_key": "test-node-0001", "cloud_provider": ""})
     assert policy.status_code == 200

@@ -23,8 +23,8 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
@@ -221,7 +221,28 @@ WORKLOADS = {
 }
 
 
-def node_response(node: KizunaNode) -> dict:
+def hive_control_response(control: HiveNodeControl | None, node: KizunaNode, db: Session) -> dict:
+    if control is None:
+        return {"paused": False, "drain": False, "max_concurrency": 1, "cpu_limit_percent": 75, "gpu_limit_percent": 90, "memory_limit_gb": 0, "available_days": [0, 1, 2, 3, 4, 5, 6], "start_hour": 0, "end_hour": 24, "priority": 50, "allowed_tasks": [], "active_jobs": 0, "accepting_work": False, "reason": "Hive worker setup pending"}
+    active_generation = len(db.scalars(select(WorkerAssignment).where(WorkerAssignment.worker_id == control.render_worker_id, WorkerAssignment.status.in_(["leased", "running"]))).all()) if control.render_worker_id else 0
+    active_segments = len(db.scalars(select(MasterSegment).where(MasterSegment.worker_id == control.render_worker_id, MasterSegment.status.in_(["leased", "rendering"]))).all()) if control.render_worker_id else 0
+    local_now = utcnow() + timedelta(minutes=control.timezone_offset_minutes)
+    in_day = local_now.weekday() in (control.available_days or [])
+    in_hour = control.start_hour <= local_now.hour < control.end_hour if control.start_hour < control.end_hour else local_now.hour >= control.start_hour or local_now.hour < control.end_hour
+    metrics = (node.choices or {}).get("metrics", {})
+    reasons = []
+    if control.paused: reasons.append("Paused")
+    if control.drain: reasons.append("Draining active work")
+    if not in_day or not in_hour: reasons.append("Outside schedule")
+    if metrics.get("cpu_percent", 0) >= control.cpu_limit_percent: reasons.append("CPU throttle reached")
+    if metrics.get("gpu_percent", 0) >= control.gpu_limit_percent: reasons.append("GPU throttle reached")
+    if control.memory_limit_gb and metrics.get("memory_used_gb", 0) >= control.memory_limit_gb: reasons.append("RAM throttle reached")
+    active_jobs = active_generation + active_segments
+    if active_jobs >= control.max_concurrency: reasons.append("All slots busy")
+    return {"paused": control.paused, "drain": control.drain, "max_concurrency": control.max_concurrency, "cpu_limit_percent": control.cpu_limit_percent, "gpu_limit_percent": control.gpu_limit_percent, "memory_limit_gb": control.memory_limit_gb, "available_days": control.available_days, "start_hour": control.start_hour, "end_hour": control.end_hour, "priority": control.priority, "allowed_tasks": control.allowed_tasks, "active_jobs": active_jobs, "accepting_work": not reasons, "reason": reasons[0] if reasons else "Ready for work", "metrics": metrics, "render_worker_id": control.render_worker_id}
+
+
+def node_response(node: KizunaNode, control: HiveNodeControl | None, db: Session) -> dict:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     online = (now - node.last_seen).total_seconds() < 150
     strengths = []
@@ -229,7 +250,7 @@ def node_response(node: KizunaNode) -> dict:
     if "gpu_render" in (node.capabilities or []): strengths.append("GPU rendering")
     if "video_encode" in (node.capabilities or []): strengths.append("video encoding")
     if node.ram_gb >= 32: strengths.append("large-memory work")
-    return {"id": node.id, "node_key": node.node_key, "name": node.name, "os_name": node.os_name, "os_version": node.os_version, "architecture": node.architecture, "cpu_name": node.cpu_name, "logical_cores": node.logical_cores, "ram_gb": node.ram_gb, "gpu": node.gpu, "software": node.software, "benchmark_score": node.benchmark_score, "capabilities": node.capabilities, "strengths": strengths, "status": "online" if online else "offline", "last_seen": node.last_seen, "created_at": node.created_at}
+    return {"id": node.id, "node_key": node.node_key, "name": node.name, "os_name": node.os_name, "os_version": node.os_version, "architecture": node.architecture, "cpu_name": node.cpu_name, "logical_cores": node.logical_cores, "ram_gb": node.ram_gb, "gpu": node.gpu, "software": node.software, "benchmark_score": node.benchmark_score, "capabilities": node.capabilities, "strengths": strengths, "status": "online" if online else "offline", "last_seen": node.last_seen, "created_at": node.created_at, "hive": hive_control_response(control, node, db)}
 
 
 def usage_dashboard(db: Session) -> dict:
@@ -250,13 +271,17 @@ def usage_dashboard(db: Session) -> dict:
 @app.get("/api/settings/compute")
 def get_compute_settings(db: Session = Depends(get_db)):
     nodes = db.scalars(select(KizunaNode).order_by(KizunaNode.id)).all()
+    controls = {item.node_key: item for item in db.scalars(select(HiveNodeControl).order_by(HiveNodeControl.priority.desc())).all()}
     policies = {item.task: item for item in db.scalars(select(WorkloadPolicy).order_by(WorkloadPolicy.id)).all()}
     rates = db.scalars(select(AIModelRate).order_by(AIModelRate.provider_key, AIModelRate.model)).all()
     usage = usage_dashboard(db)
     policy_rows = [{"task": task, "label": data[0], "description": data[1], "placement": policies[task].placement if task in policies else "auto", "node_key": policies[task].node_key if task in policies else "", "cloud_provider": policies[task].cloud_provider if task in policies else ""} for task, data in WORKLOADS.items()]
     rate_rows = [{"id": rate.id, "provider_key": rate.provider_key, "model": rate.model, "input_per_million": rate.input_per_million, "cached_input_per_million": rate.cached_input_per_million, "output_per_million": rate.output_per_million, "currency": rate.currency, "source_url": rate.source_url, "updated_at": rate.updated_at} for rate in rates]
     usage["suggestions"] = usage_savings_suggestions(nodes, list(policies.values()), rates, usage["by_model"])
-    return {"nodes": [node_response(node) for node in nodes], "workloads": policy_rows, "usage": usage, "rates": rate_rows, "privacy": {"sent": ["OS and architecture", "CPU name and logical cores", "total RAM", "detected GPUs", "selected installed-software names", "short local benchmark", "declared capabilities"], "never_sent": ["project files", "prompts or scripts", "passwords or API keys", "license keys", "documents or browser history"]}}
+    node_rows = [node_response(node, controls.get(node.node_key), db) for node in nodes]
+    queued_generation = len(db.scalars(select(GenerationJob).where(GenerationJob.provider == "farm", GenerationJob.status == "queued")).all())
+    queued_segments = len(db.scalars(select(MasterSegment).where(MasterSegment.status == "queued")).all())
+    return {"nodes": node_rows, "hive": {"devices": len(nodes), "online": sum(node["status"] == "online" for node in node_rows), "accepting_work": sum(node["status"] == "online" and node["hive"]["accepting_work"] for node in node_rows), "active_jobs": sum(node["hive"]["active_jobs"] for node in node_rows), "queued_jobs": queued_generation + queued_segments, "capacity": sum(node["hive"]["max_concurrency"] for node in node_rows), "platforms": sorted({node.os_name for node in nodes})}, "workloads": policy_rows, "usage": usage, "rates": rate_rows, "privacy": {"sent": ["OS and architecture", "CPU name and logical cores", "total RAM", "detected GPUs", "selected installed-software names", "short local benchmark", "live CPU/GPU/RAM utilization", "declared capabilities"], "never_sent": ["project files", "prompts or scripts", "passwords or API keys", "license keys", "documents or browser history"]}}
 
 
 @app.post("/api/settings/compute/enrollment")
@@ -265,7 +290,7 @@ def create_node_enrollment(request: Request, db: Session = Depends(get_db)):
     enrollment = NodeEnrollment(code_hash=hashlib.sha256(code.encode()).hexdigest(), expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=20))
     db.add(enrollment); db.commit()
     base = str(request.base_url).rstrip("/")
-    return {"code": code, "expires_at": enrollment.expires_at, "download_url": "/api/nodes/download", "commands": {"preview": "python kizuna_node.py scan --software-level creative", "enroll": f'python kizuna_node.py enroll --server "{base}" --code "{code}" --software-level creative', "monitor": "python kizuna_node.py monitor --interval 60"}}
+    return {"code": code, "expires_at": enrollment.expires_at, "download_url": "/api/nodes/download", "commands": {"preview": "python kizuna_node.py scan --software-level creative", "enroll": f'python kizuna_node.py enroll --server "{base}" --code "{code}" --software-level creative', "monitor": "python kizuna_node.py hive --poll-seconds 3"}}
 
 
 @app.get("/api/nodes/download")
@@ -281,10 +306,16 @@ def enroll_kizuna_node(payload: NodeProfileInput, db: Session = Depends(get_db))
     if not enrollment or enrollment.expires_at < now: raise HTTPException(401, "Enrollment code is invalid or expired")
     if db.scalar(select(KizunaNode).where(KizunaNode.node_key == payload.node_key)): raise HTTPException(409, "This node identity is already enrolled")
     token = secrets.token_urlsafe(32)
-    data = payload.model_dump(exclude={"code"})
-    node = KizunaNode(**data, token_hash=hashlib.sha256(token.encode()).hexdigest(), last_seen=now)
-    enrollment.used_at = now; db.add(node); db.commit(); db.refresh(node)
-    return {"node_key": node.node_key, "name": node.name, "token": token, "status": "online"}
+    data = payload.model_dump(exclude={"code", "timezone_offset_minutes"})
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    node = KizunaNode(**data, token_hash=token_hash, last_seen=now)
+    supported_tasks = ["master_segment"]
+    if "comfyui" in payload.capabilities: supported_tasks.append("character_reference")
+    worker = RenderWorker(name=payload.name, hostname=payload.name, token_hash=token_hash, status="online", capabilities={"os": payload.os_name, "architecture": payload.architecture, "cpu_threads": payload.logical_cores, "ram_gb": payload.ram_gb, "gpus": payload.gpu}, supported_tasks=supported_tasks, last_seen=now)
+    enrollment.used_at = now; db.add_all([node, worker]); db.flush()
+    control = HiveNodeControl(node_key=node.node_key, render_worker_id=worker.id, timezone_offset_minutes=payload.timezone_offset_minutes, memory_limit_gb=max(0, round(payload.ram_gb * .8, 1)), allowed_tasks=supported_tasks)
+    db.add(control); db.commit(); db.refresh(node)
+    return {"node_key": node.node_key, "name": node.name, "token": token, "worker_id": worker.id, "supported_tasks": supported_tasks, "status": "online"}
 
 
 @app.post("/api/nodes/{node_key}/heartbeat")
@@ -294,8 +325,32 @@ def heartbeat_kizuna_node(node_key: str, payload: NodeHeartbeatInput, authorizat
     if not node or not token or not secrets.compare_digest(node.token_hash, hashlib.sha256(token.encode()).hexdigest()): raise HTTPException(401, "Invalid node credentials")
     if payload.benchmark_score is not None: node.benchmark_score = payload.benchmark_score
     if payload.capabilities is not None: node.capabilities = payload.capabilities
-    node.last_seen = datetime.now(timezone.utc).replace(tzinfo=None); node.status = "online"; db.commit(); db.refresh(node)
-    return {"node_key": node.node_key, "status": "online", "last_seen": node.last_seen}
+    node.choices = {**(node.choices or {}), "metrics": {key: max(0, float(value)) for key, value in payload.metrics.items() if key in {"cpu_percent", "gpu_percent", "memory_used_gb"}}}
+    node.last_seen = datetime.now(timezone.utc).replace(tzinfo=None); node.status = "online"
+    control = db.scalar(select(HiveNodeControl).where(HiveNodeControl.node_key == node_key))
+    if control and control.render_worker_id:
+        worker = db.get(RenderWorker, control.render_worker_id)
+        if worker: worker.last_seen = node.last_seen; worker.status = "busy" if hive_control_response(control, node, db)["active_jobs"] else "online"
+    db.commit(); db.refresh(node)
+    return {"node_key": node.node_key, "status": "online", "last_seen": node.last_seen, "hive": hive_control_response(control, node, db)}
+
+
+@app.put("/api/settings/compute/nodes/{node_key}/control")
+def update_hive_node_control(node_key: str, payload: HiveNodeControlInput, db: Session = Depends(get_db)):
+    node = db.scalar(select(KizunaNode).where(KizunaNode.node_key == node_key))
+    control = db.scalar(select(HiveNodeControl).where(HiveNodeControl.node_key == node_key))
+    if not node or not control: raise HTTPException(404, "Hive computer not found")
+    valid_tasks = {"character_reference", "master_segment"}
+    if set(payload.allowed_tasks) - valid_tasks: raise HTTPException(400, "Unsupported hive task")
+    for key, value in payload.model_dump().items(): setattr(control, key, value)
+    if control.render_worker_id:
+        worker = db.get(RenderWorker, control.render_worker_id)
+        if worker:
+            worker.supported_tasks = payload.allowed_tasks
+            active_jobs = hive_control_response(control, node, db)["active_jobs"]
+            worker.status = "paused" if payload.paused else "draining" if payload.drain else "busy" if active_jobs else "online"
+    db.commit(); db.refresh(control)
+    return hive_control_response(control, node, db)
 
 
 @app.put("/api/settings/compute/workloads/{task}")
@@ -1099,6 +1154,23 @@ def authenticate_worker(worker_id: int, authorization: str | None, db: Session) 
     return worker
 
 
+def hive_worker_can_claim(worker: RenderWorker, task: str, db: Session) -> bool:
+    control = db.scalar(select(HiveNodeControl).where(HiveNodeControl.render_worker_id == worker.id))
+    if control is None:
+        active_generation = db.scalar(select(WorkerAssignment).where(WorkerAssignment.worker_id == worker.id, WorkerAssignment.status.in_(["leased", "running"])))
+        active_segment = db.scalar(select(MasterSegment).where(MasterSegment.worker_id == worker.id, MasterSegment.status.in_(["leased", "rendering"])))
+        return not active_generation and not active_segment
+    if task not in (control.allowed_tasks or []): return False
+    node = db.scalar(select(KizunaNode).where(KizunaNode.node_key == control.node_key))
+    if not node or not hive_control_response(control, node, db)["accepting_work"]: return False
+    online_cutoff = utcnow() - timedelta(seconds=150)
+    for preferred in db.scalars(select(HiveNodeControl).where(HiveNodeControl.priority > control.priority).order_by(HiveNodeControl.priority.desc())).all():
+        if task not in (preferred.allowed_tasks or []): continue
+        preferred_node = db.scalar(select(KizunaNode).where(KizunaNode.node_key == preferred.node_key, KizunaNode.last_seen >= online_cutoff))
+        if preferred_node and hive_control_response(preferred, preferred_node, db)["accepting_work"]: return False
+    return True
+
+
 @app.post("/api/workers/register", response_model=WorkerRegistrationResult, status_code=status.HTTP_201_CREATED)
 def register_worker(payload: WorkerRegistration, x_enrollment_secret: str | None = Header(default=None), db: Session = Depends(get_db)):
     if not x_enrollment_secret or not secrets.compare_digest(x_enrollment_secret, settings.worker_enrollment_secret):
@@ -1138,10 +1210,10 @@ def recover_expired_assignments(db: Session):
 def claim_worker_job(worker_id: int, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     worker = authenticate_worker(worker_id, authorization, db)
     recover_expired_assignments(db)
-    active = db.scalar(select(WorkerAssignment).where(WorkerAssignment.worker_id == worker.id, WorkerAssignment.status.in_(["leased", "running"])))
-    if active:
-        return job_response(db.get(GenerationJob, active.generation_job_id), db)
     if "character_reference" not in worker.supported_tasks:
+        db.commit()
+        return None
+    if not hive_worker_can_claim(worker, "character_reference", db):
         db.commit()
         return None
     job = db.scalar(select(GenerationJob).where(GenerationJob.provider == "farm", GenerationJob.status == "queued").order_by(GenerationJob.id).with_for_update(skip_locked=True))
@@ -3011,6 +3083,8 @@ def claim_master_segment(worker_id: int, authorization: str | None = Header(defa
         if expired_job and expired_job.status.startswith("farm-"):
             expired_job.status = "farm-queued"
     db.commit()
+    if not hive_worker_can_claim(worker, "master_segment", db):
+        return Response(status_code=204)
     segment = db.scalar(select(MasterSegment).join(MasterExportJob).where(MasterSegment.status == "queued", MasterExportJob.status.in_(["farm-queued", "farm-rendering"])).order_by(MasterSegment.id))
     if not segment:
         return Response(status_code=204)

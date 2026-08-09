@@ -814,3 +814,24 @@ class StudioSpendSettings(Base):
     warning_percent: Mapped[int] = mapped_column(default=80)
     hard_stop: Mapped[bool] = mapped_column(default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class HiveNodeControl(Base):
+    __tablename__ = "hive_node_controls"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    node_key: Mapped[str] = mapped_column(String(64), unique=True)
+    render_worker_id: Mapped[int | None] = mapped_column(ForeignKey("render_workers.id"), unique=True, nullable=True)
+    paused: Mapped[bool] = mapped_column(default=False)
+    drain: Mapped[bool] = mapped_column(default=False)
+    max_concurrency: Mapped[int] = mapped_column(default=1)
+    cpu_limit_percent: Mapped[int] = mapped_column(default=75)
+    gpu_limit_percent: Mapped[int] = mapped_column(default=90)
+    memory_limit_gb: Mapped[float] = mapped_column(Float, default=0)
+    available_days: Mapped[list[int]] = mapped_column(JSON, default=lambda: [0, 1, 2, 3, 4, 5, 6])
+    start_hour: Mapped[int] = mapped_column(default=0)
+    end_hour: Mapped[int] = mapped_column(default=24)
+    timezone_offset_minutes: Mapped[int] = mapped_column(default=0)
+    priority: Mapped[int] = mapped_column(default=50)
+    allowed_tasks: Mapped[list[str]] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

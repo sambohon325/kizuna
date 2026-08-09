@@ -1,0 +1,45 @@
+name: Build Kizuna Node
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "node-v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: Kizuna-Node-Windows
+            binary: KizunaNode.exe
+            installer: install_windows.ps1
+          - os: macos-latest
+            artifact: Kizuna-Node-macOS
+            binary: KizunaNode
+            installer: install_macos.sh
+          - os: ubuntu-latest
+            artifact: Kizuna-Node-Linux
+            binary: KizunaNode
+            installer: install_linux.sh
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: python -m pip install -e ".[dev]" pyinstaller
+      - name: Build standalone companion
+        run: pyinstaller --clean --onefile --name KizunaNode --collect-submodules worker --collect-submodules app --collect-all imageio_ffmpeg node_agent/kizuna_node.py
+      - name: Add installer and guide
+        shell: bash
+        run: |
+          cp "node_agent/installers/${{ matrix.installer }}" dist/
+          cp docs/KIZUNA_NODE.md dist/README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/

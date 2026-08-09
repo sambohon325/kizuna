@@ -47,7 +47,7 @@ pytest
 - A three-view Character Studio for narrative identity, versioned history and emotional arcs, character relationships, and visual model development without combining every craft into one form
 - Full-canvas craft dashboards with glass surfaces instead of modal-style outer boxes, plus dedicated multi-monitor windows that retain the selected production
 - A studio-wide Connections & Tools hub for OpenAI, Claude, Gemini, Ollama, custom AI APIs, generation engines, and handoffs to Adobe, Corel, GIMP, Krita, OpenToonz, Blender, and Resolve; secret values remain server-side
-- A privacy-first Kizuna Node companion with one-time enrollment, approved hardware/software inventory, local benchmark reporting, local/cloud workload placement, AI token accounting, editable model rates, monthly budgets, and savings guidance
+- A privacy-first Kizuna Node companion with one-time enrollment, Windows/macOS/Linux builds, a mixed-platform Hive, per-device schedules and usage throttles, local/cloud workload placement, AI token accounting, editable model rates, monthly budgets, and savings guidance
 - Production scope shared across creation, dashboard, writing, timelines, mastering, and AI context: distribution channel, one-off/trailer/feature/series format, aspect ratio, target runtime, installments, and seasons can evolve without deleting existing work
 - A persistent floating Kizuna Assistant that follows the active craft workspace, reads backend production progress and scope, remembers project conversations, and links creators to relevant next actions
 - Provider-neutral dialogue generation with a safe local timing-slate mode, optional OpenAI speech adapter, voice-rights records, required AI disclosure metadata, and per-character pronunciation entries
@@ -68,7 +68,7 @@ pytest
 
 See [AI Crew and voice setup](docs/AI_CREW.md) for autonomy behavior and optional hosted speech configuration.
 See [AI provider routing](docs/AI_PROVIDER_ROUTING.md) for assigning OpenAI, Claude, Gemini, Ollama, or custom engines to studio roles.
-See [Kizuna Node and cost controls](docs/KIZUNA_NODE.md) for computer enrollment, privacy, workload placement, and AI budget monitoring.
+See [Kizuna Node and mixed-platform Hive](docs/KIZUNA_NODE.md) for computer enrollment, privacy, schedules, usage throttles, workload placement, and AI budget monitoring.
 See [asset review and rollback](docs/ASSET_REVIEW.md) for the production-version workflow.
 See [character story development](docs/CHARACTER_STORY.md) for histories, arcs, and relationship records.
 See [multi-window workspaces](docs/MULTI_WINDOW.md) for multi-monitor usage and direct workspace links.

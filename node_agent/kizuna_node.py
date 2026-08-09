@@ -13,8 +13,10 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -48,6 +50,62 @@ def total_ram_gb() -> float:
         return round(pages * page_size / 1024**3, 1)
     except Exception:
         return 0.0
+
+
+def memory_used_gb() -> float:
+    try:
+        if os.name == "nt":
+            class MemoryStatus(ctypes.Structure):
+                _fields_ = [("length", ctypes.c_ulong), ("memory_load", ctypes.c_ulong), ("total", ctypes.c_ulonglong), ("available", ctypes.c_ulonglong), ("page_total", ctypes.c_ulonglong), ("page_available", ctypes.c_ulonglong), ("virtual_total", ctypes.c_ulonglong), ("virtual_available", ctypes.c_ulonglong), ("extended", ctypes.c_ulonglong)]
+            status = MemoryStatus(); status.length = ctypes.sizeof(status)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
+            return round((status.total - status.available) / 1024**3, 2)
+        if sys.platform.startswith("linux"):
+            values = {}
+            for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+                key, value = line.split(":", 1); values[key] = int(value.strip().split()[0])
+            return round((values["MemTotal"] - values.get("MemAvailable", values.get("MemFree", 0))) / 1024**2, 2)
+        if sys.platform == "darwin":
+            raw = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5, check=False).stdout
+            page_size = int(raw.split("page size of ", 1)[1].split(" bytes", 1)[0]) if "page size of " in raw else 4096
+            used_pages = sum(int(line.split(":", 1)[1].strip().rstrip(".")) for line in raw.splitlines() if line.startswith(("Pages active", "Pages wired down", "Pages occupied by compressor")))
+            return round(used_pages * page_size / 1024**3, 2)
+    except Exception:
+        pass
+    return 0.0
+
+
+def cpu_percent() -> float:
+    try:
+        if os.name == "nt":
+            class FileTime(ctypes.Structure):
+                _fields_ = [("low", ctypes.c_ulong), ("high", ctypes.c_ulong)]
+            def sample():
+                idle, kernel, user = FileTime(), FileTime(), FileTime()
+                ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user))
+                value = lambda item: (item.high << 32) + item.low
+                return value(idle), value(kernel), value(user)
+            first = sample(); time.sleep(.1); second = sample()
+            idle = second[0] - first[0]; total = second[1] - first[1] + second[2] - first[2]
+            return round(max(0, min(100, (1 - idle / max(total, 1)) * 100)), 1)
+        return round(max(0, min(100, os.getloadavg()[0] / max(os.cpu_count() or 1, 1) * 100)), 1)
+    except Exception:
+        return 0.0
+
+
+def gpu_percent() -> float:
+    command = shutil.which("nvidia-smi")
+    if not command:
+        return 0.0
+    try:
+        values = subprocess.run([command, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5, check=False).stdout.splitlines()
+        return round(max(float(value.strip()) for value in values), 1) if values else 0.0
+    except Exception:
+        return 0.0
+
+
+def live_metrics() -> dict[str, float]:
+    return {"cpu_percent": cpu_percent(), "gpu_percent": gpu_percent(), "memory_used_gb": memory_used_gb()}
 
 
 def cpu_name() -> str:
@@ -144,7 +202,8 @@ def scan(software_level: str) -> dict:
     if "ollama" in software_text: capabilities.append("local_ai")
     if "comfyui" in software_text: capabilities.extend(["comfyui", "animation_generation"])
     if "ffmpeg" in software_text: capabilities.extend(["video_encode", "audio_encode"])
-    return {"node_key": str(uuid.uuid4()), "name": socket.gethostname(), "os_name": platform.system(), "os_version": platform.version(), "architecture": platform.machine(), "cpu_name": cpu_name(), "logical_cores": os.cpu_count() or 1, "ram_gb": total_ram_gb(), "gpu": gpus, "software": software, "benchmark_score": benchmark_score(), "capabilities": sorted(set(capabilities))}
+    offset = datetime.now().astimezone().utcoffset()
+    return {"node_key": str(uuid.uuid4()), "name": socket.gethostname(), "os_name": platform.system(), "os_version": platform.version(), "architecture": platform.machine(), "cpu_name": cpu_name(), "logical_cores": os.cpu_count() or 1, "ram_gb": total_ram_gb(), "gpu": gpus, "software": software, "benchmark_score": benchmark_score(), "capabilities": sorted(set(capabilities)), "timezone_offset_minutes": round((offset.total_seconds() if offset else 0) / 60)}
 
 
 def request_json(url: str, payload: dict | None = None, token: str = "") -> dict:
@@ -175,16 +234,47 @@ def enroll(args: argparse.Namespace) -> None:
     if not args.yes and input("Send this capability profile to Kizuna? [y/N] ").strip().lower() != "y":
         print("Nothing was sent."); return
     result = request_json(args.server.rstrip("/") + "/api/nodes/enroll", profile)
-    save_config({"server": args.server.rstrip("/"), "node_key": result["node_key"], "token": result["token"], "software_level": args.software_level})
+    save_config({"server": args.server.rstrip("/"), "node_key": result["node_key"], "token": result["token"], "worker_id": result["worker_id"], "supported_tasks": result["supported_tasks"], "software_level": args.software_level})
     print(f"Enrolled {result['name']}. Configuration saved to {config_path()}")
 
 
-def sync_once() -> None:
+def sync_once(quiet: bool = False) -> dict:
     path = config_path()
     if not path.exists(): raise RuntimeError("This computer is not enrolled. Run the enroll command first.")
     config = json.loads(path.read_text(encoding="utf-8"))
-    result = request_json(f"{config['server']}/api/nodes/{config['node_key']}/heartbeat", {"benchmark_score": benchmark_score()}, config["token"])
-    print(f"Kizuna node is {result['status']} · {result['last_seen']}")
+    result = request_json(f"{config['server']}/api/nodes/{config['node_key']}/heartbeat", {"metrics": live_metrics()}, config["token"])
+    if not quiet:
+        print(f"Kizuna node is {result['status']} · {result.get('hive', {}).get('reason', 'connected')} · {result['last_seen']}")
+    return result
+
+
+def hive(args: argparse.Namespace) -> None:
+    path = config_path()
+    if not path.exists(): raise RuntimeError("This computer is not enrolled. Run the enroll command first.")
+    config = json.loads(path.read_text(encoding="utf-8"))
+    sync_once()
+    available_tasks = set(config.get("supported_tasks", ["master_segment"]))
+    requested_tasks = {item.strip() for item in args.tasks.split(",") if item.strip()} if args.tasks else available_tasks
+    tasks = sorted(available_tasks & requested_tasks)
+    if "character_reference" in tasks and not args.workflow:
+        tasks.remove("character_reference")
+        print("ComfyUI work is disabled until --workflow points to an API workflow JSON file.")
+    if not tasks: raise RuntimeError("No runnable Hive tasks are enabled for this computer.")
+    stop = threading.Event()
+    def monitor():
+        while not stop.wait(max(10, args.metrics_interval)):
+            try: sync_once(quiet=True)
+            except RuntimeError as exc: print(f"Metrics heartbeat: {exc}", file=sys.stderr)
+    threading.Thread(target=monitor, name="kizuna-metrics", daemon=True).start()
+    try:
+        from worker.agent import KizunaWorker
+    except ImportError:
+        print("This source-only download can monitor the computer but cannot render. Use a standalone Kizuna Node build or run it from the Kizuna repository.")
+        while True:
+            time.sleep(max(10, args.metrics_interval)); sync_once()
+    worker_args = argparse.Namespace(server=config["server"], worker_id=int(config["worker_id"]), token=config["token"], tasks=",".join(tasks), concurrency=args.concurrency or 32, comfyui_url=args.comfyui_url, workflow=args.workflow, positive_node=args.positive_node, negative_node=args.negative_node, sampler_node=args.sampler_node, poll_seconds=args.poll_seconds)
+    try: KizunaWorker(worker_args).run()
+    finally: stop.set()
 
 
 def main() -> int:
@@ -200,11 +290,22 @@ def main() -> int:
     sub.add_parser("sync", help="Send a fresh health check")
     monitor_parser = sub.add_parser("monitor", help="Keep the node online")
     monitor_parser.add_argument("--interval", type=int, default=60)
+    hive_parser = sub.add_parser("hive", help="Join the mixed-platform render and workflow Hive")
+    hive_parser.add_argument("--poll-seconds", type=float, default=3)
+    hive_parser.add_argument("--metrics-interval", type=int, default=15)
+    hive_parser.add_argument("--concurrency", type=int, default=0, help="Optional local ceiling; studio control remains authoritative")
+    hive_parser.add_argument("--tasks", default="", help="Optional comma-separated task subset")
+    hive_parser.add_argument("--comfyui-url", default=os.getenv("KIZUNA_COMFYUI_URL", "http://127.0.0.1:8188"))
+    hive_parser.add_argument("--workflow", default=os.getenv("KIZUNA_COMFYUI_WORKFLOW_PATH"))
+    hive_parser.add_argument("--positive-node", default=os.getenv("KIZUNA_COMFYUI_POSITIVE_NODE", "6"))
+    hive_parser.add_argument("--negative-node", default=os.getenv("KIZUNA_COMFYUI_NEGATIVE_NODE", "7"))
+    hive_parser.add_argument("--sampler-node", default=os.getenv("KIZUNA_COMFYUI_SAMPLER_NODE", "3"))
     args = parser.parse_args()
     try:
         if args.command == "scan": print(json.dumps(scan(args.software_level), indent=2))
         elif args.command == "enroll": enroll(args)
         elif args.command == "sync": sync_once()
+        elif args.command == "hive": hive(args)
         else:
             while True:
                 sync_once(); time.sleep(max(30, args.interval))

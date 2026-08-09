@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     backup_max_copies: int = 10
     backup_scheduler_interval_seconds: int = 60
     cleanup_verification_hours: int = 24
+    redis_url: str = ""
+    job_stream_key: str = "kizuna:jobs"
+    job_lease_seconds: int = 600
+    job_poll_seconds: float = 2.0
+    job_inline_fallback: bool = True
     worker_enrollment_secret: str = "local-dev-enrollment"
     worker_lease_seconds: int = 300
     max_artifact_bytes: int = 67_108_864

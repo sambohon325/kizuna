@@ -3,12 +3,11 @@ import json
 import os
 import secrets
 import shutil
-import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
@@ -16,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
-from app.animatic import ffmpeg_executable, render_animatic
+from app.animatic import render_animatic
 from app.audio import generate_timing_slate, split_audio_file
 from app.compositor import render_composite
 from app.motion import render_motion_video
@@ -25,8 +24,10 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, request_cancel, retry_job, start_job, update_progress
+from app.media_proxy import execute_media_proxy_job, proxy_spec
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
@@ -1730,31 +1731,36 @@ def ensure_thumbnail(project_id: int, asset_key: str, path: Path, width: int, db
 
 
 def ensure_working_proxy(project_id: int, asset_key: str, path: Path, width: int, db: Session) -> AssetResidency | None:
-    suffix = path.suffix.lower()
-    kind = "image" if suffix in {".png", ".jpg", ".jpeg", ".webp"} else "video" if suffix in {".mp4", ".mov", ".mkv", ".webm"} else "audio" if suffix in {".wav", ".mp3", ".m4a", ".ogg", ".flac"} else ""
-    if not kind: return None
-    extension = ".jpg" if kind == "image" else ".mp4" if kind == "video" else ".m4a"
-    filename = f"{hashlib.sha256(asset_key.encode()).hexdigest()[:24]}{extension}"
-    destination = (proxy_dir / f"project-{project_id}" / filename).resolve(); project_root = (proxy_dir / f"project-{project_id}").resolve()
-    if project_root not in destination.parents: return None
-    if not destination.is_file():
+    spec = proxy_spec(project_id, asset_key, path)
+    if spec is None:
+        return None
+    _, _, destination = spec
+    existing = db.scalar(select(AssetResidency).where(AssetResidency.residency_key == residency_identity(project_id, asset_key, "proxy", "server")))
+    if destination.is_file() and existing is not None:
+        return existing
+    try:
+        source_uri = f"/renders/{path.relative_to(render_dir).as_posix()}"
+    except ValueError:
+        return None
+    source_checksum = sha256_file(path)
+    job = enqueue_job(
+        db,
+        "media.proxy",
+        {"project_id": project_id, "asset_key": asset_key, "source_uri": source_uri, "proxy_width": width},
+        project_id=project_id,
+        queue="media",
+        idempotency_key=f"{project_id}|{asset_key}|{source_checksum}|{width}",
+    )
+    if settings.job_inline_fallback and job.status == "queued":
         try:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            if kind == "image":
-                with Image.open(path) as image:
-                    image.thumbnail((width, width)); image.convert("RGB").save(destination, "JPEG", quality=88, optimize=True)
-            elif kind == "video":
-                command = [ffmpeg_executable(), "-y", "-loglevel", "error", "-i", str(path), "-map", "0:v:0", "-map", "0:a?", "-vf", f"scale={width}:-2:force_original_aspect_ratio=decrease", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(destination)]
-                completed = subprocess.run(command, capture_output=True, text=True, timeout=300)
-                if completed.returncode: raise OSError(completed.stderr[-2000:] or "Video proxy failed")
-            else:
-                command = [ffmpeg_executable(), "-y", "-loglevel", "error", "-i", str(path), "-vn", "-c:a", "aac", "-b:a", "128k", str(destination)]
-                completed = subprocess.run(command, capture_output=True, text=True, timeout=180)
-                if completed.returncode: raise OSError(completed.stderr[-2000:] or "Audio proxy failed")
-        except (OSError, subprocess.TimeoutExpired, UnidentifiedImageError):
-            destination.unlink(missing_ok=True)
+            start_job(db, job, "web:inline")
+            update_progress(db, job, 10, "Preparing working media")
+            complete_job(db, job, execute_media_proxy_job(db, job))
+        except Exception as exc:
+            fail_job(db, job, str(exc))
             return None
-    return upsert_residency(db, project_id, asset_key, "proxy", "server", object_ref=str(destination.relative_to(proxy_dir)).replace("\\", "/"), uri=f"/api/media/proxies/{project_id}/{filename}", checksum=sha256_file(destination), size=destination.stat().st_size, status_value="available")
+    residency_id = (job.result or {}).get("residency_id")
+    return db.get(AssetResidency, residency_id) if residency_id else existing
 
 
 def build_media_index(project_id: int, db: Session) -> dict:
@@ -1787,7 +1793,42 @@ def build_media_index(project_id: int, db: Session) -> dict:
     transfers = db.scalars(select(MediaTransferJob).where(MediaTransferJob.project_id == project_id)).all()
     cleanup_reviews = db.scalars(select(MediaCleanupReview).where(MediaCleanupReview.project_id == project_id)).all()
     nodes = db.scalars(select(KizunaNode).order_by(KizunaNode.name)).all()
-    return {"project_id": project_id, "policy": MediaStoragePolicyRead.model_validate(policy).model_dump(), "nodes": [{"node_key": node.node_key, "name": node.name, "status": node.status} for node in nodes], "assets": result, "summary": {"assets": len(result), "server_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "server"), "hive_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "hive"), "s3_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "s3"), "lightweight_server_bytes": sum(item.size_bytes for item in rows if item.backend == "server" and item.representation in {"thumbnail", "proxy"}), "hive_assets": len({item.asset_key for item in original_rows if item.backend == "hive"}), "verified_originals": len({item.asset_key for item in original_rows}), "queued_transfers": sum(item.status == "queued" for item in transfers), "active_transfers": sum(item.status in {"leased", "transferring"} for item in transfers), "completed_transfers": sum(item.status == "completed" for item in transfers), "cleanup_eligible_assets": sum(policy.evict_server_originals and count >= policy.minimum_replicas for count in verified_copy_counts.values()), "cleanup_approved_assets": sum(review.status == "approved" and review.asset_key in server_originals and review.checksum_sha256 == server_originals[review.asset_key].checksum_sha256 and verified_copy_counts.get(review.asset_key, 0) >= policy.minimum_replicas for review in cleanup_reviews)}}
+    durable_jobs = db.scalars(select(DurableJob).where(DurableJob.project_id == project_id, DurableJob.kind == "media.proxy")).all()
+    return {"project_id": project_id, "policy": MediaStoragePolicyRead.model_validate(policy).model_dump(), "nodes": [{"node_key": node.node_key, "name": node.name, "status": node.status} for node in nodes], "assets": result, "summary": {"assets": len(result), "server_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "server"), "hive_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "hive"), "s3_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "s3"), "lightweight_server_bytes": sum(item.size_bytes for item in rows if item.backend == "server" and item.representation in {"thumbnail", "proxy"}), "hive_assets": len({item.asset_key for item in original_rows if item.backend == "hive"}), "verified_originals": len({item.asset_key for item in original_rows}), "queued_transfers": sum(item.status == "queued" for item in transfers), "active_transfers": sum(item.status in {"leased", "transferring"} for item in transfers), "completed_transfers": sum(item.status == "completed" for item in transfers), "working_media_jobs": sum(item.status in {"queued", "running"} for item in durable_jobs), "failed_media_jobs": sum(item.status == "failed" for item in durable_jobs), "cleanup_eligible_assets": sum(policy.evict_server_originals and count >= policy.minimum_replicas for count in verified_copy_counts.values()), "cleanup_approved_assets": sum(review.status == "approved" and review.asset_key in server_originals and review.checksum_sha256 == server_originals[review.asset_key].checksum_sha256 and verified_copy_counts.get(review.asset_key, 0) >= policy.minimum_replicas for review in cleanup_reviews)}}
+
+
+@app.get("/api/jobs", response_model=list[DurableJobRead])
+def list_durable_jobs(project_id: int | None = None, job_status: str = Query("", alias="status"), kind: str = "", db: Session = Depends(get_db)):
+    query = select(DurableJob)
+    if project_id is not None: query = query.where(DurableJob.project_id == project_id)
+    if job_status: query = query.where(DurableJob.status == job_status)
+    if kind: query = query.where(DurableJob.kind == kind)
+    return db.scalars(query.order_by(DurableJob.id.desc()).limit(200)).all()
+
+
+@app.get("/api/jobs/{job_id}")
+def get_durable_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(DurableJob, job_id)
+    if job is None: raise HTTPException(status_code=404, detail="Job not found")
+    events = db.scalars(select(DurableJobEvent).where(DurableJobEvent.job_id == job.id).order_by(DurableJobEvent.id)).all()
+    return {"job": DurableJobRead.model_validate(job), "events": [event_dict(event) for event in events]}
+
+
+@app.post("/api/jobs/{job_id}/cancel", response_model=DurableJobRead)
+def cancel_durable_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(DurableJob, job_id)
+    if job is None: raise HTTPException(status_code=404, detail="Job not found")
+    request_cancel(db, job); db.commit(); db.refresh(job)
+    return job
+
+
+@app.post("/api/jobs/{job_id}/retry", response_model=DurableJobRead)
+def retry_durable_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(DurableJob, job_id)
+    if job is None: raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in {"failed", "cancelled"}: raise HTTPException(status_code=409, detail="Only failed or cancelled jobs can be retried")
+    retry_job(db, job); db.commit(); db.refresh(job)
+    return job
 
 
 def refresh_media_lifecycle(project_id: int, db: Session) -> None:

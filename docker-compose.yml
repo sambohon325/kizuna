@@ -9,6 +9,8 @@ services:
       KIZUNA_RENDER_DIRECTORY: /app/renders
       KIZUNA_STORAGE_DIRECTORY: /app/storage
       KIZUNA_CLEANUP_VERIFICATION_HOURS: ${KIZUNA_CLEANUP_VERIFICATION_HOURS:-24}
+      KIZUNA_REDIS_URL: redis://redis:6379/0
+      KIZUNA_JOB_INLINE_FALLBACK: "false"
       KIZUNA_S3_BUCKET: ${KIZUNA_S3_BUCKET:-}
       KIZUNA_S3_ENDPOINT_URL: ${KIZUNA_S3_ENDPOINT_URL:-}
       KIZUNA_S3_REGION: ${KIZUNA_S3_REGION:-}
@@ -19,6 +21,30 @@ services:
       KIZUNA_FFMPEG_PATH: /usr/bin/ffmpeg
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - render_data:/app/renders
+      - storage_data:/app/storage
+
+  job-worker:
+    build: .
+    command: python -m app.job_worker
+    environment:
+      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
+      KIZUNA_ENVIRONMENT: production
+      KIZUNA_REDIS_URL: redis://redis:6379/0
+      KIZUNA_JOB_INLINE_FALLBACK: "false"
+      KIZUNA_JOB_LEASE_SECONDS: ${KIZUNA_JOB_LEASE_SECONDS:-600}
+      KIZUNA_JOB_POLL_SECONDS: ${KIZUNA_JOB_POLL_SECONDS:-2}
+      KIZUNA_RENDER_DIRECTORY: /app/renders
+      KIZUNA_STORAGE_DIRECTORY: /app/storage
+      KIZUNA_FFMPEG_PATH: /usr/bin/ffmpeg
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - render_data:/app/renders
@@ -61,6 +87,11 @@ services:
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     volumes:
       - redis_data:/data
 

@@ -33,6 +33,7 @@ pytest
 - Unified asset review with side-by-side versions, approval and rejection notes, an explicit production master, and non-destructive rollback that invalidates stale composites
 - Production vault with local or S3-compatible destinations, automatic off-server schedules, configurable retention, media-inclusive project ZIPs, SHA-256 verification, backup pruning, and revocable download-limited delivery links
 - Automatic metadata-first media lifecycle with independent image/video/audio working proxies, checksum-verified Hive replication, freshness-gated cleanup eligibility, and creator approval that never silently deletes an original
+- A durable database-backed job ledger with idempotency, progress history, cancellation, bounded retries, expired-lease recovery, optional Redis dispatch, and a separate production worker; local development can execute working-media jobs inline
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
 - Authenticated network workers with capability reporting, heartbeats, leased jobs, retries, and artifact upload
 - Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, background assets, and a Background Artist bot that can propose or apply a production-ready location bible before optionally queuing background generation
@@ -61,7 +62,7 @@ pytest
 
 ## Next milestones
 
-1. Move long-running work onto a unified Redis-backed job contract with restart recovery
+1. Migrate media transfer, maintenance, crew, and render workloads onto the new durable job contract
 2. Add Alembic migrations and production PostgreSQL verification
 3. Add health checks, job diagnostics, backup restore verification, and the guarded Coolify deployment path
 4. Add authentication and tenant isolation before any public deployment
@@ -76,4 +77,5 @@ See [character story development](docs/CHARACTER_STORY.md) for histories, arcs, 
 See [multi-window workspaces](docs/MULTI_WINDOW.md) for multi-monitor usage and direct workspace links.
 See [production storage and delivery](docs/STORAGE.md) for backup and retention settings.
 See [metadata-first media storage](docs/MEDIA_STORAGE.md) for local originals, lightweight previews, and Hive residency tracking.
+See [durable production jobs](docs/JOBS.md) for retries, cancellation, worker recovery, Redis dispatch, and local inline behavior.
 See [picture and audio editing](docs/EDITING.md) for tactile edit controls.

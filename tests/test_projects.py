@@ -4,6 +4,42 @@ def test_health(client):
     assert response.json()["status"] == "ok"
 
 
+def test_durable_jobs_are_idempotent_inspectable_cancelable_and_recoverable(client):
+    from datetime import timedelta
+
+    from app.database import SessionLocal
+    from app.job_queue import claim_job, enqueue_job, recover_expired_jobs, utcnow
+    from app.models import DurableJob, DurableJobEvent
+
+    project = client.post("/api/projects", json={"title": "Durable Production", "logline": "A production survives an interrupted workstation."}).json()
+    with SessionLocal() as db:
+        first = enqueue_job(db, "test.recovery", {"shot": 7}, project_id=project["id"], idempotency_key="same-request")
+        duplicate = enqueue_job(db, "test.recovery", {"shot": 7}, project_id=project["id"], idempotency_key="same-request")
+        assert first.id == duplicate.id
+        job_id = first.id
+        db.commit()
+
+    jobs = client.get(f"/api/jobs?project_id={project['id']}").json()
+    assert len(jobs) == 1 and jobs[0]["status"] == "queued"
+    detail = client.get(f"/api/jobs/{job_id}").json()
+    assert detail["events"][0]["message"] == "Job queued"
+    assert client.post(f"/api/jobs/{job_id}/cancel").json()["status"] == "cancelled"
+    assert client.post(f"/api/jobs/{job_id}/retry").json()["status"] == "queued"
+
+    with SessionLocal() as db:
+        claimed = claim_job(db, "test-worker", {"test.recovery"})
+        assert claimed and claimed.id == job_id and claimed.status == "running"
+        claimed.leased_until = utcnow() - timedelta(seconds=1)
+        db.commit()
+    with SessionLocal() as db:
+        assert recover_expired_jobs(db) == 1
+        db.commit()
+        recovered = db.get(DurableJob, job_id)
+        events = db.query(DurableJobEvent).filter(DurableJobEvent.job_id == job_id).all()
+        assert recovered.status == "queued"
+        assert any("lease expired" in event.message for event in events)
+
+
 def test_integration_settings_support_builtin_and_custom_tools(client):
     settings_response = client.get("/api/settings/integrations")
     assert settings_response.status_code == 200

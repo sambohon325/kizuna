@@ -778,6 +778,44 @@ class MediaCleanupReview(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class DurableJob(Base):
+    __tablename__ = "durable_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_key: Mapped[str] = mapped_column(String(64), unique=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(80))
+    queue: Mapped[str] = mapped_column(String(48), default="default")
+    status: Mapped[str] = mapped_column(String(24), default="queued")
+    priority: Mapped[int] = mapped_column(default=50)
+    progress_percent: Mapped[int] = mapped_column(default=0)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    attempts: Mapped[int] = mapped_column(default=0)
+    max_attempts: Mapped[int] = mapped_column(default=5)
+    lease_owner: Mapped[str] = mapped_column(String(120), default="")
+    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancellation_requested: Mapped[bool] = mapped_column(default=False)
+    error: Mapped[str] = mapped_column(Text, default="")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class DurableJobEvent(Base):
+    __tablename__ = "durable_job_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("durable_jobs.id"))
+    status: Mapped[str] = mapped_column(String(24))
+    progress_percent: Mapped[int] = mapped_column(default=0)
+    message: Mapped[str] = mapped_column(String(500), default="")
+    event_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class DeliveryLink(Base):
     __tablename__ = "delivery_links"
 

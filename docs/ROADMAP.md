@@ -140,7 +140,7 @@ Goal: support a governed creator economy after the platform is safe and reliable
 The next four implementation slices should remain inside Phase 0:
 
 1. **Automatic media lifecycle — implemented:** generated assets, audio, shot renders, animatics, and masters enter residency tracking automatically; working proxies are produced; cleanup approval requires fresh checksum-matching replicas and does not delete the original.
-2. **Durable job foundation:** define one job envelope and state machine, connect Redis, preserve current API contracts, and migrate media transfer/maintenance work first before crew and render jobs.
+2. **Durable job foundation — in progress:** the shared database job envelope, Redis wakeups, inline development fallback, worker leases, retry/cancellation controls, event history, and proxy executor are implemented. Next migrate media transfer and maintenance, then crew and render jobs.
 3. **Schema migrations and production database verification:** add Alembic, create a baseline migration for existing models, and run the suite against PostgreSQL in CI while retaining SQLite for simple local development.
 4. **Operational readiness:** add health/readiness endpoints, structured job diagnostics, backup restore verification, storage-capacity warnings, and a safe Coolify deployment checklist. Authentication and tenant isolation must land before any public deployment.
 

@@ -980,6 +980,30 @@ class MediaCleanupDecision(BaseModel):
     note: str = Field(default="", max_length=1000)
 
 
+class DurableJobRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int | None
+    kind: str
+    queue: str
+    status: str
+    priority: int
+    progress_percent: int
+    payload: dict[str, Any]
+    result: dict[str, Any]
+    attempts: int
+    max_attempts: int
+    lease_owner: str
+    leased_until: datetime | None
+    next_attempt_at: datetime | None
+    cancellation_requested: bool
+    error: str
+    started_at: datetime | None
+    completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class ProjectBackupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

@@ -561,3 +561,47 @@ def test_producer_workflow_routes_deployed_bots_and_resumes_after_approval(clien
     assert directing["status"] == "awaiting_approval"
     director_action = next(item for item in client.get(f"/api/projects/{project_id}/crew").json()["actions"] if item["id"] == directing["last_action_id"])
     assert director_action["role"] == "director"
+
+
+def test_asset_reviews_select_compare_and_rollback_without_deleting_versions(client):
+    project_id = client.post("/api/projects", json={"title": "Review Thread"}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "pilot"}).json()
+    location = client.post(f"/api/projects/{project_id}/locations", json={"name": "Listening Hall"}).json()
+    client.put(f"/api/characters/{character['id']}/design", json={"appearance": {"silhouette": "long coat"}, "palette": ["charcoal"], "wardrobe": ["flight coat"], "consistency_anchors": ["red collar"]})
+    client.put(f"/api/locations/{location['id']}/design", json={"appearance": {"architecture": "orbital rings"}, "palette": ["amber"], "layers": ["deck", "planet"], "lighting_variants": ["dawn"], "continuity_anchors": ["broken antenna"]})
+    character_v1 = client.post(f"/api/characters/{character['id']}/generate", json={"provider": "mock", "seed": 1}).json()["assets"][0]
+    character_v2 = client.post(f"/api/characters/{character['id']}/generate", json={"provider": "mock", "seed": 2}).json()["assets"][0]
+    background_v1 = client.post(f"/api/locations/{location['id']}/generate", json={"provider": "mock", "seed": 1}).json()["assets"][0]
+    background_v2 = client.post(f"/api/locations/{location['id']}/generate", json={"provider": "mock", "seed": 2}).json()["assets"][0]
+    scene = client.post(f"/api/projects/{project_id}/scenes", json={"title": "Contact", "position": 1}).json()
+    shot = client.post(f"/api/scenes/{scene['id']}/shots", json={"title": "Ari listens", "position": 1, "duration_seconds": 1}).json()
+    client.put(f"/api/shots/{shot['id']}/plan", json={"location_id": location["id"], "character_ids": [character["id"]], "action": "Ari listens.", "camera": {"movement": "locked"}})
+    storyboard_v1 = client.post(f"/api/shots/{shot['id']}/storyboard", json={"provider": "mock", "seed": 1}).json()["assets"][0]
+    storyboard_v2 = client.post(f"/api/shots/{shot['id']}/storyboard", json={"provider": "mock", "seed": 2}).json()["assets"][0]
+
+    review = client.get(f"/api/projects/{project_id}/asset-reviews").json()
+    assert len(review["assets"]) == 6
+    assert review["pending"] == 6
+    for asset_type, asset in (("character", character_v1), ("background", background_v1), ("storyboard", storyboard_v1)):
+        selected = client.put(f"/api/assets/{asset_type}/{asset['id']}/review", json={"status": "approved", "notes": "Approved continuity master", "selected": True})
+        assert selected.status_code == 200
+        assert selected.json()["active"] is True
+
+    client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 8, "width": 320, "height": 180})
+    composition = client.post(f"/api/shots/{shot['id']}/composition/build").json()
+    assert [layer["source_asset_id"] for layer in composition["layers"]] == [background_v1["id"], character_v1["id"]]
+    assert client.get(f"/api/projects/{project_id}/timeline").json()["clips"][0]["storyboard_uri"] == storyboard_v1["uri"]
+
+    switched = client.put(f"/api/assets/character/{character_v2['id']}/review", json={"status": "approved", "notes": "Try alternate", "selected": True}).json()
+    assert composition["id"] in switched["affected_compositions"]
+    updated = client.get(f"/api/shots/{shot['id']}/composition").json()
+    assert updated["version"] == composition["version"] + 1
+    assert updated["layers"][1]["source_asset_id"] == character_v2["id"]
+
+    rollback = client.put(f"/api/assets/character/{character_v1['id']}/review", json={"status": "approved", "notes": "Rollback to approved master", "selected": True}).json()
+    assert rollback["selected"] is True
+    rolled_back = client.get(f"/api/shots/{shot['id']}/composition").json()
+    assert rolled_back["version"] == updated["version"] + 1
+    assert rolled_back["layers"][1]["source_asset_id"] == character_v1["id"]
+    assert len(client.get(f"/api/projects/{project_id}/asset-reviews").json()["assets"]) == 6
+    assert background_v2["id"] != background_v1["id"] and storyboard_v2["id"] != storyboard_v1["id"]

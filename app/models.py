@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -120,6 +120,21 @@ class MediaAsset(Base):
     mime_type: Mapped[str] = mapped_column(String(80), default="image/png")
     asset_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     version: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AssetReview(Base):
+    __tablename__ = "asset_reviews"
+    __table_args__ = (UniqueConstraint("asset_type", "asset_id", name="uq_asset_review_target"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    asset_type: Mapped[str] = mapped_column(String(32))
+    asset_id: Mapped[int] = mapped_column()
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    selected: Mapped[bool] = mapped_column(default=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

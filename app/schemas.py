@@ -231,6 +231,24 @@ class MediaAssetRead(BaseModel):
     version: int
 
 
+class AssetReviewUpdate(BaseModel):
+    status: str = Field(default="pending", pattern="^(pending|approved|rejected)$")
+    notes: str = Field(default="", max_length=2000)
+    selected: bool = False
+
+
+class AssetReviewRead(BaseModel):
+    id: int | None = None
+    project_id: int
+    asset_type: str
+    asset_id: int
+    status: str
+    notes: str
+    selected: bool
+    active: bool = False
+    affected_compositions: list[int] = Field(default_factory=list)
+
+
 class GenerationJobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

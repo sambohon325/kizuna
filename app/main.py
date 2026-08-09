@@ -21,8 +21,8 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AnimaticRender, AssetReview, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -57,13 +57,55 @@ def project_query():
     return select(Project).options(selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters).selectinload(Character.design), selectinload(Project.locations).selectinload(WorldLocation.design), selectinload(Project.scenes).selectinload(Scene.shots).selectinload(Shot.plan))
 
 
+def asset_group(asset_type: str, asset_id: int, db: Session):
+    if asset_type == "character":
+        asset = db.get(MediaAsset, asset_id)
+        if not asset or not asset.character_id:
+            raise HTTPException(404, "Character asset not found")
+        assets = db.scalars(select(MediaAsset).where(MediaAsset.character_id == asset.character_id, MediaAsset.kind == asset.kind).order_by(MediaAsset.version.desc(), MediaAsset.id.desc())).all()
+        return asset, asset.project_id, asset.character_id, "media_asset", assets
+    if asset_type == "background":
+        asset = db.get(BackgroundAsset, asset_id)
+        if not asset:
+            raise HTTPException(404, "Background asset not found")
+        location = db.get(WorldLocation, asset.location_id)
+        assets = db.scalars(select(BackgroundAsset).where(BackgroundAsset.location_id == asset.location_id).order_by(BackgroundAsset.version.desc(), BackgroundAsset.id.desc())).all()
+        return asset, location.project_id, asset.location_id, "background_asset", assets
+    if asset_type == "storyboard":
+        asset = db.get(StoryboardAsset, asset_id)
+        if not asset:
+            raise HTTPException(404, "Storyboard asset not found")
+        shot = db.get(Shot, asset.shot_id)
+        scene = db.get(Scene, shot.scene_id)
+        assets = db.scalars(select(StoryboardAsset).where(StoryboardAsset.shot_id == asset.shot_id).order_by(StoryboardAsset.version.desc(), StoryboardAsset.id.desc())).all()
+        return asset, scene.project_id, asset.shot_id, "storyboard_asset", assets
+    raise HTTPException(422, "Asset type must be character, background, or storyboard")
+
+
+def review_for(asset_type: str, asset_id: int, db: Session) -> AssetReview | None:
+    return db.scalar(select(AssetReview).where(AssetReview.asset_type == asset_type, AssetReview.asset_id == asset_id))
+
+
+def choose_reviewed_asset(asset_type: str, assets: list, db: Session):
+    if not assets:
+        return None
+    reviews = {item.asset_id: item for item in db.scalars(select(AssetReview).where(AssetReview.asset_type == asset_type, AssetReview.asset_id.in_([asset.id for asset in assets]))).all()}
+    selected = next((asset for asset in assets if reviews.get(asset.id) and reviews[asset.id].selected), None)
+    if selected:
+        return selected
+    approved = next((asset for asset in assets if reviews.get(asset.id) and reviews[asset.id].status == "approved"), None)
+    if approved:
+        return approved
+    return next((asset for asset in assets if not reviews.get(asset.id) or reviews[asset.id].status != "rejected"), assets[0])
+
+
 def timeline_response(timeline: Timeline, db: Session):
     clips = db.scalars(select(TimelineClip).where(TimelineClip.timeline_id == timeline.id).order_by(TimelineClip.position)).all()
     output = []
     for clip in clips:
         shot = db.get(Shot, clip.shot_id)
         scene = db.get(Scene, shot.scene_id)
-        asset = db.scalar(select(StoryboardAsset).where(StoryboardAsset.shot_id == shot.id).order_by(StoryboardAsset.version.desc(), StoryboardAsset.id.desc()))
+        asset = choose_reviewed_asset("storyboard", db.scalars(select(StoryboardAsset).where(StoryboardAsset.shot_id == shot.id).order_by(StoryboardAsset.version.desc(), StoryboardAsset.id.desc())).all(), db)
         composite = db.scalar(select(CompositeRender).join(ShotComposition).where(ShotComposition.shot_id == shot.id, CompositeRender.status == "completed").order_by(CompositeRender.id.desc()))
         shot_composition = db.scalar(select(ShotComposition).where(ShotComposition.shot_id == shot.id))
         if composite and shot_composition and composite.render_settings.get("version") != shot_composition.version:
@@ -792,14 +834,78 @@ def project_asset_library(project_id: int, db: Session):
     assets = []
     backgrounds = db.execute(select(BackgroundAsset, WorldLocation).join(WorldLocation, BackgroundAsset.location_id == WorldLocation.id).where(WorldLocation.project_id == project_id).order_by(BackgroundAsset.id.desc())).all()
     for asset, location in backgrounds:
-        assets.append({"id": asset.id, "source_kind": "background_asset", "kind": "background", "name": location.name, "uri": asset.uri, "version": asset.version})
+        review = review_for("background", asset.id, db)
+        active = choose_reviewed_asset("background", db.scalars(select(BackgroundAsset).where(BackgroundAsset.location_id == asset.location_id).order_by(BackgroundAsset.version.desc(), BackgroundAsset.id.desc())).all(), db)
+        assets.append({"id": asset.id, "asset_type": "background", "group_id": asset.location_id, "source_kind": "background_asset", "kind": "background", "name": location.name, "uri": asset.uri, "mime_type": asset.mime_type, "version": asset.version, "review_status": review.status if review else "pending", "review_notes": review.notes if review else "", "selected": bool(review and review.selected), "active": bool(active and active.id == asset.id)})
     characters = {character.id: character for character in db.scalars(select(Character).where(Character.project_id == project_id)).all()}
     for asset in db.scalars(select(MediaAsset).where(MediaAsset.project_id == project_id, MediaAsset.character_id.is_not(None)).order_by(MediaAsset.id.desc())).all():
-        assets.append({"id": asset.id, "source_kind": "media_asset", "kind": "character", "name": characters[asset.character_id].name, "uri": asset.uri, "version": asset.version})
+        review = review_for("character", asset.id, db)
+        active = choose_reviewed_asset("character", db.scalars(select(MediaAsset).where(MediaAsset.character_id == asset.character_id, MediaAsset.kind == asset.kind).order_by(MediaAsset.version.desc(), MediaAsset.id.desc())).all(), db)
+        assets.append({"id": asset.id, "asset_type": "character", "group_id": asset.character_id, "source_kind": "media_asset", "kind": "character", "name": characters[asset.character_id].name, "uri": asset.uri, "mime_type": asset.mime_type, "version": asset.version, "review_status": review.status if review else "pending", "review_notes": review.notes if review else "", "selected": bool(review and review.selected), "active": bool(active and active.id == asset.id)})
     storyboard_rows = db.execute(select(StoryboardAsset, Shot).join(Shot, StoryboardAsset.shot_id == Shot.id).join(Scene, Shot.scene_id == Scene.id).where(Scene.project_id == project_id).order_by(StoryboardAsset.id.desc())).all()
     for asset, shot in storyboard_rows:
         assets.append({"id": asset.id, "source_kind": "storyboard_asset", "kind": "reference", "name": f"Storyboard · {shot.title}", "uri": asset.uri, "version": asset.version})
+    for item in (entry for entry in assets if entry["source_kind"] == "storyboard_asset"):
+        asset = db.get(StoryboardAsset, item["id"])
+        review = review_for("storyboard", asset.id, db)
+        active = choose_reviewed_asset("storyboard", db.scalars(select(StoryboardAsset).where(StoryboardAsset.shot_id == asset.shot_id).order_by(StoryboardAsset.version.desc(), StoryboardAsset.id.desc())).all(), db)
+        item.update({"asset_type": "storyboard", "group_id": asset.shot_id, "mime_type": asset.mime_type, "review_status": review.status if review else "pending", "review_notes": review.notes if review else "", "selected": bool(review and review.selected), "active": bool(active and active.id == asset.id)})
     return assets
+
+
+@app.get("/api/projects/{project_id}/asset-reviews")
+def get_asset_reviews(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    assets = project_asset_library(project_id, db)
+    return {"project_id": project_id, "assets": assets, "pending": sum(1 for item in assets if item["review_status"] == "pending"), "approved": sum(1 for item in assets if item["review_status"] == "approved"), "rejected": sum(1 for item in assets if item["review_status"] == "rejected")}
+
+
+@app.put("/api/assets/{asset_type}/{asset_id}/review", response_model=AssetReviewRead)
+def update_asset_review(asset_type: str, asset_id: int, payload: AssetReviewUpdate, db: Session = Depends(get_db)):
+    asset, project_id, _, source_kind, group_assets = asset_group(asset_type, asset_id, db)
+    active_before = choose_reviewed_asset(asset_type, group_assets, db).id == asset_id
+    if payload.selected and payload.status == "rejected":
+        raise HTTPException(422, "A rejected asset cannot be selected for production")
+    review = review_for(asset_type, asset_id, db)
+    if review is None:
+        review = AssetReview(project_id=project_id, asset_type=asset_type, asset_id=asset_id)
+        db.add(review)
+    review.status = "approved" if payload.selected else payload.status
+    review.notes = payload.notes
+    review.reviewed_at = datetime.now(timezone.utc)
+    affected = set()
+    if payload.selected:
+        group_ids = [item.id for item in group_assets]
+        for other in db.scalars(select(AssetReview).where(AssetReview.asset_type == asset_type, AssetReview.asset_id.in_(group_ids))).all():
+            other.selected = other.asset_id == asset_id
+        review.selected = True
+        layers = db.scalars(select(CompositionLayer).where(CompositionLayer.source_kind == source_kind, CompositionLayer.source_asset_id.in_(group_ids))).all()
+        for layer in layers:
+            if layer.source_asset_id == asset_id:
+                continue
+            layer.source_asset_id, layer.source_uri = asset_id, asset.uri
+            affected.add(layer.composition_id)
+        for composition_id in affected:
+            composition = db.get(ShotComposition, composition_id)
+            composition.version += 1
+            composition.status = "draft"
+    else:
+        review.selected = False
+        if payload.status == "rejected" and active_before:
+            db.flush()
+            fallback = choose_reviewed_asset(asset_type, group_assets, db)
+            if fallback and fallback.id != asset_id:
+                layers = db.scalars(select(CompositionLayer).where(CompositionLayer.source_kind == source_kind, CompositionLayer.source_asset_id == asset_id)).all()
+                for layer in layers:
+                    layer.source_asset_id, layer.source_uri = fallback.id, fallback.uri
+                    affected.add(layer.composition_id)
+                for composition_id in affected:
+                    composition = db.get(ShotComposition, composition_id)
+                    composition.version += 1
+                    composition.status = "draft"
+    db.commit(); db.refresh(review)
+    return {"id": review.id, "project_id": project_id, "asset_type": asset_type, "asset_id": asset_id, "status": review.status, "notes": review.notes, "selected": review.selected, "active": choose_reviewed_asset(asset_type, group_assets, db).id == asset_id, "affected_compositions": sorted(affected)}
 
 
 @app.get("/api/projects/{project_id}/compositor", response_model=CompositorStudioRead)
@@ -827,12 +933,12 @@ def build_shot_composition(shot_id: int, db: Session = Depends(get_db)):
     db.add(composition); db.flush()
     z_index = 0
     location = db.get(WorldLocation, shot.plan.location_id) if shot.plan and shot.plan.location_id else None
-    background = db.scalar(select(BackgroundAsset).where(BackgroundAsset.location_id == location.id).order_by(BackgroundAsset.version.desc(), BackgroundAsset.id.desc())) if location else None
+    background = choose_reviewed_asset("background", db.scalars(select(BackgroundAsset).where(BackgroundAsset.location_id == location.id).order_by(BackgroundAsset.version.desc(), BackgroundAsset.id.desc())).all(), db) if location else None
     db.add(CompositionLayer(composition_id=composition.id, name=location.name if location else "Background plate", kind="background", source_kind="background_asset" if background else "placeholder", source_asset_id=background.id if background else None, source_uri=background.uri if background else "", z_index=z_index, transform={"x": .5, "y": .5, "scale": 1, "rotation": 0}))
     z_index += 10
     for character_id in (shot.plan.character_ids if shot.plan else []):
         character = db.get(Character, character_id)
-        asset = db.scalar(select(MediaAsset).where(MediaAsset.character_id == character_id).order_by(MediaAsset.version.desc(), MediaAsset.id.desc()))
+        asset = choose_reviewed_asset("character", db.scalars(select(MediaAsset).where(MediaAsset.character_id == character_id).order_by(MediaAsset.version.desc(), MediaAsset.id.desc())).all(), db)
         db.add(CompositionLayer(composition_id=composition.id, name=character.name, kind="character", source_kind="media_asset" if asset else "placeholder", source_asset_id=asset.id if asset else None, source_uri=asset.uri if asset else "", z_index=z_index, transform={"x": .5, "y": .58, "scale": 1, "rotation": 0}, animation={"entrance": "hold", "exit": "hold"}))
         z_index += 10
     db.commit()

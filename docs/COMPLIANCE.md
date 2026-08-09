@@ -2,6 +2,12 @@
 
 Kizuna treats compliance as a production gate, not a one-time disclaimer. Story, Creative DNA, characters, worlds, shots, edit, sound, finishing, and master stages each receive a content hash. A passing scan applies only to that exact version; edits automatically make the prior result stale.
 
+## Original-work-only policy
+
+Kizuna exists to help creators realize original stories and delegate parts of production that would otherwise be inaccessible. It does not create or support fan fiction, unofficial sequels, unauthorized adaptations, crossovers, or other derivative productions based on known properties. Kizuna appreciates fan fiction as an art form, but supporting it is outside the platform's purpose and risk boundaries.
+
+Explicit fan-fiction requests are rejected before they enter creative workflows. Imported or legacy production data is checked again during stage compliance scans. A fan-fiction policy finding is a non-overridable blocker; the creator must replace it with original characters, worlds, and story material.
+
 The built-in scanner currently detects direct-copy and false-affiliation instructions, including requests to imitate a named source exactly, reproduce protected expression, lift melodies or recordings, or claim an official relationship. It also compares checksums inside the production to surface duplicate source files. Findings identify the triggering material and suggest an original or properly licensed alternative.
 
 Administrators can connect text, trademark, visual, and audio services through the provider-neutral [scanner protocol](COMPLIANCE_SCANNERS.md). A configured service is part of the gate: if it is unavailable or returns invalid data, the scan fails closed and that outage cannot be manually overridden. External match findings can only pass through an evidence-backed reviewer decision, and every decision is added to the audit chain.
@@ -19,6 +25,8 @@ Strict gates are enabled by default. High-resolution continuous or farm masters 
 Preview renders remain available so creators can revise flagged work. Failed or stale material cannot be released through Kizuna.
 
 The asset rights register records source type, rights holder, license, permitted uses, territories, expiry, and evidence references against indexed production files. Licensed, commissioned, stock, and public-domain claims require evidence. Adding or changing a rights record or finding resolution makes an older release clearance stale.
+
+Verified professionals can submit identity evidence and specific prior-work claims. An exact scanner match to an independently verified identifier or title becomes a documented self-match rather than an infringement blocker. This is narrow and evidence-bound: professional status is not a general exemption, approximate matches still receive ordinary review, and the no-fan-fiction rule remains in force. See [professional verification](PROFESSIONAL_VERIFICATION.md).
 
 ## Product-facing legal notice
 

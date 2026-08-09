@@ -115,6 +115,58 @@ def test_asset_rights_register_requires_license_evidence_and_updates_audit(clien
     assert any(event["category"] == "rights" and event["action"] == "asset_rights_recorded" for event in audit)
 
 
+def test_fan_fiction_is_a_non_overridable_creation_red_line(client):
+    rejected = client.post("/api/projects", json={"title": "Known Property", "logline": "Create fan fiction based on a famous space saga."})
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"]["code"] == "fan_fiction_not_supported"
+
+    project_id = client.post("/api/projects", json={"title": "Original Horizon", "logline": "A lighthouse keeper maps storms that remember the future."}).json()["id"]
+    story = client.put(f"/api/projects/{project_id}/story", json={"premise": "Write a fanfic about characters from a famous franchise.", "themes": ["memory"]})
+    assert story.status_code == 422
+    assistant = client.post(f"/api/projects/{project_id}/assistant", json={"message": "Create an unofficial sequel to a known movie.", "page": "writer", "screen_context": {}})
+    assert assistant.status_code == 422
+
+
+def test_professional_verification_softens_only_exact_verified_self_matches(client, monkeypatch):
+    import json
+
+    profile_payload = {"display_name": "Avery North", "legal_name": "Avery North", "identity_type": "individual", "professional_role": "Writer and director", "website": "https://creator.example", "biography": "Independent filmmaker.", "verification_evidence": ["guild:avery-north", "official-site:creator.example"]}
+    submitted = client.put("/api/settings/creator-profile", json=profile_payload)
+    assert submitted.status_code == 200 and submitted.json()["profile"]["verification_status"] == "pending"
+    claim = client.post("/api/settings/creator-profile/work-claims", json={"title": "Signal Garden", "work_type": "film", "credited_role": "Writer and director", "release_year": 2024, "external_ids": ["catalog:signal-garden-2024"], "evidence_refs": ["contract-vault:sg-1", "credits:sg-2024"], "authorization_scope": "May create, revise, and produce new authorized editions and continuations."})
+    assert claim.status_code == 201
+    claim_id = claim.json()["claims"][0]["id"]
+
+    monkeypatch.setattr("app.main.settings.verification_admin_key", "review-secret")
+    headers = {"X-Kizuna-Verification-Key": "review-secret"}
+    too_early = client.post(f"/api/internal/professional-verification/work-claims/{claim_id}", headers=headers, json={"status": "verified", "reviewer": "Kizuna Trust", "notes": "Credits and rights records were independently checked."})
+    assert too_early.status_code == 409
+    assert client.post("/api/internal/professional-verification/profile", headers=headers, json={"status": "verified", "reviewer": "Kizuna Trust", "notes": "Identity and professional credits were independently checked."}).status_code == 200
+    verified = client.post(f"/api/internal/professional-verification/work-claims/{claim_id}", headers=headers, json={"status": "verified", "reviewer": "Kizuna Trust", "notes": "Ownership and authorization scope were independently checked."})
+    assert verified.status_code == 200 and verified.json()["claims"][0]["verification_status"] == "verified"
+
+    captured = {}
+    class ScannerResponse:
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def read(self, _limit): return json.dumps({"status": "review", "matches": [{"severity": "review", "source": "Signal Garden", "source_id": "catalog:signal-garden-2024", "evidence": "The new outline resembles the creator's prior film."}]}).encode()
+    def scanner(request, **_kwargs):
+        captured.update(json.loads(request.data.decode()))
+        return ScannerResponse()
+    monkeypatch.setattr("app.compliance.urlopen", scanner)
+    client.put("/api/settings/integrations/compliance-text", json={"display_name": "Studio Text Scanner", "category": "compliance", "mode": "api", "endpoint": "https://scanner.test", "model": "", "secret_env_var": "", "configuration": {"categories": ["text"]}})
+    project_id = client.post("/api/projects", json={"title": "Authorized Return", "logline": "A gardener receives a signal from an orchard orbiting a silent star."}).json()["id"]
+    scan = client.post(f"/api/projects/{project_id}/compliance/scan", json={"stage": "story"}).json()["scans"][0]
+    match = next(item for item in scan["findings"] if item.get("verified_claim_id") == claim_id)
+    assert scan["status"] == "pass" and match["category"] == "verified_prior_work" and match["severity"] == "warning"
+    assert captured["verified_professional_works"][0]["claim_id"] == claim_id
+
+    resubmitted = client.put("/api/settings/creator-profile", json={**profile_payload, "biography": "Independent filmmaker and animation director."}).json()
+    assert resubmitted["profile"]["verification_status"] == "pending"
+    assert resubmitted["claims"][0]["verification_status"] == "pending"
+    assert client.post("/api/projects", json={"title": "Still Prohibited", "logline": "Make fan fiction based on a known superhero property."}).status_code == 422
+
+
 def test_integration_settings_support_builtin_and_custom_tools(client):
     settings_response = client.get("/api/settings/integrations")
     assert settings_response.status_code == 200

@@ -83,6 +83,7 @@ def create_animator_proposal(context: dict[str, Any], request: AnimatorProposalR
         "You are the animation director for an original 2D anime production. Return a practical motion proposal in the supplied schema. "
         "Use economical posing, readable acting, purposeful camera movement, staggered secondary action, stable continuity, and the supplied layer IDs and names. "
         "All end values are normalized compositor controls. Never add, remove, rename, or invent layers. Never imitate a living animator or reproduce protected characters or shots. "
+        "Do not animate fan fiction or unofficial derivative works based on known properties. "
         f"Creator standing direction: {instructions or 'Prioritize readable performance, continuity, and production-efficient motion.'}"
     )
     try:

@@ -35,6 +35,7 @@ pytest
 - Automatic metadata-first media lifecycle with independent image/video/audio working proxies, checksum-verified Hive replication, freshness-gated cleanup eligibility, and creator approval that never silently deletes an original
 - A durable database-backed job ledger with idempotency, progress history, cancellation, bounded retries, expired-lease recovery, optional Redis dispatch, and a separate production worker; local development can execute working-media jobs inline
 - A stage-aware Compliance Center with preliminary checks, provider-neutral text/trademark/visual/audio scanners, fail-closed outages, evidence-backed finding resolution, an asset rights register, stale-scan invalidation, strict release gates, and hash-chained audit events
+- An enforced original-work-only charter that rejects fan-fiction and unofficial derivative requests, plus independently reviewable professional identities and exact prior-work claims for creators working with their own catalog
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
 - Authenticated network workers with capability reporting, heartbeats, leased jobs, retries, and artifact upload
 - Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, background assets, and a Background Artist bot that can propose or apply a production-ready location bible before optionally queuing background generation
@@ -79,5 +80,5 @@ See [multi-window workspaces](docs/MULTI_WINDOW.md) for multi-monitor usage and 
 See [production storage and delivery](docs/STORAGE.md) for backup and retention settings.
 See [metadata-first media storage](docs/MEDIA_STORAGE.md) for local originals, lightweight previews, and Hive residency tracking.
 See [durable production jobs](docs/JOBS.md) for retries, cancellation, worker recovery, Redis dispatch, and local inline behavior.
-See [originality, rights, and release compliance](docs/COMPLIANCE.md) for enforced gates, audit limitations, and the external matching roadmap.
+See [originality, rights, and release compliance](docs/COMPLIANCE.md) for enforced gates and audit limitations, and [professional verification](docs/PROFESSIONAL_VERIFICATION.md) for creator identity and prior-work claims.
 See [picture and audio editing](docs/EDITING.md) for tactile edit controls.

@@ -13,7 +13,15 @@ Kizuna sends `POST /scan` by default with `Content-Type: application/json` and `
   "stage": "story",
   "categories": ["text", "trademark"],
   "subject_hash": "sha256-of-current-stage",
-  "content": {"project": {}, "story": {}}
+  "content": {"project": {}, "story": {}},
+  "verified_professional_works": [
+    {
+      "claim_id": 7,
+      "title": "Signal Garden",
+      "external_ids": ["catalog:signal-garden-2024"],
+      "authorization_scope": "Verified scope supplied by the reviewer"
+    }
+  ]
 }
 ```
 
@@ -31,6 +39,7 @@ Return a JSON object no larger than 1 MB. `status` may be `pass`, `review`, or `
       "severity": "review",
       "score": 0.91,
       "source": "Corpus record or registry result",
+      "source_id": "catalog:signal-garden-2024",
       "url": "https://evidence.example/result/123",
       "message": "A possible passage match needs review.",
       "evidence": "Short provider-supplied comparison evidence.",
@@ -41,6 +50,8 @@ Return a JSON object no larger than 1 MB. `status` may be `pass`, `review`, or `
 ```
 
 Kizuna sanitizes and bounds provider data, stores request and response hashes, preserves match evidence, and records the provider run. Provider errors, invalid responses, timeouts, or responses over 1 MB block the stage. Availability failures cannot be cleared as false positives; the service must be restored or disabled and the current stage scanned again.
+
+Scanners should return a stable `source_id` whenever possible. Kizuna only treats a result as a verified professional self-match when that identifier exactly matches an independently verified work claim, or when the normalized source title exactly matches the verified claim title. A fuzzy name or general professional badge never suppresses a finding.
 
 ## Categories and configuration
 

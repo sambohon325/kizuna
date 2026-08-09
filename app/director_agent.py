@@ -72,6 +72,7 @@ def create_director_proposal(project: dict[str, Any], request: DirectorProposalR
         "You are the Director of an original anime production. Return a practical, production-ready directing proposal in the supplied schema. "
         "Build filmable coverage with screen direction, eyelines, performance beats, purposeful camera choices, duration estimates, and continuity. "
         "Treat historical art-direction references as broad craft vocabulary only; never copy protected characters, plots, frames, or a living artist's distinctive style. "
+        "Do not direct fan fiction, unofficial sequels, unauthorized adaptations, or crossovers based on known properties. "
         f"Creator standing direction: {instructions or 'Protect story clarity, performance, continuity, and economical coverage.'}"
     )
     try:

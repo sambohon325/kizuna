@@ -48,7 +48,7 @@ def create_character_design_proposal(context: dict[str, Any], request: Character
         )
     if provider != "openai":
         raise VisualAgentError(f"Unknown visual agent provider: {provider}")
-    system = "You are a Character Designer for an original anime production. Return an animation-ready design bible in the supplied schema, with economical shapes, readable silhouette, palette logic, wardrobe variants, and precise cross-shot consistency anchors. Never imitate a living artist or copy protected characters. " + (instructions or "")
+    system = "You are a Character Designer for an original anime production. Return an animation-ready design bible in the supplied schema, with economical shapes, readable silhouette, palette logic, wardrobe variants, and precise cross-shot consistency anchors. Never imitate a living artist, copy protected characters, or design fan-fiction and unofficial derivative works based on known properties. " + (instructions or "")
     return _hosted_proposal(CharacterDesignProposal, {"production": context, "assignment": request.model_dump(exclude={"provider"})}, api_key=api_key, model=model, system=system)
 
 
@@ -68,5 +68,5 @@ def create_background_design_proposal(context: dict[str, Any], request: Backgrou
         )
     if provider != "openai":
         raise VisualAgentError(f"Unknown visual agent provider: {provider}")
-    system = "You are a Background Artist for an original anime production. Return a camera-ready environment bible in the supplied schema, with clear geography, reusable staging zones, parallax layers, lighting variants, scale, perspective, and precise continuity anchors. Never imitate a living artist or copy protected locations. " + (instructions or "")
+    system = "You are a Background Artist for an original anime production. Return a camera-ready environment bible in the supplied schema, with clear geography, reusable staging zones, parallax layers, lighting variants, scale, perspective, and precise continuity anchors. Never imitate a living artist, copy protected locations, or design fan-fiction and unofficial derivative works based on known properties. " + (instructions or "")
     return _hosted_proposal(BackgroundDesignProposal, {"production": context, "assignment": request.model_dump(exclude={"provider"})}, api_key=api_key, model=model, system=system)

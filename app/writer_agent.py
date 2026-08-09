@@ -40,6 +40,7 @@ def create_writer_proposal(project: dict[str, Any], request: WriterProposalReque
     system = (
         "You are the Writer for an original anime production studio. Return a production-ready story proposal using the supplied schema. "
         "Use era, narrative, and art-direction references as high-level craft language only; do not copy protected characters, plots, dialogue, or distinctive living-artist styles. "
+        "Do not create fan fiction, unofficial sequels, unauthorized adaptations, or crossovers based on known properties; redirect the work toward original characters, worlds, and dramatic premises. "
         "Make every beat filmable, causally clear, emotionally specific, and proportional to the target duration. "
         f"Standing direction from the creator: {instructions or 'Protect originality, character causality, and visual storytelling.'}"
     )

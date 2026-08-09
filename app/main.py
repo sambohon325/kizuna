@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
@@ -24,11 +24,11 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
-from app.compliance import COMPLIANCE_STAGES, append_audit_event, compliance_overview, latest_current_scan, policy_for as compliance_policy_for, require_release_clearance, resolve_finding, run_stage_scan, save_asset_rights, scan_passes
+from app.compliance import COMPLIANCE_STAGES, append_audit_event, compliance_overview, fan_fiction_violation, latest_current_scan, policy_for as compliance_policy_for, require_release_clearance, resolve_finding, run_stage_scan, save_asset_rights, scan_passes
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
@@ -46,6 +46,28 @@ from app.editor_agent import EditorAgentError, create_editor_proposal
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.app_name, version="0.1.0")
+
+
+@app.middleware("http")
+async def enforce_original_work_only(request: Request, call_next):
+    creative_roots = ("/api/projects", "/api/characters", "/api/locations", "/api/scenes", "/api/shots", "/api/audio-cues", "/api/timelines")
+    excluded_fragments = ("/compliance/", "/audit-ledger", "/backups", "/delivery-links", "/storage-policy", "/media-")
+    content_type = request.headers.get("content-type", "")
+    if request.method in {"POST", "PUT", "PATCH"} and request.url.path.startswith(creative_roots) and not any(item in request.url.path for item in excluded_fragments) and "application/json" in content_type:
+        body = await request.body()
+        try:
+            payload = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            payload = {}
+        violation = fan_fiction_violation(payload)
+        if violation:
+            return JSONResponse(status_code=422, content={"detail": {"code": "fan_fiction_not_supported", "message": "Kizuna only supports original productions and cannot create fan fiction or unofficial derivative works.", "guidance": violation["guidance"]}})
+
+        async def receive_body():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request._receive = receive_body
+    return await call_next(request)
 static_dir = Path(__file__).parent / "static"
 render_dir = Path(settings.render_directory).resolve()
 render_dir.mkdir(parents=True, exist_ok=True)
@@ -416,6 +438,79 @@ def delete_custom_integration(integration_key: str, db: Session = Depends(get_db
     if not profile:
         raise HTTPException(404, "Integration not found")
     db.delete(profile); db.commit()
+
+
+def professional_profile_response(db: Session) -> dict:
+    identity = db.scalar(select(ProfessionalIdentity).order_by(ProfessionalIdentity.id).limit(1))
+    claims = db.scalars(select(ProfessionalWorkClaim).where(ProfessionalWorkClaim.identity_id == identity.id).order_by(ProfessionalWorkClaim.id.desc())).all() if identity else []
+    return {
+        "profile": {"id": identity.id, "display_name": identity.display_name, "legal_name": identity.legal_name, "identity_type": identity.identity_type, "professional_role": identity.professional_role, "website": identity.website, "biography": identity.biography, "verification_status": identity.verification_status, "verification_evidence": identity.verification_evidence, "reviewed_by": identity.reviewed_by, "review_notes": identity.review_notes, "submitted_at": identity.submitted_at, "verified_at": identity.verified_at} if identity else None,
+        "claims": [{"id": item.id, "title": item.title, "work_type": item.work_type, "credited_role": item.credited_role, "release_year": item.release_year, "external_ids": item.external_ids, "evidence_refs": item.evidence_refs, "authorization_scope": item.authorization_scope, "verification_status": item.verification_status, "reviewed_by": item.reviewed_by, "review_notes": item.review_notes, "submitted_at": item.submitted_at, "verified_at": item.verified_at} for item in claims],
+        "policy": {"original_work_only": True, "fan_fiction_supported": False, "statement": "Kizuna exists to help creators realize original stories. We appreciate fan fiction as an art form, but Kizuna does not create or support fan fiction based on known properties."},
+        "verification_review_configured": bool(settings.verification_admin_key),
+    }
+
+
+@app.get("/api/settings/creator-profile")
+def get_professional_profile(db: Session = Depends(get_db)):
+    return professional_profile_response(db)
+
+
+@app.put("/api/settings/creator-profile")
+def submit_professional_profile(payload: ProfessionalIdentityInput, db: Session = Depends(get_db)):
+    identity = db.scalar(select(ProfessionalIdentity).order_by(ProfessionalIdentity.id).limit(1))
+    if identity is None:
+        identity = ProfessionalIdentity(); db.add(identity); db.flush()
+    for key, value in payload.model_dump().items(): setattr(identity, key, value)
+    identity.verification_status, identity.submitted_at, identity.verified_at = "pending", utcnow(), None
+    identity.reviewed_by, identity.review_notes = "", ""
+    for claim in db.scalars(select(ProfessionalWorkClaim).where(ProfessionalWorkClaim.identity_id == identity.id, ProfessionalWorkClaim.verification_status == "verified")).all():
+        claim.verification_status, claim.verified_at = "pending", None
+    db.add(ProfessionalVerificationEvent(identity_id=identity.id, action="identity_submitted", details={"evidence_refs": payload.verification_evidence}))
+    db.commit()
+    return professional_profile_response(db)
+
+
+@app.post("/api/settings/creator-profile/work-claims", status_code=status.HTTP_201_CREATED)
+def submit_professional_work_claim(payload: ProfessionalWorkClaimInput, db: Session = Depends(get_db)):
+    identity = db.scalar(select(ProfessionalIdentity).order_by(ProfessionalIdentity.id).limit(1))
+    if identity is None: raise HTTPException(409, "Submit the professional identity profile first")
+    claim = ProfessionalWorkClaim(identity_id=identity.id, **payload.model_dump())
+    db.add(claim); db.flush()
+    db.add(ProfessionalVerificationEvent(identity_id=identity.id, work_claim_id=claim.id, action="work_claim_submitted", details={"title": claim.title, "external_ids": claim.external_ids, "evidence_refs": claim.evidence_refs}))
+    db.commit()
+    return professional_profile_response(db)
+
+
+def require_verification_admin(key: str | None) -> None:
+    if not settings.verification_admin_key: raise HTTPException(503, "Professional verification review is not configured")
+    if not key or not secrets.compare_digest(key, settings.verification_admin_key): raise HTTPException(403, "Verification reviewer credentials are invalid")
+
+
+@app.post("/api/internal/professional-verification/profile")
+def review_professional_profile(payload: ProfessionalVerificationDecision, x_kizuna_verification_key: str | None = Header(default=None), db: Session = Depends(get_db)):
+    require_verification_admin(x_kizuna_verification_key)
+    identity = db.scalar(select(ProfessionalIdentity).order_by(ProfessionalIdentity.id).limit(1))
+    if identity is None: raise HTTPException(404, "Professional profile not found")
+    identity.verification_status, identity.reviewed_by, identity.review_notes = payload.status, payload.reviewer.strip(), payload.notes.strip()
+    identity.verified_at = utcnow() if payload.status == "verified" else None
+    db.add(ProfessionalVerificationEvent(identity_id=identity.id, action=f"identity_{payload.status}", actor=payload.reviewer.strip(), details={"notes": payload.notes.strip()}))
+    db.commit()
+    return professional_profile_response(db)
+
+
+@app.post("/api/internal/professional-verification/work-claims/{claim_id}")
+def review_professional_work_claim(claim_id: int, payload: ProfessionalVerificationDecision, x_kizuna_verification_key: str | None = Header(default=None), db: Session = Depends(get_db)):
+    require_verification_admin(x_kizuna_verification_key)
+    claim = db.get(ProfessionalWorkClaim, claim_id)
+    if claim is None: raise HTTPException(404, "Professional work claim not found")
+    identity = db.get(ProfessionalIdentity, claim.identity_id)
+    if payload.status == "verified" and (identity is None or identity.verification_status != "verified"): raise HTTPException(409, "Verify the professional identity before verifying individual work claims")
+    claim.verification_status, claim.reviewed_by, claim.review_notes = payload.status, payload.reviewer.strip(), payload.notes.strip()
+    claim.verified_at = utcnow() if payload.status == "verified" else None
+    db.add(ProfessionalVerificationEvent(identity_id=claim.identity_id, work_claim_id=claim.id, action=f"work_claim_{payload.status}", actor=payload.reviewer.strip(), details={"notes": payload.notes.strip()}))
+    db.commit()
+    return professional_profile_response(db)
 
 
 @app.get("/api/projects", response_model=list[ProjectRead])

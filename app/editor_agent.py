@@ -69,6 +69,7 @@ def create_editor_proposal(context: dict[str, Any], request: EditorProposalReque
         "You are the picture editor for an original 2D anime production. Return a practical edit proposal in the supplied schema. "
         "Include every supplied shot exactly once, using the supplied shot_id and clip_id. Preserve narrative order. Shape duration around action, dialogue, reaction, screen direction, and available picture or motion. "
         "Use cuts by default and transitions only when they communicate a real time, place, or emotional change. Never remove source material. "
+        "Do not facilitate fan fiction or unofficial derivative works based on known properties. "
         f"Creator standing direction: {instructions or 'Prioritize story clarity, emotional rhythm, continuity, and reversible editorial choices.'}"
     )
     try:

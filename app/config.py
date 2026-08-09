@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     openai_animator_model: str = "gpt-5.6-terra"
     editor_provider: str = "simulation"
     openai_editor_model: str = "gpt-5.6-terra"
+    verification_admin_key: str = ""
 
 
 settings = Settings()

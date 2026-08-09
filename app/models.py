@@ -897,6 +897,58 @@ class AssetRightsRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class ProfessionalIdentity(Base):
+    __tablename__ = "professional_identities"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(160), default="")
+    legal_name: Mapped[str] = mapped_column(String(200), default="")
+    identity_type: Mapped[str] = mapped_column(String(48), default="individual")
+    professional_role: Mapped[str] = mapped_column(String(160), default="")
+    website: Mapped[str] = mapped_column(String(1000), default="")
+    biography: Mapped[str] = mapped_column(Text, default="")
+    verification_status: Mapped[str] = mapped_column(String(32), default="unsubmitted")
+    verification_evidence: Mapped[list[str]] = mapped_column(JSON, default=list)
+    reviewed_by: Mapped[str] = mapped_column(String(160), default="")
+    review_notes: Mapped[str] = mapped_column(Text, default="")
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ProfessionalWorkClaim(Base):
+    __tablename__ = "professional_work_claims"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    identity_id: Mapped[int] = mapped_column(ForeignKey("professional_identities.id"))
+    title: Mapped[str] = mapped_column(String(300))
+    work_type: Mapped[str] = mapped_column(String(48))
+    credited_role: Mapped[str] = mapped_column(String(160))
+    release_year: Mapped[int | None] = mapped_column(nullable=True)
+    external_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    evidence_refs: Mapped[list[str]] = mapped_column(JSON, default=list)
+    authorization_scope: Mapped[str] = mapped_column(Text, default="")
+    verification_status: Mapped[str] = mapped_column(String(32), default="pending")
+    reviewed_by: Mapped[str] = mapped_column(String(160), default="")
+    review_notes: Mapped[str] = mapped_column(Text, default="")
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ProfessionalVerificationEvent(Base):
+    __tablename__ = "professional_verification_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    identity_id: Mapped[int] = mapped_column(ForeignKey("professional_identities.id"))
+    work_claim_id: Mapped[int | None] = mapped_column(ForeignKey("professional_work_claims.id"), nullable=True)
+    action: Mapped[str] = mapped_column(String(80))
+    actor: Mapped[str] = mapped_column(String(160), default="creator")
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class ComplianceClearance(Base):
     __tablename__ = "compliance_clearances"
 

@@ -1051,6 +1051,32 @@ class AssetRightsInput(BaseModel):
         return self
 
 
+class ProfessionalIdentityInput(BaseModel):
+    display_name: str = Field(min_length=2, max_length=160)
+    legal_name: str = Field(min_length=2, max_length=200)
+    identity_type: str = Field(pattern="^(individual|studio|estate|authorized_representative)$")
+    professional_role: str = Field(min_length=2, max_length=160)
+    website: str = Field(default="", max_length=1000)
+    biography: str = Field(default="", max_length=3000)
+    verification_evidence: list[str] = Field(min_length=1, max_length=20)
+
+
+class ProfessionalWorkClaimInput(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    work_type: str = Field(pattern="^(film|series|episode|character|story|artwork|music|voice|other)$")
+    credited_role: str = Field(min_length=2, max_length=160)
+    release_year: int | None = Field(default=None, ge=1800, le=2200)
+    external_ids: list[str] = Field(default_factory=list, max_length=20)
+    evidence_refs: list[str] = Field(min_length=1, max_length=20)
+    authorization_scope: str = Field(min_length=10, max_length=2000)
+
+
+class ProfessionalVerificationDecision(BaseModel):
+    status: str = Field(pattern="^(verified|rejected)$")
+    reviewer: str = Field(min_length=2, max_length=160)
+    notes: str = Field(min_length=10, max_length=2000)
+
+
 class ProjectBackupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

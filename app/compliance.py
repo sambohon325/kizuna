@@ -29,6 +29,8 @@ from app.models import (
     CompositeRender,
     MasterExportJob,
     Project,
+    ProfessionalIdentity,
+    ProfessionalWorkClaim,
     Scene,
     Shot,
     ShotComposition,
@@ -63,6 +65,13 @@ IMITATION_PATTERNS = [
     (r"\b(?:use|sample|lift) (?:the )?(?:melody|recording|dialogue|scene|character) from\b", "Use licensed material with documented rights or create a new source element."),
     (r"\b(?:official|authorized) (?:sequel|adaptation|version|soundtrack)\b", "Remove affiliation claims unless written authorization is documented."),
 ]
+FAN_FICTION_PATTERNS = [
+    (r"\b(?:write|make|create|generate|develop|produce)\s+(?:a\s+|an\s+|some\s+)?(?:fan\s*fiction|fanfic)\b", "Kizuna does not create fan fiction. Start from original characters, settings, and story premises."),
+    (r"\b(?:fan\s*fiction|fanfic)\s+(?:of|about|for|based\s+on)\b", "Kizuna does not create fan fiction based on known properties."),
+    (r"\b(?:unofficial|unauthorized)\s+(?:sequel|prequel|spin[ -]?off|adaptation|crossover)\b", "Kizuna cannot develop an unofficial derivative production."),
+    (r"\b(?:use|include|bring\s+back)\s+(?:the\s+)?(?:characters?|world|universe)\s+from\b", "Create original characters and worlds instead of reusing a known property."),
+    (r"\bcrossover\s+(?:with|between)\b", "Kizuna cannot create crossovers from known properties."),
+]
 
 
 def utcnow() -> datetime:
@@ -71,6 +80,38 @@ def utcnow() -> datetime:
 
 def canonical_hash(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str, separators=(",", ":")).encode()).hexdigest()
+
+
+def fan_fiction_violation(value: Any) -> dict[str, str] | None:
+    for text in _all_strings(value):
+        normalized = " ".join(text.split())
+        for pattern, guidance in FAN_FICTION_PATTERNS:
+            match = re.search(pattern, normalized, flags=re.IGNORECASE)
+            if match:
+                return {"evidence": normalized[max(0, match.start() - 55):match.end() + 90], "guidance": guidance}
+    return None
+
+
+def verified_professional_claims(db: Session) -> list[ProfessionalWorkClaim]:
+    identity = db.scalar(select(ProfessionalIdentity).where(ProfessionalIdentity.verification_status == "verified").order_by(ProfessionalIdentity.id).limit(1))
+    if identity is None:
+        return []
+    return db.scalars(select(ProfessionalWorkClaim).where(ProfessionalWorkClaim.identity_id == identity.id, ProfessionalWorkClaim.verification_status == "verified").order_by(ProfessionalWorkClaim.id)).all()
+
+
+def professional_context(db: Session) -> list[dict[str, Any]]:
+    return [{"claim_id": item.id, "title": item.title, "work_type": item.work_type, "credited_role": item.credited_role, "release_year": item.release_year, "external_ids": item.external_ids, "authorization_scope": item.authorization_scope} for item in verified_professional_claims(db)]
+
+
+def _verified_self_match(match: dict[str, Any], claims: list[ProfessionalWorkClaim]) -> dict[str, Any]:
+    source_id = str(match.get("source_id", "")).strip().casefold()
+    source_title = re.sub(r"\W+", " ", str(match.get("source", "")).casefold()).strip()
+    for claim in claims:
+        identifiers = {str(item).strip().casefold() for item in claim.external_ids}
+        claim_title = re.sub(r"\W+", " ", claim.title.casefold()).strip()
+        if (source_id and source_id in identifiers) or (source_title and claim_title and source_title == claim_title):
+            return {**match, "category": "verified_prior_work", "severity": "warning", "message": "Match aligns with a verified professional work claim.", "suggestion": "Confirm this production stays within the verified authorization scope and retain the supporting evidence.", "verified_claim_id": claim.id, "authorization_scope": claim.authorization_scope}
+    return match
 
 
 def policy_for(project_id: int, db: Session) -> CompliancePolicy:
@@ -213,6 +254,7 @@ def _safe_match(provider_key: str, category: str, value: Any, position: int) -> 
         "suggestion": str(raw.get("suggestion", "Review the source match, revise the material, or document applicable rights."))[:1000],
         "provider_key": provider_key,
         "source": source,
+        "source_id": str(raw.get("source_id", raw.get("external_id", "")))[:300],
         "source_url": source_url,
         "score": score,
         "resolvable": True,
@@ -221,7 +263,7 @@ def _safe_match(provider_key: str, category: str, value: Any, position: int) -> 
 
 def run_external_scanner(profile: IntegrationProfile, project_id: int, stage: str, snapshot: dict[str, Any], scan: ComplianceScan, db: Session) -> tuple[list[dict[str, Any]], bool]:
     categories = [item for item in _provider_categories(profile) if item in STAGE_CATEGORIES.get(stage, [])]
-    request_body = {"protocol_version": "kizuna-compliance-v1", "project_id": project_id, "stage": stage, "categories": categories, "subject_hash": scan.subject_hash, "content": snapshot}
+    request_body = {"protocol_version": "kizuna-compliance-v1", "project_id": project_id, "stage": stage, "categories": categories, "subject_hash": scan.subject_hash, "content": snapshot, "verified_professional_works": professional_context(db)}
     request_bytes = json.dumps(request_body, ensure_ascii=False, default=str).encode()
     request_hash = hashlib.sha256(request_bytes).hexdigest()
     result = ComplianceProviderResult(scan_id=scan.id, provider_key=profile.key, category=",".join(categories), status="running", request_hash=request_hash)
@@ -251,7 +293,8 @@ def run_external_scanner(profile: IntegrationProfile, project_id: int, stage: st
         raw_matches = body.get("matches", [])
         if not isinstance(raw_matches, list):
             raise ValueError("Scanner matches must be a list")
-        matches = [_safe_match(profile.key, categories[0] if len(categories) == 1 else "external_similarity", item, index) for index, item in enumerate(raw_matches[:100])]
+        claims = verified_professional_claims(db)
+        matches = [_verified_self_match(_safe_match(profile.key, categories[0] if len(categories) == 1 else "external_similarity", item, index), claims) for index, item in enumerate(raw_matches[:100])]
         provider_status = str(body.get("status", "pass")).lower()
         if provider_status in {"review", "blocked"} and not matches:
             matches.append(_safe_match(profile.key, categories[0] if categories else "external_similarity", {"severity": "review" if provider_status == "review" else "block", "message": str(body.get("summary", "External scanner requires review.")), "evidence": str(body.get("evidence", "No match details supplied."))}, 0))
@@ -269,6 +312,10 @@ def run_stage_scan(project_id: int, stage: str, db: Session) -> ComplianceScan:
     subject_hash = canonical_hash(snapshot)
     findings: list[dict[str, Any]] = []
     suggestions: list[str] = []
+    violation = fan_fiction_violation(snapshot)
+    if violation:
+        findings.append({"id": canonical_hash([stage, "fan_fiction", violation["evidence"]])[:12], "category": "fan_fiction", "severity": "block", "message": "Fan-fiction and known-property derivative requests are not supported.", "evidence": violation["evidence"], "suggestion": violation["guidance"], "provider_key": "kizuna-policy", "resolvable": False})
+        suggestions.append(violation["guidance"])
     for text in _all_strings(snapshot):
         normalized = " ".join(text.split())
         if len(normalized) < 8:
@@ -341,6 +388,8 @@ def resolve_finding(scan: ComplianceScan, finding_id: str, status: str, reviewer
     if finding is None:
         raise ValueError("Finding not found in this scan")
     if not finding.get("resolvable", True):
+        if finding.get("category") == "fan_fiction":
+            raise PermissionError("Kizuna's no-fan-fiction policy cannot be overridden. Rework the production around original characters, worlds, and story material")
         raise PermissionError("Scanner availability failures cannot be overridden; restore or disable the scanner and run again")
     resolution = db.scalar(select(ComplianceFindingResolution).where(ComplianceFindingResolution.scan_id == scan.id, ComplianceFindingResolution.finding_id == finding_id))
     if resolution is None:

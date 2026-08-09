@@ -2,8 +2,9 @@ services:
   migrate:
     build: .
     command: python -m app.schema_migrations
+    exclude_from_hc: true
     environment:
-      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
+      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:?Set a strong Postgres password}@postgres:5432/${POSTGRES_DB:-kizuna}
       KIZUNA_ENVIRONMENT: production
     depends_on:
       postgres:
@@ -12,8 +13,10 @@ services:
 
   web:
     build: .
+    expose:
+      - "8000"
     environment:
-      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
+      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:?Set a strong Postgres password}@postgres:5432/${POSTGRES_DB:-kizuna}
       KIZUNA_ENVIRONMENT: production
       KIZUNA_PUBLIC_URL: ${KIZUNA_PUBLIC_URL:?Set the full Kizuna app URL}
       KIZUNA_MARKETING_URL: ${KIZUNA_MARKETING_URL:-}
@@ -24,7 +27,7 @@ services:
       KIZUNA_COOKIE_SECURE: "true"
       KIZUNA_BOOTSTRAP_ADMIN_KEY: ${KIZUNA_BOOTSTRAP_ADMIN_KEY:?Set a strong first-run studio setup key}
       KIZUNA_GENERATION_PROVIDER: ${KIZUNA_GENERATION_PROVIDER:-farm}
-      KIZUNA_WORKER_ENROLLMENT_SECRET: ${WORKER_ENROLLMENT_SECRET:?Set a strong worker enrollment secret}
+      KIZUNA_WORKER_ENROLLMENT_SECRET: ${KIZUNA_WORKER_ENROLLMENT_SECRET:?Set a strong worker enrollment secret}
       KIZUNA_RENDER_DIRECTORY: /app/renders
       KIZUNA_STORAGE_DIRECTORY: /app/storage
       KIZUNA_CLEANUP_VERIFICATION_HOURS: ${KIZUNA_CLEANUP_VERIFICATION_HOURS:-24}
@@ -46,6 +49,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5).read()"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
     volumes:
       - render_data:/app/renders
       - storage_data:/app/storage
@@ -70,7 +80,7 @@ services:
     build: .
     command: python -m app.job_worker
     environment:
-      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
+      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:?Set a strong Postgres password}@postgres:5432/${POSTGRES_DB:-kizuna}
       KIZUNA_ENVIRONMENT: production
       KIZUNA_REDIS_URL: redis://redis:6379/0
       KIZUNA_JOB_INLINE_FALLBACK: "false"
@@ -89,12 +99,13 @@ services:
     volumes:
       - render_data:/app/renders
       - storage_data:/app/storage
+    restart: unless-stopped
 
   backup-scheduler:
     build: .
     command: python -m app.backup_scheduler
     environment:
-      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
+      KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:?Set a strong Postgres password}@postgres:5432/${POSTGRES_DB:-kizuna}
       KIZUNA_STORAGE_DIRECTORY: /app/storage
       KIZUNA_S3_BUCKET: ${KIZUNA_S3_BUCKET:-}
       KIZUNA_S3_ENDPOINT_URL: ${KIZUNA_S3_ENDPOINT_URL:-}
@@ -111,12 +122,13 @@ services:
     volumes:
       - render_data:/app/renders
       - storage_data:/app/storage
+    restart: unless-stopped
 
   postgres:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-kizuna}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kizuna}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong Postgres password}
       POSTGRES_DB: ${POSTGRES_DB:-kizuna}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kizuna}"]
@@ -125,6 +137,7 @@ services:
       retries: 10
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -136,6 +149,7 @@ services:
       retries: 10
     volumes:
       - redis_data:/data
+    restart: unless-stopped
 
 volumes:
   postgres_data:

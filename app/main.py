@@ -21,8 +21,8 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AssetReview, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AnimaticRender, AssetReview, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.storage import LocalProductionStorage
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
@@ -438,6 +438,73 @@ def update_character(character_id: int, payload: CharacterInput, db: Session = D
         setattr(character, key, value)
     db.commit()
     return db.scalars(select(Character).options(selectinload(Character.design)).where(Character.id == character_id)).one()
+
+
+@app.get("/api/characters/{character_id}/story-profile", response_model=CharacterStoryProfileRead)
+def get_character_story_profile(character_id: int, db: Session = Depends(get_db)):
+    if not db.get(Character, character_id):
+        raise HTTPException(404, "Character not found")
+    profile = db.scalar(select(CharacterStoryProfile).where(CharacterStoryProfile.character_id == character_id))
+    if not profile:
+        raise HTTPException(404, "Character story profile not started")
+    return profile
+
+
+@app.put("/api/characters/{character_id}/story-profile", response_model=CharacterStoryProfileRead)
+def update_character_story_profile(character_id: int, payload: CharacterStoryProfileInput, db: Session = Depends(get_db)):
+    if not db.get(Character, character_id):
+        raise HTTPException(404, "Character not found")
+    profile = db.scalar(select(CharacterStoryProfile).where(CharacterStoryProfile.character_id == character_id))
+    if profile is None:
+        profile = CharacterStoryProfile(character_id=character_id)
+        db.add(profile)
+    else:
+        profile.version += 1
+    for key, value in payload.model_dump().items():
+        setattr(profile, key, value)
+    db.commit(); db.refresh(profile)
+    return profile
+
+
+def character_relationship_response(relationship: CharacterRelationship, db: Session) -> dict:
+    target = db.get(Character, relationship.target_character_id)
+    return {"id": relationship.id, "character_id": relationship.character_id, "target_character_id": relationship.target_character_id, "target_name": target.name if target else "Unknown character", "relationship_type": relationship.relationship_type, "public_dynamic": relationship.public_dynamic, "private_truth": relationship.private_truth, "tension": relationship.tension, "arc": relationship.arc}
+
+
+@app.get("/api/characters/{character_id}/relationships", response_model=list[CharacterRelationshipRead])
+def list_character_relationships(character_id: int, db: Session = Depends(get_db)):
+    if not db.get(Character, character_id):
+        raise HTTPException(404, "Character not found")
+    items = db.scalars(select(CharacterRelationship).where(CharacterRelationship.character_id == character_id).order_by(CharacterRelationship.id)).all()
+    return [character_relationship_response(item, db) for item in items]
+
+
+@app.put("/api/characters/{character_id}/relationships", response_model=CharacterRelationshipRead)
+def update_character_relationship(character_id: int, payload: CharacterRelationshipInput, db: Session = Depends(get_db)):
+    character, target = db.get(Character, character_id), db.get(Character, payload.target_character_id)
+    if not character or not target:
+        raise HTTPException(404, "Character not found")
+    if character.id == target.id:
+        raise HTTPException(422, "Choose another character")
+    if character.project_id != target.project_id:
+        raise HTTPException(422, "Characters must belong to the same production")
+    relationship = db.scalar(select(CharacterRelationship).where(CharacterRelationship.character_id == character_id, CharacterRelationship.target_character_id == target.id))
+    if relationship is None:
+        relationship = CharacterRelationship(character_id=character_id, target_character_id=target.id)
+        db.add(relationship)
+    for key, value in payload.model_dump().items():
+        setattr(relationship, key, value)
+    db.commit(); db.refresh(relationship)
+    return character_relationship_response(relationship, db)
+
+
+@app.delete("/api/character-relationships/{relationship_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_character_relationship(relationship_id: int, db: Session = Depends(get_db)):
+    relationship = db.get(CharacterRelationship, relationship_id)
+    if not relationship:
+        raise HTTPException(404, "Relationship not found")
+    db.delete(relationship); db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.put("/api/characters/{character_id}/design", response_model=CharacterDesignRead)

@@ -90,6 +90,37 @@ class CharacterDesign(Base):
     character: Mapped[Character] = relationship(back_populates="design")
 
 
+class CharacterStoryProfile(Base):
+    __tablename__ = "character_story_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"), unique=True)
+    history: Mapped[str] = mapped_column(Text, default="")
+    formative_event: Mapped[str] = mapped_column(Text, default="")
+    secret: Mapped[str] = mapped_column(Text, default="")
+    fear: Mapped[str] = mapped_column(Text, default="")
+    misbelief: Mapped[str] = mapped_column(Text, default="")
+    arc_start: Mapped[str] = mapped_column(Text, default="")
+    arc_turn: Mapped[str] = mapped_column(Text, default="")
+    arc_end: Mapped[str] = mapped_column(Text, default="")
+    stakes: Mapped[str] = mapped_column(Text, default="")
+    version: Mapped[int] = mapped_column(default=1)
+
+
+class CharacterRelationship(Base):
+    __tablename__ = "character_relationships"
+    __table_args__ = (UniqueConstraint("character_id", "target_character_id", name="uq_character_relationship_target"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"))
+    target_character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"))
+    relationship_type: Mapped[str] = mapped_column(String(80), default="ally")
+    public_dynamic: Mapped[str] = mapped_column(Text, default="")
+    private_truth: Mapped[str] = mapped_column(Text, default="")
+    tension: Mapped[str] = mapped_column(Text, default="")
+    arc: Mapped[str] = mapped_column(Text, default="")
+
+
 class GenerationJob(Base):
     __tablename__ = "generation_jobs"
 

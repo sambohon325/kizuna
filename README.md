@@ -43,6 +43,7 @@ pytest
 - Progressive-disclosure workspaces that keep everyday creative actions visible and tuck technical export, voice-rights, and provider settings into clearly labeled setup panels
 - A server-backed production milestone tracker where green means a saved completion requirement was actually met; ready, in-progress, and blocked work remain visually distinct without duplicating sidebar navigation
 - A focused Story Map view that connects each outline beat to its scene, shot coverage, assigned cast, and world; production gaps are surfaced inline and linked resources open directly in their craft workspace
+- A three-view Character Studio for narrative identity, versioned history and emotional arcs, character relationships, and visual model development without combining every craft into one form
 - Provider-neutral dialogue generation with a safe local timing-slate mode, optional OpenAI speech adapter, voice-rights records, required AI disclosure metadata, and per-character pronunciation entries
 - Scene Compositor with shot-specific layer stacks, asset-library reuse, transforms, visibility, opacity, blend modes, virtual camera/grade plans, and flattened preview renders
 - Keyframed layer motion with linear/eased interpolation, animated opacity and transforms, virtual-camera motion, versioned H.264 shot previews, and an Animator bot that proposes or applies editable acting/camera passes before optionally rendering a preview
@@ -61,5 +62,6 @@ pytest
 
 See [AI Crew and voice setup](docs/AI_CREW.md) for autonomy behavior and optional hosted speech configuration.
 See [asset review and rollback](docs/ASSET_REVIEW.md) for the production-version workflow.
+See [character story development](docs/CHARACTER_STORY.md) for histories, arcs, and relationship records.
 See [production storage and delivery](docs/STORAGE.md) for backup and retention settings.
 See [picture and audio editing](docs/EDITING.md) for tactile edit controls.

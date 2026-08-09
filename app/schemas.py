@@ -198,6 +198,41 @@ class CharacterDesignRead(CharacterDesignInput):
     version: int
 
 
+class CharacterStoryProfileInput(BaseModel):
+    history: str = ""
+    formative_event: str = ""
+    secret: str = ""
+    fear: str = ""
+    misbelief: str = ""
+    arc_start: str = ""
+    arc_turn: str = ""
+    arc_end: str = ""
+    stakes: str = ""
+
+
+class CharacterStoryProfileRead(CharacterStoryProfileInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    character_id: int
+    version: int
+
+
+class CharacterRelationshipInput(BaseModel):
+    target_character_id: int
+    relationship_type: str = "ally"
+    public_dynamic: str = ""
+    private_truth: str = ""
+    tension: str = ""
+    arc: str = ""
+
+
+class CharacterRelationshipRead(CharacterRelationshipInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    character_id: int
+    target_name: str = ""
+
+
 class CharacterDesignerRequest(BaseModel):
     objective: str = "Create an original, animation-ready identity with strong consistency locks."
     provider: str = Field(default="simulation", pattern="^(simulation|openai)$")

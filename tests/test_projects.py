@@ -686,6 +686,26 @@ def test_asset_reviews_select_compare_and_rollback_without_deleting_versions(cli
     assert background_v2["id"] != background_v1["id"] and storyboard_v2["id"] != storyboard_v1["id"]
 
 
+def test_character_story_profile_and_relationships_are_editable(client):
+    project_id = client.post("/api/projects", json={"title": "Two Lights"}).json()["id"]
+    ari = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "protector"}).json()
+    mika = client.post(f"/api/projects/{project_id}/characters", json={"name": "Mika", "role": "witness"}).json()
+    profile_payload = {"history": "Raised aboard the listening station.", "formative_event": "Survived the first signal.", "secret": "Recognizes the voice.", "fear": "Losing the crew.", "misbelief": "Control keeps everyone safe.", "arc_start": "Refuses help.", "arc_turn": "Trusts Mika with the signal.", "arc_end": "Shares responsibility.", "stakes": "The station and Ari's identity."}
+    profile = client.put(f"/api/characters/{ari['id']}/story-profile", json=profile_payload)
+    assert profile.status_code == 200
+    assert profile.json()["version"] == 1
+    assert client.get(f"/api/characters/{ari['id']}/story-profile").json()["secret"] == "Recognizes the voice."
+    assert client.put(f"/api/characters/{ari['id']}/story-profile", json=profile_payload).json()["version"] == 2
+
+    relationship = client.put(f"/api/characters/{ari['id']}/relationships", json={"target_character_id": mika["id"], "relationship_type": "uneasy ally", "public_dynamic": "Professional distance", "private_truth": "Ari trusts Mika most", "tension": "They disagree about revealing the signal", "arc": "Suspicion becomes partnership"})
+    assert relationship.status_code == 200
+    assert relationship.json()["target_name"] == "Mika"
+    listed = client.get(f"/api/characters/{ari['id']}/relationships").json()
+    assert len(listed) == 1 and listed[0]["arc"] == "Suspicion becomes partnership"
+    assert client.delete(f"/api/character-relationships/{relationship.json()['id']}").status_code == 204
+    assert client.get(f"/api/characters/{ari['id']}/relationships").json() == []
+
+
 def test_project_backups_retention_and_expiring_delivery_links(client, monkeypatch):
     import shutil
     from pathlib import Path

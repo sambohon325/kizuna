@@ -175,3 +175,28 @@ def test_story_expands_into_shot_plans_and_generates_storyboard(client):
     assert "STORYBOARD FRAME SIMULATION" in preview.text
     conflict = client.post(f"/api/projects/{project_id}/expand-story", json={"shots_per_beat": 2})
     assert conflict.status_code == 409
+
+
+def test_timeline_edits_reorders_and_renders_proxy(client):
+    project_id = client.post("/api/projects", json={"title": "Picture Edit"}).json()["id"]
+    scene_id = client.post(f"/api/projects/{project_id}/scenes", json={"title": "Opening", "position": 1}).json()["id"]
+    first = client.post(f"/api/scenes/{scene_id}/shots", json={"title": "Signal wakes", "position": 1, "duration_seconds": 0.6}).json()
+    second = client.post(f"/api/scenes/{scene_id}/shots", json={"title": "Ari turns", "position": 2, "duration_seconds": 0.6}).json()
+    timeline_response = client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 12, "width": 320, "height": 180})
+    assert timeline_response.status_code == 200
+    timeline = timeline_response.json()
+    assert [clip["shot_id"] for clip in timeline["clips"]] == [first["id"], second["id"]]
+
+    first_clip, second_clip = timeline["clips"]
+    edited = client.put(f"/api/timeline-clips/{second_clip['id']}", json={"duration_seconds": 0.8, "transition": "dissolve", "transition_duration": 0.2, "audio_cue": "Radio tone blooms."})
+    assert edited.status_code == 200
+    assert edited.json()["clips"][1]["audio_cue"] == "Radio tone blooms."
+    reordered = client.put(f"/api/timelines/{timeline['id']}/clips/order", json={"clip_ids": [second_clip["id"], first_clip["id"]]})
+    assert reordered.json()["clips"][0]["shot_id"] == second["id"]
+
+    rendered = client.post(f"/api/timelines/{timeline['id']}/render")
+    assert rendered.status_code == 201
+    assert rendered.json()["status"] == "completed", rendered.json().get("error")
+    video = client.get(rendered.json()["uri"])
+    assert video.status_code == 200
+    assert video.headers["content-type"] == "video/mp4"

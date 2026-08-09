@@ -1,6 +1,6 @@
 # Kizuna Studio
 
-Kizuna Studio is a browser-based, AI-assisted anime production workspace. The current vertical slice manages productions, Creative DNA style bibles, structured story development, scenes, and shots. It is intentionally model-provider agnostic so local and hosted generation engines can be added without changing the editor.
+Kizuna Studio is a browser-based, AI-assisted anime production workspace. The current vertical slice manages productions, Creative DNA style bibles, structured story development, characters, worlds, shots, picture editing, and proxy animatics. It is intentionally model-provider agnostic so local and hosted generation engines can be added without changing the editor.
 
 ## Run locally
 
@@ -34,13 +34,14 @@ pytest
 - Authenticated network workers with capability reporting, heartbeats, leased jobs, retries, and artifact upload
 - Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, and background assets
 - Storyboard and Shot Planner with beat expansion, camera language, cast/location assignment, continuity prompts, and storyboard assets
-- Provider and render-worker interfaces to be added behind stable job APIs
+- Timeline editor with clip timing, cuts/dissolves/fades, sound cues, reordering, and downloadable H.264 proxy animatics
+- Pillow frame normalization and bundled FFmpeg locally; system FFmpeg in the production container
 - Docker Compose foundation for eventual Coolify deployment
 
 ## Next milestones
 
-1. AI provider adapters for screenplay and outline development
-2. Background render-farm scheduling and production object storage
-3. Storyboard review workflow and render-farm scheduling
+1. Audio and Voice Studio with scratch dialogue, timing, music, and sound-design lanes
+2. Background and storyboard render-farm scheduling with production object storage
+3. Non-destructive compositing, camera moves, and multilayer scene assembly
 4. Redis-backed production queue and worker scaling
-5. Timeline, audio, compositing, and FFmpeg export
+5. 4K final-master profiles, checkpoints, and resumable feature-film export

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     worker_enrollment_secret: str = "local-dev-enrollment"
     worker_lease_seconds: int = 300
     max_artifact_bytes: int = 67_108_864
+    ffmpeg_path: str = ""
 
 
 settings = Settings()

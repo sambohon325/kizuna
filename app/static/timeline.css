@@ -1,0 +1,25 @@
+.timeline-dialog { width:min(1240px,96vw); max-width:none; padding:0; background:#101218; color:#eee9df; border:1px solid #313541; }
+.timeline-panel { padding:28px; min-height:82vh; position:relative; }
+.timeline-title,.timeline-project-control,.timeline-summary,.clip-actions { display:flex; align-items:center; gap:12px; }
+.timeline-title { justify-content:space-between; margin-bottom:20px; }
+.timeline-title h2 { margin:0; font-size:2rem; }
+.timeline-project-control select { min-width:210px; }
+.timeline-summary { background:#171a22; border:1px solid #2b303c; padding:12px 16px; margin-bottom:16px; flex-wrap:wrap; }
+.timeline-summary span { color:#aeb4c0; }
+.timeline-summary b { color:#ef6b55; }
+.timeline-workspace { display:grid; grid-template-columns:360px 1fr; gap:18px; min-height:590px; }
+.timeline-clips { background:#0b0d12; border:1px solid #292d37; padding:10px; overflow:auto; max-height:64vh; }
+.timeline-clip { width:100%; display:grid; grid-template-columns:72px 1fr auto; gap:10px; align-items:center; text-align:left; padding:9px; margin-bottom:7px; color:#d9d5cc; background:#171a22; border:1px solid transparent; }
+.timeline-clip.active { border-color:#e85c48; background:#211a1b; }
+.timeline-thumb { width:72px; aspect-ratio:16/9; object-fit:cover; background:#252a35; }
+.timeline-placeholder { display:grid; place-items:center; color:#646b79; font-size:.7rem; }
+.timeline-clip small { display:block; color:#898f9d; margin-top:4px; }
+.clip-editor { background:#171a22; border:1px solid #292d37; padding:22px; }
+#clip-form { display:none; }
+#clip-title { font-size:1.55rem; margin:.2rem 0 1rem; }
+.clip-frame img { width:100%; max-height:320px; object-fit:contain; background:#080a0e; margin-bottom:16px; }
+.clip-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.clip-actions { justify-content:flex-end; margin-top:16px; }
+#animatic-result video { width:100%; max-height:360px; background:#07080b; margin-top:18px; }
+.render-progress { margin-top:18px; padding:14px; border-left:3px solid #e85c48; background:#211a1b; }
+@media(max-width:850px){.timeline-title{align-items:flex-start;flex-direction:column}.timeline-project-control{flex-wrap:wrap}.timeline-workspace{grid-template-columns:1fr}.timeline-clips{max-height:260px}.clip-grid{grid-template-columns:1fr}}

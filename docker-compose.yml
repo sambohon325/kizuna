@@ -7,6 +7,7 @@ services:
       KIZUNA_GENERATION_PROVIDER: ${KIZUNA_GENERATION_PROVIDER:-farm}
       KIZUNA_WORKER_ENROLLMENT_SECRET: ${WORKER_ENROLLMENT_SECRET:?Set a strong worker enrollment secret}
       KIZUNA_RENDER_DIRECTORY: /app/renders
+      KIZUNA_FFMPEG_PATH: /usr/bin/ffmpeg
     depends_on:
       postgres:
         condition: service_healthy

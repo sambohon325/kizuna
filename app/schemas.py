@@ -276,6 +276,56 @@ class SceneRead(SceneCreate):
     shots: list[ShotRead] = Field(default_factory=list)
 
 
+class TimelineBuildRequest(BaseModel):
+    fps: int = Field(default=24, ge=1, le=60)
+    width: int = Field(default=1920, ge=160, le=7680)
+    height: int = Field(default=1080, ge=90, le=4320)
+
+
+class TimelineClipUpdate(BaseModel):
+    duration_seconds: float = Field(gt=0, le=3600)
+    transition: str = Field(default="cut", pattern="^(cut|dissolve|fade)$")
+    transition_duration: float = Field(default=0, ge=0, le=10)
+    audio_cue: str = ""
+
+
+class TimelineClipRead(TimelineClipUpdate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    timeline_id: int
+    shot_id: int
+    position: int
+    shot_title: str = ""
+    scene_title: str = ""
+    storyboard_uri: str = ""
+
+
+class TimelineOrderUpdate(BaseModel):
+    clip_ids: list[int] = Field(min_length=1)
+
+
+class TimelineRead(BaseModel):
+    id: int
+    project_id: int
+    fps: int
+    width: int
+    height: int
+    status: str
+    total_duration_seconds: float
+    clips: list[TimelineClipRead] = Field(default_factory=list)
+
+
+class AnimaticRenderRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    timeline_id: int
+    status: str
+    filename: str
+    uri: str
+    error: str
+    render_settings: dict[str, Any]
+
+
 class ProjectCreate(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     logline: str = ""

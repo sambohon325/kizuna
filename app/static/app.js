@@ -7,11 +7,14 @@ const characterDialog = document.querySelector('#character-dialog');
 const renderDialog = document.querySelector('#render-dialog');
 const worldDialog = document.querySelector('#world-dialog');
 const shotDialog = document.querySelector('#shot-dialog');
+const timelineDialog = document.querySelector('#timeline-dialog');
 let projects = [];
 let catalog = null;
 let activeCharacterId = null;
 let activeLocationId = null;
 let activeShotId = null;
+let activeTimeline = null;
+let activeClipId = null;
 let generationProviders = [];
 
 async function api(path, options = {}) {
@@ -395,6 +398,50 @@ async function refreshRenderFarm() {
   document.querySelector('#farm-jobs').innerHTML = farm.jobs.length ? farm.jobs.map(job => `<div class="farm-job"><b>#${job.id}</b><span>Character ${job.character_id}</span><span>${safe(job.status)}</span><span>${job.assets} assets</span></div>`).join('') : '<div class="empty">No farm jobs yet. Choose Render farm in Character Studio to queue one.</div>';
 }
 
+async function openTimeline(projectId) {
+  if (!projects.length) await loadProjects();
+  if (!projects.length) { projectDialog.showModal(); return; }
+  const select = document.querySelector('#timeline-project');
+  select.innerHTML = options(projects.map(project => ({id:String(project.id),label:project.title})), String(projectId || projects[0].id));
+  select.onchange = () => loadTimeline(Number(select.value));
+  timelineDialog.showModal();
+  await loadTimeline(Number(select.value));
+}
+
+async function loadTimeline(projectId) {
+  activeClipId = null;
+  try { activeTimeline = await api(`/api/projects/${projectId}/timeline`); renderTimeline(); }
+  catch { activeTimeline = null; document.querySelector('#timeline-summary').innerHTML = '<span>No edit assembled yet.</span>'; document.querySelector('#timeline-clips').innerHTML = '<div class="empty">Build the timeline from the current shot plan.</div>'; hideClipEditor(); }
+}
+
+function renderTimeline() {
+  if (!activeTimeline) return;
+  const minutes = Math.floor(activeTimeline.total_duration_seconds / 60); const seconds = Math.round(activeTimeline.total_duration_seconds % 60);
+  document.querySelector('#timeline-summary').innerHTML = `<b>${activeTimeline.clips.length} CLIPS</b><span>${minutes}:${String(seconds).padStart(2,'0')} runtime</span><span>${activeTimeline.fps} fps</span><span>${activeTimeline.width} × ${activeTimeline.height}</span><span>${safe(activeTimeline.status)}</span>`;
+  document.querySelector('#timeline-clips').innerHTML = activeTimeline.clips.map(clip => `<button type="button" class="timeline-clip ${activeClipId === clip.id ? 'active' : ''}" data-clip-id="${clip.id}">${clip.storyboard_uri ? `<img class="timeline-thumb" src="${safe(clip.storyboard_uri)}" alt="">` : '<span class="timeline-thumb timeline-placeholder">FRAME</span>'}<span><b>${clip.position}. ${safe(clip.shot_title)}</b><small>${safe(clip.scene_title)}</small></span><small>${clip.duration_seconds.toFixed(1)}s<br>${safe(clip.transition)}</small></button>`).join('');
+  document.querySelectorAll('[data-clip-id]').forEach(button => button.onclick = () => selectClip(Number(button.dataset.clipId)));
+  if (activeClipId) selectClip(activeClipId, false);
+}
+
+function hideClipEditor() { document.querySelector('#clip-empty').style.display='block'; document.querySelector('#clip-form').style.display='none'; }
+
+function selectClip(clipId, rerender=true) {
+  const clip = activeTimeline?.clips.find(item => item.id === clipId); if (!clip) return;
+  activeClipId = clipId; const form = document.querySelector('#clip-form');
+  document.querySelector('#clip-empty').style.display='none'; form.style.display='block';
+  document.querySelector('#clip-scene').textContent = clip.scene_title; document.querySelector('#clip-title').textContent = clip.shot_title;
+  document.querySelector('#clip-frame').innerHTML = clip.storyboard_uri ? `<img src="${safe(clip.storyboard_uri)}" alt="Storyboard frame for ${safe(clip.shot_title)}">` : '';
+  form.elements.clip_duration.value = clip.duration_seconds; form.elements.clip_transition.value = clip.transition; form.elements.clip_transition_duration.value = clip.transition_duration; form.elements.clip_audio_cue.value = clip.audio_cue;
+  const index = activeTimeline.clips.findIndex(item => item.id === clipId); document.querySelector('#clip-earlier').disabled=index===0; document.querySelector('#clip-later').disabled=index===activeTimeline.clips.length-1;
+  if (rerender) renderTimeline();
+}
+
+async function moveClip(delta) {
+  const clips = [...activeTimeline.clips]; const index = clips.findIndex(clip => clip.id === activeClipId); const next=index+delta; if(index<0||next<0||next>=clips.length)return;
+  [clips[index],clips[next]]=[clips[next],clips[index]];
+  activeTimeline = await api(`/api/timelines/${activeTimeline.id}/clips/order`,{method:'PUT',body:JSON.stringify({clip_ids:clips.map(clip=>clip.id)})}); renderTimeline();
+}
+
 function collectStory(form) {
   return {premise:form.elements.premise.value, format:form.elements.format.value, target_duration_minutes:Number(form.elements.target_duration_minutes.value), genre:form.elements.genre.value, audience:form.elements.audience.value, themes:form.elements.themes.value.split(',').map(value => value.trim()).filter(Boolean)};
 }
@@ -406,6 +453,7 @@ document.querySelector('#characters-nav').onclick = () => openCharacterStudio();
 document.querySelector('#render-nav').onclick = () => openRenderFarm();
 document.querySelector('#worlds-nav').onclick = () => openWorldStudio();
 document.querySelector('#shots-nav').onclick = () => openShotPlanner();
+document.querySelector('#timeline-nav').onclick = () => openTimeline();
 document.querySelector('.close').onclick = () => projectDialog.close();
 document.querySelector('#style-close').onclick = () => styleDialog.close();
 document.querySelector('#writer-close').onclick = () => writerDialog.close();
@@ -413,6 +461,12 @@ document.querySelector('#character-close').onclick = () => characterDialog.close
 document.querySelector('#render-close').onclick = () => renderDialog.close();
 document.querySelector('#world-close').onclick = () => worldDialog.close();
 document.querySelector('#shot-close').onclick = () => shotDialog.close();
+document.querySelector('#timeline-close').onclick = () => timelineDialog.close();
+document.querySelector('#build-timeline').onclick = async () => { const projectId=Number(document.querySelector('#timeline-project').value); try { activeTimeline=await api(`/api/projects/${projectId}/timeline/build`,{method:'POST',body:JSON.stringify({fps:24,width:1920,height:1080})}); renderTimeline(); } catch(error) { document.querySelector('#timeline-clips').innerHTML=`<div class="job-error">${safe(error.message)}</div>`; } };
+document.querySelector('#clip-form').onsubmit = async event => { event.preventDefault(); const form=event.target; activeTimeline=await api(`/api/timeline-clips/${activeClipId}`,{method:'PUT',body:JSON.stringify({duration_seconds:Number(form.elements.clip_duration.value),transition:form.elements.clip_transition.value,transition_duration:Number(form.elements.clip_transition_duration.value),audio_cue:form.elements.clip_audio_cue.value})}); renderTimeline(); };
+document.querySelector('#clip-earlier').onclick = () => moveClip(-1);
+document.querySelector('#clip-later').onclick = () => moveClip(1);
+document.querySelector('#render-animatic').onclick = async () => { if(!activeTimeline)return; const button=document.querySelector('#render-animatic'); button.disabled=true; button.textContent='Rendering proxy…'; document.querySelector('#animatic-result').innerHTML='<div class="render-progress">Preparing frames and encoding the edit…</div>'; try { const result=await api(`/api/timelines/${activeTimeline.id}/render`,{method:'POST'}); document.querySelector('#animatic-result').innerHTML=result.status==='completed'?`<video controls src="${safe(result.uri)}"></video><p><a href="${safe(result.uri)}" download>Download proxy MP4</a></p>`:`<div class="job-error">${safe(result.error)}</div>`; await loadTimeline(activeTimeline.project_id); } catch(error) { document.querySelector('#animatic-result').innerHTML=`<div class="job-error">${safe(error.message)}</div>`; } finally { button.disabled=false; button.textContent='Render proxy animatic'; } };
 document.querySelector('#expand-story').onclick = async () => { const projectId = Number(document.querySelector('#shot-project').value); try { await api(`/api/projects/${projectId}/expand-story`, {method:'POST',body:JSON.stringify({shots_per_beat:Number(document.querySelector('#shots-per-beat').value)})}); await loadProjects(); renderShotTree(projectId); } catch(error) { document.querySelector('#shot-tree').innerHTML = `<div class="job-error">${safe(error.message)}</div>`; } };
 document.querySelector('#refresh-farm').onclick = () => refreshRenderFarm();
 document.querySelector('#project-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); await api('/api/projects', {method:'POST', body:JSON.stringify(data)}); event.target.reset(); projectDialog.close(); await loadProjects(); };

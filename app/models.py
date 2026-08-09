@@ -24,6 +24,7 @@ class Project(Base):
     characters: Mapped[list[Character]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="Character.id")
     locations: Mapped[list[WorldLocation]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="WorldLocation.id")
     scenes: Mapped[list[Scene]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="Scene.position")
+    timeline: Mapped[Timeline | None] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
 
 
 class StyleProfile(Base):
@@ -281,3 +282,50 @@ class ShotPlan(Base):
     version: Mapped[int] = mapped_column(default=1)
 
     shot: Mapped[Shot] = relationship(back_populates="plan")
+
+
+class Timeline(Base):
+    __tablename__ = "timelines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), unique=True)
+    fps: Mapped[int] = mapped_column(default=24)
+    width: Mapped[int] = mapped_column(default=1920)
+    height: Mapped[int] = mapped_column(default=1080)
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    project: Mapped[Project] = relationship(back_populates="timeline")
+    clips: Mapped[list[TimelineClip]] = relationship(back_populates="timeline", cascade="all, delete-orphan", order_by="TimelineClip.position")
+    renders: Mapped[list[AnimaticRender]] = relationship(back_populates="timeline", cascade="all, delete-orphan")
+
+
+class TimelineClip(Base):
+    __tablename__ = "timeline_clips"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    timeline_id: Mapped[int] = mapped_column(ForeignKey("timelines.id"))
+    shot_id: Mapped[int] = mapped_column(ForeignKey("shots.id"), unique=True)
+    position: Mapped[int] = mapped_column(default=1)
+    duration_seconds: Mapped[float] = mapped_column(default=4.0)
+    transition: Mapped[str] = mapped_column(String(32), default="cut")
+    transition_duration: Mapped[float] = mapped_column(default=0.0)
+    audio_cue: Mapped[str] = mapped_column(Text, default="")
+
+    timeline: Mapped[Timeline] = relationship(back_populates="clips")
+    shot: Mapped[Shot] = relationship()
+
+
+class AnimaticRender(Base):
+    __tablename__ = "animatic_renders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    timeline_id: Mapped[int] = mapped_column(ForeignKey("timelines.id"))
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    uri: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    render_settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    timeline: Mapped[Timeline] = relationship(back_populates="renders")

@@ -8,6 +8,8 @@ dependencies = [
   "uvicorn[standard]>=0.35,<1",
   "sqlalchemy>=2.0,<3",
   "pydantic-settings>=2.10,<3",
+  "pillow>=11,<13",
+  "imageio-ffmpeg>=0.6,<1",
 ]
 
 [project.optional-dependencies]

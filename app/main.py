@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -11,11 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
+from app.animatic import render_animatic
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import BackgroundAsset, BackgroundJob, Character, CharacterDesign, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, WorkerAssignment, WorldLocation
-from app.schemas import BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCreate, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
+from app.models import AnimaticRender, BackgroundAsset, BackgroundJob, Character, CharacterDesign, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCreate, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -32,6 +34,24 @@ app.mount("/renders", StaticFiles(directory=render_dir), name="renders")
 
 def project_query():
     return select(Project).options(selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters).selectinload(Character.design), selectinload(Project.locations).selectinload(WorldLocation.design), selectinload(Project.scenes).selectinload(Scene.shots).selectinload(Shot.plan))
+
+
+def timeline_response(timeline: Timeline, db: Session):
+    clips = db.scalars(select(TimelineClip).where(TimelineClip.timeline_id == timeline.id).order_by(TimelineClip.position)).all()
+    output = []
+    for clip in clips:
+        shot = db.get(Shot, clip.shot_id)
+        scene = db.get(Scene, shot.scene_id)
+        asset = db.scalar(select(StoryboardAsset).where(StoryboardAsset.shot_id == shot.id).order_by(StoryboardAsset.version.desc(), StoryboardAsset.id.desc()))
+        output.append({
+            "id": clip.id, "timeline_id": clip.timeline_id, "shot_id": clip.shot_id, "position": clip.position,
+            "duration_seconds": clip.duration_seconds, "transition": clip.transition,
+            "transition_duration": clip.transition_duration, "audio_cue": clip.audio_cue,
+            "shot_title": shot.title, "scene_title": scene.title, "storyboard_uri": asset.uri if asset else "",
+        })
+    total = sum(clip["duration_seconds"] for clip in output)
+    total -= sum(min(clip["transition_duration"], clip["duration_seconds"] / 2) for clip in output[1:] if clip["transition"] != "cut")
+    return {"id": timeline.id, "project_id": timeline.project_id, "fps": timeline.fps, "width": timeline.width, "height": timeline.height, "status": timeline.status, "total_duration_seconds": round(max(0, total), 3), "clips": output}
 
 
 @app.get("/api/health")
@@ -650,6 +670,93 @@ def sync_storyboard_job(job_id: int, db: Session = Depends(get_db)):
         job.status, job.error = "failed", str(exc)
     db.commit()
     return storyboard_job_response(job, db)
+
+
+@app.post("/api/projects/{project_id}/timeline/build", response_model=TimelineRead)
+def build_timeline(project_id: int, payload: TimelineBuildRequest, db: Session = Depends(get_db)):
+    project = db.scalars(project_query().where(Project.id == project_id)).one_or_none()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    shots = [shot for scene in project.scenes for shot in scene.shots]
+    if not shots:
+        raise HTTPException(409, "Build shots in the Storyboard & Shot Planner first")
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == project_id))
+    if timeline is None:
+        timeline = Timeline(project_id=project_id, fps=payload.fps, width=payload.width, height=payload.height)
+        db.add(timeline)
+        db.flush()
+        for position, shot in enumerate(shots, start=1):
+            db.add(TimelineClip(timeline_id=timeline.id, shot_id=shot.id, position=position, duration_seconds=shot.duration_seconds))
+    else:
+        timeline.fps, timeline.width, timeline.height = payload.fps, payload.width, payload.height
+        existing = {clip.shot_id for clip in db.scalars(select(TimelineClip).where(TimelineClip.timeline_id == timeline.id)).all()}
+        next_position = len(existing) + 1
+        for shot in shots:
+            if shot.id not in existing:
+                db.add(TimelineClip(timeline_id=timeline.id, shot_id=shot.id, position=next_position, duration_seconds=shot.duration_seconds))
+                next_position += 1
+    db.commit()
+    return timeline_response(timeline, db)
+
+
+@app.get("/api/projects/{project_id}/timeline", response_model=TimelineRead)
+def get_timeline(project_id: int, db: Session = Depends(get_db)):
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == project_id))
+    if timeline is None:
+        raise HTTPException(404, "Timeline not built")
+    return timeline_response(timeline, db)
+
+
+@app.put("/api/timeline-clips/{clip_id}", response_model=TimelineRead)
+def update_timeline_clip(clip_id: int, payload: TimelineClipUpdate, db: Session = Depends(get_db)):
+    clip = db.get(TimelineClip, clip_id)
+    if not clip:
+        raise HTTPException(404, "Timeline clip not found")
+    for key, value in payload.model_dump().items():
+        setattr(clip, key, value)
+    db.commit()
+    return timeline_response(db.get(Timeline, clip.timeline_id), db)
+
+
+@app.put("/api/timelines/{timeline_id}/clips/order", response_model=TimelineRead)
+def reorder_timeline(timeline_id: int, payload: TimelineOrderUpdate, db: Session = Depends(get_db)):
+    timeline = db.get(Timeline, timeline_id)
+    if not timeline:
+        raise HTTPException(404, "Timeline not found")
+    clips = db.scalars(select(TimelineClip).where(TimelineClip.timeline_id == timeline_id)).all()
+    by_id = {clip.id: clip for clip in clips}
+    if set(payload.clip_ids) != set(by_id):
+        raise HTTPException(422, "The order must contain every timeline clip exactly once")
+    for position, clip_id in enumerate(payload.clip_ids, start=1):
+        by_id[clip_id].position = position
+    db.commit()
+    return timeline_response(timeline, db)
+
+
+@app.post("/api/timelines/{timeline_id}/render", response_model=AnimaticRenderRead, status_code=status.HTTP_201_CREATED)
+def render_timeline(timeline_id: int, db: Session = Depends(get_db)):
+    timeline = db.get(Timeline, timeline_id)
+    if not timeline:
+        raise HTTPException(404, "Timeline not found")
+    render = AnimaticRender(timeline_id=timeline.id, status="rendering", render_settings={"fps": timeline.fps, "width": timeline.width, "height": timeline.height, "kind": "proxy_animatic"})
+    db.add(render); db.commit(); db.refresh(render)
+    work_dir = render_dir / f"animatic-work-{render.id}"
+    try:
+        data = timeline_response(timeline, db)
+        clips = []
+        for clip in data["clips"]:
+            source = render_dir / Path(clip["storyboard_uri"]).name if clip["storyboard_uri"] else None
+            clips.append({"source": source, "title": clip["shot_title"], "subtitle": f"{clip['scene_title']}  /  {clip['duration_seconds']:.1f}s  /  {clip['transition']}", "duration": clip["duration_seconds"], "transition": clip["transition"], "transition_duration": clip["transition_duration"]})
+        render.filename = f"animatic-{render.id}.mp4"
+        render_animatic(clips, render_dir / render.filename, work_dir, timeline.fps, timeline.width, timeline.height)
+        render.uri, render.status = f"/renders/{render.filename}", "completed"
+        timeline.status = "preview-ready"
+    except Exception as exc:
+        render.status, render.error = "failed", str(exc)
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+    db.commit(); db.refresh(render)
+    return render
 
 
 @app.get("/", include_in_schema=False)

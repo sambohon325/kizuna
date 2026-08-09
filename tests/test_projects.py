@@ -492,3 +492,34 @@ def test_animator_bot_applies_editable_motion_and_renders_preview(client):
     assert all(layer["animation"]["intent"] for layer in composition["layers"])
     assert composition["latest_motion_uri"] == approved.json()["result"]["preview_uri"]
     assert client.get("/api/animation/providers").json()["providers"][0]["ready"] is True
+
+
+def test_editor_bot_assembles_timeline_then_renders_review_master(client):
+    project_id = client.post("/api/projects", json={"title": "Cut Thread"}).json()["id"]
+    first_scene = client.post(f"/api/projects/{project_id}/scenes", json={"title": "Before", "position": 1}).json()
+    second_scene = client.post(f"/api/projects/{project_id}/scenes", json={"title": "After", "position": 2}).json()
+    first = client.post(f"/api/scenes/{first_scene['id']}/shots", json={"title": "The held breath", "position": 1, "duration_seconds": 0.5}).json()
+    second = client.post(f"/api/scenes/{second_scene['id']}/shots", json={"title": "The answer", "position": 1, "duration_seconds": 0.5}).json()
+    client.put(f"/api/shots/{first['id']}/plan", json={"action": "A hand stops above the receiver.", "camera": {"movement": "locked"}})
+    client.put(f"/api/shots/{second['id']}/plan", json={"action": "The receiver lights.", "dialogue": "I hear you.", "camera": {"movement": "slow push"}})
+    client.post(f"/api/projects/{project_id}/crew/deploy", json={"roles": ["editor"], "autonomy": "propose"})
+
+    proposed = client.post(f"/api/projects/{project_id}/crew/editor/propose", json={"objective": "Build the first emotional assembly.", "pacing": "kinetic", "provider": "simulation"})
+    assert proposed.status_code == 201
+    assert proposed.json()["status"] == "proposed"
+    assert len(proposed.json()["payload"]["proposal"]["clips"]) == 2
+    assert client.get(f"/api/projects/{project_id}/timeline").status_code == 404
+    approved = client.post(f"/api/crew-actions/{proposed.json()['id']}/approve")
+    assert approved.json()["status"] == "completed"
+    timeline = client.get(f"/api/projects/{project_id}/timeline").json()
+    assert timeline["status"] == "edit-ready"
+    assert [clip["shot_id"] for clip in timeline["clips"]] == [first["id"], second["id"]]
+
+    client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 4, "width": 160, "height": 90})
+    review = client.post(f"/api/projects/{project_id}/crew/editor/propose", json={"objective": "Prepare a balanced review cut.", "pacing": "balanced", "provider": "simulation", "render_review": True, "review_profile": "preview"})
+    assert review.json()["payload"]["proposal"]["clips"][1]["transition"] == "dissolve"
+    rendered = client.post(f"/api/crew-actions/{review.json()['id']}/approve")
+    assert rendered.json()["result"]["review_status"] == "completed", rendered.json()["result"].get("review_error")
+    assert client.get(rendered.json()["result"]["review_uri"]).headers["content-type"] == "video/mp4"
+    assert rendered.json()["result"]["review_settings"]["fallback_clips"] == 2
+    assert client.get("/api/editing/providers").json()["providers"][0]["ready"] is True

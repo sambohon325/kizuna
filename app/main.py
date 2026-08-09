@@ -22,7 +22,7 @@ from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
 from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, Project, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -32,6 +32,7 @@ from app.writer_agent import WriterAgentError, create_writer_proposal
 from app.director_agent import DirectorAgentError, create_director_proposal
 from app.visual_agents import VisualAgentError, create_background_design_proposal, create_character_design_proposal
 from app.animator_agent import AnimatorAgentError, create_animator_proposal
+from app.editor_agent import EditorAgentError, create_editor_proposal
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -1247,6 +1248,73 @@ def perform_animator_action(action: CrewAction, db: Session) -> CrewAction:
     return action
 
 
+def editor_project_context(project: Project, db: Session) -> dict:
+    context = writer_project_context(project, db)
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == project.id))
+    if timeline:
+        timeline_data = timeline_response(timeline, db)
+        sources = timeline_data["clips"]
+        context["timeline"] = {key: timeline_data[key] for key in ("id", "fps", "width", "height", "status", "total_duration_seconds")}
+    else:
+        sources = [{"id": None, "shot_id": shot.id, "position": position, "duration_seconds": shot.duration_seconds, "transition": "cut", "transition_duration": 0, "shot_title": shot.title, "scene_title": scene.title, "storyboard_uri": "", "motion_uri": ""} for position, (scene, shot) in enumerate(((scene, shot) for scene in project.scenes for shot in scene.shots), start=1)]
+        context["timeline"] = None
+    clips = []
+    for source in sources:
+        shot = db.scalars(select(Shot).options(selectinload(Shot.plan)).where(Shot.id == source["shot_id"])).one()
+        clips.append({"clip_id": source.get("id"), "shot_id": shot.id, "shot_title": source.get("shot_title", shot.title), "scene_title": source.get("scene_title", db.get(Scene, shot.scene_id).title), "position": source["position"], "duration_seconds": source["duration_seconds"], "transition": source["transition"], "transition_duration": source["transition_duration"], "storyboard_uri": source.get("storyboard_uri", ""), "motion_uri": source.get("motion_uri", ""), "plan": {"action": shot.plan.action, "dialogue": shot.plan.dialogue, "camera": shot.plan.camera, "continuity_notes": shot.plan.continuity_notes} if shot.plan else {}})
+    context["clips"] = clips
+    return context
+
+
+def perform_editor_action(action: CrewAction, db: Session) -> CrewAction:
+    project = db.get(Project, action.project_id)
+    try:
+        proposal = EditorProposal.model_validate(action.payload.get("proposal") or {})
+    except Exception as exc:
+        action.status, action.error = "failed", f"Editor proposal is incomplete: {exc}"
+        db.commit()
+        return action
+    if not project:
+        action.status, action.error = "failed", "Project not found"
+        db.commit()
+        return action
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == project.id))
+    if timeline is None:
+        build_timeline(project.id, TimelineBuildRequest(), db)
+        timeline = db.scalar(select(Timeline).where(Timeline.project_id == project.id))
+    clips = db.scalars(select(TimelineClip).where(TimelineClip.timeline_id == timeline.id)).all()
+    by_id, by_shot = {clip.id: clip for clip in clips}, {clip.shot_id: clip for clip in clips}
+    proposed_shots = [item.shot_id for item in proposal.clips]
+    if len(set(proposed_shots)) != len(clips) or set(proposed_shots) != set(by_shot):
+        action.status, action.error = "failed", "The edit proposal must include every timeline shot exactly once"
+        db.commit()
+        return action
+    applied = []
+    ordered = sorted(proposal.clips, key=lambda item: item.position)
+    for position, item in enumerate(ordered, start=1):
+        clip = by_id.get(item.clip_id) if item.clip_id else by_shot.get(item.shot_id)
+        if not clip or clip.shot_id != item.shot_id:
+            clip = by_shot[item.shot_id]
+        clip.position = position
+        clip.duration_seconds = item.duration_seconds
+        clip.transition = "cut" if position == 1 else item.transition
+        clip.transition_duration = 0 if clip.transition == "cut" else min(item.transition_duration, item.duration_seconds / 2)
+        applied.append({"clip_id": clip.id, "shot_id": clip.shot_id, "position": position, "duration_seconds": clip.duration_seconds, "transition": clip.transition, "transition_duration": clip.transition_duration})
+    timeline.status = "edit-ready"
+    action.status, action.error = "completed", ""
+    db.commit()
+    current = timeline_response(timeline, db)
+    result = {"timeline_id": timeline.id, "applied_clips": applied, "total_duration_seconds": current["total_duration_seconds"], "review_rendered": False, "quality_flags": proposal.quality_flags}
+    request = action.payload.get("request", {})
+    if request.get("render_review"):
+        render = render_master(timeline.id, MasterRenderRequest(profile=request.get("review_profile", "preview")), db)
+        result.update({"review_rendered": True, "review_render_id": render.id, "review_status": render.status, "review_uri": render.uri, "review_error": render.error, "review_settings": render.render_settings})
+    action = db.get(CrewAction, action.id)
+    action.status, action.result = "completed", result
+    db.commit(); db.refresh(action)
+    return action
+
+
 @app.get("/api/crew/roles")
 def crew_roles():
     return [{"id": role, **data} for role, data in CREW_ROLES.items()]
@@ -1255,6 +1323,11 @@ def crew_roles():
 @app.get("/api/animation/providers")
 def animation_providers():
     return {"active": settings.animator_provider, "providers": [{"id": "simulation", "label": "Local motion planner", "ready": True}, {"id": "openai", "label": "OpenAI Animator", "ready": bool(settings.openai_api_key)}]}
+
+
+@app.get("/api/editing/providers")
+def editing_providers():
+    return {"active": settings.editor_provider, "providers": [{"id": "simulation", "label": "Local edit planner", "ready": True}, {"id": "openai", "label": "OpenAI Editor", "ready": bool(settings.openai_api_key)}]}
 
 
 @app.get("/api/voice/providers")
@@ -1465,6 +1538,31 @@ def ask_animator(shot_id: int, payload: AnimatorProposalRequest, db: Session = D
     return perform_animator_action(action, db) if assignment.autonomy == "execute" else action
 
 
+@app.post("/api/projects/{project_id}/crew/editor/propose", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
+def ask_editor(project_id: int, payload: EditorProposalRequest, db: Session = Depends(get_db)):
+    project = db.scalars(project_query().where(Project.id == project_id)).one_or_none()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    if not any(scene.shots for scene in project.scenes):
+        raise HTTPException(409, "Build shots before asking the Editor")
+    assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == project_id, CrewAssignment.role == "editor", CrewAssignment.enabled.is_(True)))
+    if not assignment:
+        raise HTTPException(409, "Deploy the Editor bot first")
+    provider = payload.provider or settings.editor_provider
+    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="editor", action_type="edit_timeline", title="Shape the picture edit", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "request": payload.model_dump()})
+    db.add(action); db.commit(); db.refresh(action)
+    try:
+        proposal = create_editor_proposal(editor_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_editor_model, instructions=assignment.instructions)
+        action.payload = {**action.payload, "proposal": proposal.model_dump()}
+        action.summary, action.status = proposal.approach, "proposed"
+        db.commit(); db.refresh(action)
+    except EditorAgentError as exc:
+        action.status, action.error = "failed", str(exc)
+        db.commit(); db.refresh(action)
+        return action
+    return perform_editor_action(action, db) if assignment.autonomy == "execute" else action
+
+
 @app.post("/api/characters/{character_id}/crew/design", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
 def ask_character_designer(character_id: int, payload: CharacterDesignerRequest, db: Session = Depends(get_db)):
     character = db.scalars(select(Character).options(selectinload(Character.design)).where(Character.id == character_id)).one_or_none()
@@ -1527,6 +1625,8 @@ def approve_crew_action(action_id: int, db: Session = Depends(get_db)):
         return perform_director_action(action, db)
     if action.action_type == "animate_shot":
         return perform_animator_action(action, db)
+    if action.action_type == "edit_timeline":
+        return perform_editor_action(action, db)
     if action.action_type == "design_character":
         return perform_character_design_action(action, db)
     if action.action_type == "design_background":

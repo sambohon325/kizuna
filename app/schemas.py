@@ -145,6 +145,36 @@ class AnimatorProposal(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class EditorProposalRequest(BaseModel):
+    objective: str = "Shape a clear, emotionally paced assembly while preserving story continuity."
+    pacing: str = Field(default="balanced", pattern="^(restrained|balanced|kinetic)$")
+    provider: str = Field(default="simulation", pattern="^(simulation|openai)$")
+    render_review: bool = False
+    review_profile: str = Field(default="preview", pattern="^(preview|1080p|4k)$")
+
+
+class EditorClipProposal(BaseModel):
+    clip_id: int | None = None
+    shot_id: int
+    shot_title: str
+    position: int = Field(ge=1)
+    duration_seconds: float = Field(gt=0, le=3600)
+    transition: str = Field(default="cut", pattern="^(cut|dissolve|fade)$")
+    transition_duration: float = Field(default=0, ge=0, le=10)
+    rationale: str
+
+
+class EditorProposal(BaseModel):
+    approach: str
+    clips: list[EditorClipProposal] = Field(min_length=1)
+    estimated_runtime_seconds: float = Field(ge=0)
+    rhythm_notes: list[str] = Field(default_factory=list)
+    continuity_checks: list[str] = Field(default_factory=list)
+    quality_flags: list[str] = Field(default_factory=list)
+    changes: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CharacterInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     role: str = "protagonist"

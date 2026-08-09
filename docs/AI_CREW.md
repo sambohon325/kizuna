@@ -14,6 +14,8 @@ The Character Designer turns a character's narrative role, traits, arc, Creative
 
 The Animator reads a saved shot plan, its camera direction, continuity notes, duration, Creative DNA, cast, location, and existing compositor layers. It proposes a virtual-camera move, acting beats, timing guidance, and editable end keyframes for every layer. Approval can build a missing composition, apply the motion as a new composition version, and optionally render a proxy or full-resolution MP4. A render failure does not discard the approved motion pass.
 
+The Editor can work from either raw planned shots or an existing timeline. It proposes a complete reversible assembly with clip order, durations, cuts or transitions, rhythm notes, continuity checks, and flags for missing motion or picture. Approval creates a timeline when needed, applies every included shot exactly once, preserves audio and source assets, and can optionally render a Preview, 1080p, or 4K review master. A master-render failure does not roll back the approved edit.
+
 The Sound Producer can take a saved dialogue cue, combine its character voice bible, line direction, and pronunciation dictionary, generate a performance, and attach the result to the timeline cue.
 
 ## Visual-development providers
@@ -25,6 +27,8 @@ KIZUNA_VISUAL_AGENT_PROVIDER=openai
 KIZUNA_OPENAI_VISUAL_AGENT_MODEL=gpt-5.6-terra
 KIZUNA_ANIMATOR_PROVIDER=openai
 KIZUNA_OPENAI_ANIMATOR_MODEL=gpt-5.6-terra
+KIZUNA_EDITOR_PROVIDER=openai
+KIZUNA_OPENAI_EDITOR_MODEL=gpt-5.6-terra
 KIZUNA_OPENAI_API_KEY=your-key
 ```
 

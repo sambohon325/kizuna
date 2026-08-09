@@ -974,6 +974,12 @@ class MediaTransferRead(BaseModel):
     created_at: datetime
 
 
+class MediaCleanupDecision(BaseModel):
+    asset_key: str = Field(min_length=1, max_length=160)
+    action: str = Field(pattern="^(approve|revoke)$")
+    note: str = Field(default="", max_length=1000)
+
+
 class ProjectBackupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

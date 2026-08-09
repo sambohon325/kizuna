@@ -759,6 +759,25 @@ class MediaTransferJob(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class MediaCleanupReview(Base):
+    __tablename__ = "media_cleanup_reviews"
+    __table_args__ = (UniqueConstraint("project_id", "asset_key", name="uq_media_cleanup_review"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    asset_key: Mapped[str] = mapped_column(String(160))
+    source_residency_id: Mapped[int] = mapped_column(ForeignKey("asset_residencies.id"))
+    status: Mapped[str] = mapped_column(String(24), default="review")
+    checksum_sha256: Mapped[str] = mapped_column(String(64), default="")
+    required_replicas: Mapped[int] = mapped_column(default=1)
+    verified_replicas: Mapped[int] = mapped_column(default=0)
+    verification_cutoff: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class DeliveryLink(Base):
     __tablename__ = "delivery_links"
 

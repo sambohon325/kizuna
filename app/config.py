@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     backup_retention_days: int = 30
     backup_max_copies: int = 10
     backup_scheduler_interval_seconds: int = 60
+    cleanup_verification_hours: int = 24
     worker_enrollment_secret: str = "local-dev-enrollment"
     worker_lease_seconds: int = 300
     max_artifact_bytes: int = 67_108_864

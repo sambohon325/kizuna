@@ -32,7 +32,7 @@ pytest
 - Provider-neutral image generation jobs with versioned media assets
 - Unified asset review with side-by-side versions, approval and rejection notes, an explicit production master, and non-destructive rollback that invalidates stale composites
 - Production vault with local or S3-compatible destinations, automatic off-server schedules, configurable retention, media-inclusive project ZIPs, SHA-256 verification, backup pruning, and revocable download-limited delivery links
-- Metadata-first media residency and transfer queue that preserves storytelling context and lightweight previews while checksum-verifying full-resolution originals copied to creator-controlled Hive computers
+- Automatic metadata-first media lifecycle with independent image/video/audio working proxies, checksum-verified Hive replication, freshness-gated cleanup eligibility, and creator approval that never silently deletes an original
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
 - Authenticated network workers with capability reporting, heartbeats, leased jobs, retries, and artifact upload
 - Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, background assets, and a Background Artist bot that can propose or apply a production-ready location bible before optionally queuing background generation
@@ -61,10 +61,10 @@ pytest
 
 ## Next milestones
 
-1. Automate media registration, editing proxies, replica verification, and creator-reviewed cleanup
-2. Move long-running work onto a unified Redis-backed job contract with restart recovery
-3. Add Alembic migrations and production PostgreSQL verification
-4. Add health checks, job diagnostics, backup restore verification, and the guarded Coolify deployment path
+1. Move long-running work onto a unified Redis-backed job contract with restart recovery
+2. Add Alembic migrations and production PostgreSQL verification
+3. Add health checks, job diagnostics, backup restore verification, and the guarded Coolify deployment path
+4. Add authentication and tenant isolation before any public deployment
 
 See [the phased Kizuna roadmap](docs/ROADMAP.md) for how Anime Studio becomes the shared foundation for Express, Paper, Hero, Motion, CineReal, AdForge, collaboration, integrations, and the future creator ecosystem.
 

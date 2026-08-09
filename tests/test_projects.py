@@ -492,6 +492,14 @@ def test_timeline_edits_reorders_and_renders_proxy(client):
     video = client.get(rendered.json()["uri"])
     assert video.status_code == 200
     assert video.headers["content-type"] == "video/mp4"
+    from sqlalchemy import select
+    from app.database import SessionLocal
+    from app.models import AssetResidency
+    with SessionLocal() as db:
+        proxy = db.scalar(select(AssetResidency).where(AssetResidency.project_id == project_id, AssetResidency.representation == "proxy", AssetResidency.uri.like("/api/media/proxies/%")))
+        assert proxy is not None
+        proxy_uri = proxy.uri
+    assert client.get(proxy_uri).headers["content-type"] == "video/mp4"
 
 
 def test_audio_studio_builds_voice_cues_and_mixes_animatic(client):
@@ -513,6 +521,14 @@ def test_audio_studio_builds_voice_cues_and_mixes_animatic(client):
     scratch = client.post(f"/api/audio-cues/{cue.json()['id']}/generate-scratch")
     assert scratch.json()["status"] == "scratch-ready"
     assert client.get(scratch.json()["uri"]).headers["content-type"] == "audio/wav"
+    from sqlalchemy import select
+    from app.database import SessionLocal
+    from app.models import AssetResidency
+    with SessionLocal() as db:
+        audio_proxy = db.scalar(select(AssetResidency).where(AssetResidency.project_id == project_id, AssetResidency.representation == "proxy", AssetResidency.uri.like("%.m4a")))
+        assert audio_proxy is not None
+        audio_proxy_uri = audio_proxy.uri
+    assert client.get(audio_proxy_uri).headers["content-type"] == "audio/mp4"
 
     rendered = client.post(f"/api/timelines/{timeline['id']}/render")
     assert rendered.json()["status"] == "completed", rendered.json().get("error")
@@ -989,6 +1005,10 @@ def test_media_transfer_queue_claims_verifies_and_preserves_server_original(clie
     job = claim.json(); source = client.get(job["download_url"], headers=headers)
     assert source.status_code == 200
     assert hashlib.sha256(source.content).hexdigest() == original["checksum_sha256"]
+    blocked_cleanup = client.get(f"/api/projects/{project_id}/media-cleanup").json()
+    blocked_item = next(entry for entry in blocked_cleanup["items"] if entry["asset_key"] == item["asset_key"])
+    assert blocked_item["status"] == "blocked"
+    assert client.put(f"/api/projects/{project_id}/media-cleanup", json={"asset_key": item["asset_key"], "action": "approve", "note": "Too early"}).status_code == 409
     wrong = client.post(f"/api/nodes/transfer-node-0001/media-transfers/{job['id']}/complete", headers=headers, json={"object_ref": "vault://ren-reference", "checksum_sha256": "0" * 64, "size_bytes": len(source.content)})
     assert wrong.status_code == 422
     completed = client.post(f"/api/nodes/transfer-node-0001/media-transfers/{job['id']}/complete", headers=headers, json={"object_ref": "vault://ren-reference", "checksum_sha256": original["checksum_sha256"], "size_bytes": len(source.content)})
@@ -996,6 +1016,13 @@ def test_media_transfer_queue_claims_verifies_and_preserves_server_original(clie
     refreshed = client.get(f"/api/projects/{project_id}/media-index").json()
     assert refreshed["summary"]["completed_transfers"] == 1
     assert refreshed["summary"]["cleanup_eligible_assets"] == 1
+    cleanup = client.get(f"/api/projects/{project_id}/media-cleanup").json()
+    cleanup_item = next(entry for entry in cleanup["items"] if entry["asset_key"] == item["asset_key"])
+    assert cleanup_item["status"] == "eligible" and cleanup["deletion_enabled"] is False
+    approved = client.put(f"/api/projects/{project_id}/media-cleanup", json={"asset_key": item["asset_key"], "action": "approve", "note": "Keep the decision ready for a guarded cleanup run."})
+    assert approved.status_code == 200
+    approved_item = next(entry for entry in approved.json()["items"] if entry["asset_key"] == item["asset_key"])
+    assert approved_item["status"] == "approved"
     assert client.get(generated["assets"][0]["uri"]).status_code == 200
     assert client.post(f"/api/projects/{project_id}/media-transfers/queue", json={}).json()["already_safe"] == 1
     shutil.rmtree(thumbnail_root)

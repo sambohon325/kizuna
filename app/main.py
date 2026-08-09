@@ -3,6 +3,7 @@ import json
 import os
 import secrets
 import shutil
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -15,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
-from app.animatic import render_animatic
+from app.animatic import ffmpeg_executable, render_animatic
 from app.audio import generate_timing_slate, split_audio_file
 from app.compositor import render_composite
 from app.motion import render_motion_video
@@ -24,8 +25,8 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
@@ -50,6 +51,8 @@ production_storage = LocalProductionStorage(Path(settings.storage_directory))
 s3_production_storage = S3ProductionStorage(settings.s3_bucket, settings.s3_endpoint_url, settings.s3_region, settings.s3_prefix)
 thumbnail_dir = (Path(settings.storage_directory) / "thumbnails").resolve()
 thumbnail_dir.mkdir(parents=True, exist_ok=True)
+proxy_dir = (Path(settings.storage_directory) / "proxies").resolve()
+proxy_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 app.mount("/renders", StaticFiles(directory=render_dir), name="renders")
 
@@ -1129,6 +1132,7 @@ def generate_background(location_id: int, payload: GenerationRequest, db: Sessio
         job.status = "failed"
         job.error = str(exc)
     db.commit()
+    if job.status == "completed": refresh_media_lifecycle(location.project_id, db)
     return background_job_response(job, db)
 
 
@@ -1151,6 +1155,8 @@ def sync_background_job(job_id: int, db: Session = Depends(get_db)):
         job.status = "failed"
         job.error = str(exc)
     db.commit()
+    location = db.get(WorldLocation, job.location_id)
+    if job.status == "completed" and location: refresh_media_lifecycle(location.project_id, db)
     return background_job_response(job, db)
 
 
@@ -1206,6 +1212,7 @@ def generate_character_reference(character_id: int, payload: GenerationRequest, 
         job.error = str(exc)
     db.commit()
     db.refresh(job)
+    if job.status == "completed": refresh_media_lifecycle(character.project_id, db)
     return job_response(job, db)
 
 
@@ -1347,6 +1354,7 @@ async def upload_worker_artifact(worker_id: int, job_id: int, filename: str, req
     assignment.leased_until = utcnow() + timedelta(seconds=settings.worker_lease_seconds)
     db.commit()
     db.refresh(asset)
+    refresh_media_lifecycle(character.project_id, db)
     return {"asset_id": asset.id, "uri": asset.uri, "version": asset.version}
 
 
@@ -1558,6 +1566,8 @@ def generate_storyboard(shot_id: int, payload: GenerationRequest, db: Session = 
     except ProviderError as exc:
         job.status, job.error = "failed", str(exc)
     db.commit()
+    scene = db.get(Scene, shot.scene_id)
+    if job.status == "completed" and scene: refresh_media_lifecycle(scene.project_id, db)
     return storyboard_job_response(job, db)
 
 
@@ -1576,6 +1586,8 @@ def sync_storyboard_job(job_id: int, db: Session = Depends(get_db)):
     except ProviderError as exc:
         job.status, job.error = "failed", str(exc)
     db.commit()
+    shot = db.get(Shot, job.shot_id); scene = db.get(Scene, shot.scene_id) if shot else None
+    if job.status == "completed" and scene: refresh_media_lifecycle(scene.project_id, db)
     return storyboard_job_response(job, db)
 
 
@@ -1717,6 +1729,34 @@ def ensure_thumbnail(project_id: int, asset_key: str, path: Path, width: int, db
     return upsert_residency(db, project_id, asset_key, "thumbnail", "server", object_ref=str(destination.relative_to(thumbnail_dir)).replace("\\", "/"), uri=f"/api/media/thumbnails/{project_id}/{filename}", checksum=sha256_file(destination), size=destination.stat().st_size)
 
 
+def ensure_working_proxy(project_id: int, asset_key: str, path: Path, width: int, db: Session) -> AssetResidency | None:
+    suffix = path.suffix.lower()
+    kind = "image" if suffix in {".png", ".jpg", ".jpeg", ".webp"} else "video" if suffix in {".mp4", ".mov", ".mkv", ".webm"} else "audio" if suffix in {".wav", ".mp3", ".m4a", ".ogg", ".flac"} else ""
+    if not kind: return None
+    extension = ".jpg" if kind == "image" else ".mp4" if kind == "video" else ".m4a"
+    filename = f"{hashlib.sha256(asset_key.encode()).hexdigest()[:24]}{extension}"
+    destination = (proxy_dir / f"project-{project_id}" / filename).resolve(); project_root = (proxy_dir / f"project-{project_id}").resolve()
+    if project_root not in destination.parents: return None
+    if not destination.is_file():
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if kind == "image":
+                with Image.open(path) as image:
+                    image.thumbnail((width, width)); image.convert("RGB").save(destination, "JPEG", quality=88, optimize=True)
+            elif kind == "video":
+                command = [ffmpeg_executable(), "-y", "-loglevel", "error", "-i", str(path), "-map", "0:v:0", "-map", "0:a?", "-vf", f"scale={width}:-2:force_original_aspect_ratio=decrease", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(destination)]
+                completed = subprocess.run(command, capture_output=True, text=True, timeout=300)
+                if completed.returncode: raise OSError(completed.stderr[-2000:] or "Video proxy failed")
+            else:
+                command = [ffmpeg_executable(), "-y", "-loglevel", "error", "-i", str(path), "-vn", "-c:a", "aac", "-b:a", "128k", str(destination)]
+                completed = subprocess.run(command, capture_output=True, text=True, timeout=180)
+                if completed.returncode: raise OSError(completed.stderr[-2000:] or "Audio proxy failed")
+        except (OSError, subprocess.TimeoutExpired, UnidentifiedImageError):
+            destination.unlink(missing_ok=True)
+            return None
+    return upsert_residency(db, project_id, asset_key, "proxy", "server", object_ref=str(destination.relative_to(proxy_dir)).replace("\\", "/"), uri=f"/api/media/proxies/{project_id}/{filename}", checksum=sha256_file(destination), size=destination.stat().st_size, status_value="available")
+
+
 def build_media_index(project_id: int, db: Session) -> dict:
     policy = media_policy_for(project_id, db); catalog = project_asset_library(project_id, db); used_uris = {item.get("uri", "") for item in catalog}
     for uri in sorted(project_owned_uris(project_id, db) - used_uris):
@@ -1730,21 +1770,28 @@ def build_media_index(project_id: int, db: Session) -> dict:
             checksum = existing_original.checksum_sha256 if existing_original and existing_original.size_bytes == path.stat().st_size and existing_original.checksum_sha256 else sha256_file(path)
             upsert_residency(db, project_id, asset_key, "original", "server", object_ref=uri, uri=uri, checksum=checksum, size=path.stat().st_size)
             if (asset.get("mime_type", "").startswith("image/") or path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}): ensure_thumbnail(project_id, asset_key, path, policy.thumbnail_width, db)
+            if policy.keep_server_proxies: ensure_working_proxy(project_id, asset_key, path, policy.proxy_width, db)
         elif uri:
             upsert_residency(db, project_id, asset_key, "original", "external", object_ref=uri, uri=uri, status_value="available")
         db.flush()
         residencies = db.scalars(select(AssetResidency).where(AssetResidency.project_id == project_id, AssetResidency.asset_key == asset_key).order_by(AssetResidency.representation, AssetResidency.backend)).all()
         thumbnail_uri = next((item.uri for item in residencies if item.representation == "thumbnail" and item.status == "available"), "")
         image_fallback = uri if asset.get("mime_type", "").startswith("image/") or Path(uri).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".svg"} else ""
-        result.append({"asset_key": asset_key, "name": asset.get("name", "Production media"), "kind": asset.get("kind", "media"), "source_kind": asset["source_kind"], "preview_uri": thumbnail_uri or image_fallback, "residencies": [{"representation": item.representation, "backend": item.backend, "node_key": item.node_key, "size_bytes": item.size_bytes, "status": item.status, "checksum_sha256": item.checksum_sha256, "last_verified_at": item.last_verified_at} for item in residencies]})
+        result.append({"asset_key": asset_key, "name": asset.get("name", "Production media"), "kind": asset.get("kind", "media"), "source_kind": asset["source_kind"], "preview_uri": thumbnail_uri or image_fallback, "proxy_uri": next((item.uri for item in residencies if item.representation == "proxy" and item.status == "available"), ""), "residencies": [{"representation": item.representation, "backend": item.backend, "node_key": item.node_key, "size_bytes": item.size_bytes, "status": item.status, "checksum_sha256": item.checksum_sha256, "last_verified_at": item.last_verified_at} for item in residencies]})
     db.commit()
     rows = db.scalars(select(AssetResidency).where(AssetResidency.project_id == project_id)).all()
     original_rows = [item for item in rows if item.representation == "original" and item.status == "available"]
     server_originals = {item.asset_key: item for item in original_rows if item.backend == "server"}
-    verified_copy_counts = {asset_key: len({(item.backend, item.node_key or item.object_ref) for item in original_rows if item.asset_key == asset_key and item.backend in {"hive", "s3"} and item.checksum_sha256 and item.checksum_sha256 == source.checksum_sha256}) for asset_key, source in server_originals.items()}
+    cleanup_cutoff = utcnow() - timedelta(hours=settings.cleanup_verification_hours)
+    verified_copy_counts = {asset_key: len({(item.backend, item.node_key or item.object_ref) for item in original_rows if item.asset_key == asset_key and item.backend in {"hive", "s3"} and item.checksum_sha256 and item.checksum_sha256 == source.checksum_sha256 and item.last_verified_at and item.last_verified_at >= cleanup_cutoff}) for asset_key, source in server_originals.items()}
     transfers = db.scalars(select(MediaTransferJob).where(MediaTransferJob.project_id == project_id)).all()
+    cleanup_reviews = db.scalars(select(MediaCleanupReview).where(MediaCleanupReview.project_id == project_id)).all()
     nodes = db.scalars(select(KizunaNode).order_by(KizunaNode.name)).all()
-    return {"project_id": project_id, "policy": MediaStoragePolicyRead.model_validate(policy).model_dump(), "nodes": [{"node_key": node.node_key, "name": node.name, "status": node.status} for node in nodes], "assets": result, "summary": {"assets": len(result), "server_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "server"), "hive_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "hive"), "s3_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "s3"), "lightweight_server_bytes": sum(item.size_bytes for item in rows if item.backend == "server" and item.representation in {"thumbnail", "proxy"}), "hive_assets": len({item.asset_key for item in original_rows if item.backend == "hive"}), "verified_originals": len({item.asset_key for item in original_rows}), "queued_transfers": sum(item.status == "queued" for item in transfers), "active_transfers": sum(item.status in {"leased", "transferring"} for item in transfers), "completed_transfers": sum(item.status == "completed" for item in transfers), "cleanup_eligible_assets": sum(policy.evict_server_originals and count >= policy.minimum_replicas for count in verified_copy_counts.values())}}
+    return {"project_id": project_id, "policy": MediaStoragePolicyRead.model_validate(policy).model_dump(), "nodes": [{"node_key": node.node_key, "name": node.name, "status": node.status} for node in nodes], "assets": result, "summary": {"assets": len(result), "server_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "server"), "hive_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "hive"), "s3_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "s3"), "lightweight_server_bytes": sum(item.size_bytes for item in rows if item.backend == "server" and item.representation in {"thumbnail", "proxy"}), "hive_assets": len({item.asset_key for item in original_rows if item.backend == "hive"}), "verified_originals": len({item.asset_key for item in original_rows}), "queued_transfers": sum(item.status == "queued" for item in transfers), "active_transfers": sum(item.status in {"leased", "transferring"} for item in transfers), "completed_transfers": sum(item.status == "completed" for item in transfers), "cleanup_eligible_assets": sum(policy.evict_server_originals and count >= policy.minimum_replicas for count in verified_copy_counts.values()), "cleanup_approved_assets": sum(review.status == "approved" and review.asset_key in server_originals and review.checksum_sha256 == server_originals[review.asset_key].checksum_sha256 and verified_copy_counts.get(review.asset_key, 0) >= policy.minimum_replicas for review in cleanup_reviews)}}
+
+
+def refresh_media_lifecycle(project_id: int, db: Session) -> None:
+    build_media_index(project_id, db)
 
 
 @app.get("/api/projects/{project_id}/media-index")
@@ -1771,6 +1818,59 @@ def get_media_thumbnail(project_id: int, filename: str):
     path = (thumbnail_dir / f"project-{project_id}" / filename).resolve(); project_root = (thumbnail_dir / f"project-{project_id}").resolve()
     if project_root not in path.parents or not path.is_file(): raise HTTPException(404, "Thumbnail not found")
     return FileResponse(path, media_type="image/svg+xml" if path.suffix.lower() == ".svg" else "image/jpeg")
+
+
+@app.get("/api/media/proxies/{project_id}/{filename}")
+def get_media_proxy(project_id: int, filename: str):
+    if Path(filename).name != filename: raise HTTPException(404, "Proxy not found")
+    path = (proxy_dir / f"project-{project_id}" / filename).resolve(); project_root = (proxy_dir / f"project-{project_id}").resolve()
+    if project_root not in path.parents or not path.is_file(): raise HTTPException(404, "Proxy not found")
+    mime_type = {".jpg": "image/jpeg", ".mp4": "video/mp4", ".m4a": "audio/mp4"}.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=mime_type)
+
+
+def media_cleanup_state(project_id: int, db: Session) -> dict:
+    media = build_media_index(project_id, db); policy = media_policy_for(project_id, db)
+    names = {item["asset_key"]: item["name"] for item in media["assets"]}; cutoff = utcnow() - timedelta(hours=settings.cleanup_verification_hours)
+    sources = db.scalars(select(AssetResidency).where(AssetResidency.project_id == project_id, AssetResidency.representation == "original", AssetResidency.backend == "server", AssetResidency.status == "available").order_by(AssetResidency.id)).all()
+    reviews = {item.asset_key: item for item in db.scalars(select(MediaCleanupReview).where(MediaCleanupReview.project_id == project_id)).all()}
+    items = []
+    for source in sources:
+        copies = db.scalars(select(AssetResidency).where(AssetResidency.project_id == project_id, AssetResidency.asset_key == source.asset_key, AssetResidency.representation == "original", AssetResidency.backend.in_(["hive", "s3"]), AssetResidency.status == "available", AssetResidency.checksum_sha256 == source.checksum_sha256)).all()
+        fresh = {(copy.backend, copy.node_key or copy.object_ref) for copy in copies if copy.last_verified_at and copy.last_verified_at >= cutoff}
+        eligible = bool(policy.evict_server_originals and source.checksum_sha256 and len(fresh) >= policy.minimum_replicas)
+        review = reviews.get(source.asset_key)
+        if review and review.status == "approved" and (not eligible or review.checksum_sha256 != source.checksum_sha256):
+            review.status, review.approved_at = "review", None
+            review.note = "Approval expired because the source or verified replica state changed."
+        status_value = "approved" if review and review.status == "approved" and eligible else "eligible" if eligible else "blocked"
+        reason = "Ready for creator approval; no file will be deleted." if eligible else "Enable server cleanup in the media policy." if not policy.evict_server_originals else f"Needs {max(0, policy.minimum_replicas - len(fresh))} more fresh checksum-verified replica(s)."
+        items.append({"asset_key": source.asset_key, "name": names.get(source.asset_key, source.asset_key), "status": status_value, "reason": reason, "source_uri": source.uri, "source_size_bytes": source.size_bytes, "checksum_sha256": source.checksum_sha256, "required_replicas": policy.minimum_replicas, "verified_replicas": len(fresh), "verification_cutoff": cutoff, "approved_at": review.approved_at if review else None, "note": review.note if review else ""})
+    db.commit()
+    return {"project_id": project_id, "verification_hours": settings.cleanup_verification_hours, "deletion_enabled": False, "items": items, "summary": {"blocked": sum(item["status"] == "blocked" for item in items), "eligible": sum(item["status"] == "eligible" for item in items), "approved": sum(item["status"] == "approved" for item in items)}}
+
+
+@app.get("/api/projects/{project_id}/media-cleanup")
+def get_media_cleanup(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    return media_cleanup_state(project_id, db)
+
+
+@app.put("/api/projects/{project_id}/media-cleanup")
+def update_media_cleanup(project_id: int, payload: MediaCleanupDecision, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    state = media_cleanup_state(project_id, db); item = next((entry for entry in state["items"] if entry["asset_key"] == payload.asset_key), None)
+    if not item: raise HTTPException(404, "Server original not found")
+    if payload.action == "approve" and item["status"] not in {"eligible", "approved"}: raise HTTPException(409, item["reason"])
+    source = db.scalar(select(AssetResidency).where(AssetResidency.project_id == project_id, AssetResidency.asset_key == payload.asset_key, AssetResidency.representation == "original", AssetResidency.backend == "server"))
+    review = db.scalar(select(MediaCleanupReview).where(MediaCleanupReview.project_id == project_id, MediaCleanupReview.asset_key == payload.asset_key))
+    if review is None:
+        review = MediaCleanupReview(project_id=project_id, asset_key=payload.asset_key, source_residency_id=source.id); db.add(review)
+    review.status = "approved" if payload.action == "approve" else "review"
+    review.checksum_sha256, review.required_replicas, review.verified_replicas = source.checksum_sha256, item["required_replicas"], item["verified_replicas"]
+    review.verification_cutoff, review.approved_at, review.note = item["verification_cutoff"], utcnow() if payload.action == "approve" else None, payload.note
+    db.commit()
+    return media_cleanup_state(project_id, db)
 
 
 @app.post("/api/nodes/{node_key}/projects/{project_id}/media-residencies")
@@ -2053,6 +2153,9 @@ def render_shot_composition(composition_id: int, db: Session = Depends(get_db)):
     except Exception as exc:
         render.status, render.error = "failed", str(exc)
     db.commit(); db.refresh(render)
+    if render.status == "completed":
+        shot = db.get(Shot, composition.shot_id); scene = db.get(Scene, shot.scene_id) if shot else None
+        if scene: refresh_media_lifecycle(scene.project_id, db)
     return render
 
 
@@ -2082,6 +2185,7 @@ def render_shot_motion(composition_id: int, payload: MotionRenderRequest, db: Se
     except Exception as exc:
         render.status, render.error = "failed", str(exc)
     db.commit(); db.refresh(render)
+    if render.status == "completed": refresh_media_lifecycle(scene.project_id, db)
     return render
 
 
@@ -2129,6 +2233,7 @@ def perform_voice_action(action: CrewAction, db: Session) -> CrewAction:
     except VoiceProviderError as exc:
         action.status, action.error = "failed", str(exc)
     db.commit(); db.refresh(action)
+    if action.status == "completed": refresh_media_lifecycle(action.project_id, db)
     return action
 
 
@@ -3050,6 +3155,7 @@ def split_audio_cue(cue_id: int, payload: AudioCueSplitRequest, db: Session = De
         second.filename, second.uri, second.mime_type = second_name, f"/renders/{second_name}", "audio/wav"
     cue.duration_seconds = split_at
     db.add(second); mark_audio_edit_dirty(db.get(AudioTrack, cue.track_id), db); db.commit(); db.refresh(cue); db.refresh(second)
+    refresh_media_lifecycle(cue_project_id(cue, db), db)
     return [cue, second]
 
 
@@ -3083,6 +3189,7 @@ def generate_scratch_audio(cue_id: int, db: Session = Depends(get_db)):
     generate_timing_slate(render_dir / cue.filename, cue.text, cue.duration_seconds, profile.pitch if profile else 0, profile.pace if profile else 1)
     cue.uri, cue.mime_type, cue.status = f"/renders/{cue.filename}", "audio/wav", "scratch-ready"
     db.commit(); db.refresh(cue)
+    refresh_media_lifecycle(cue_project_id(cue, db), db)
     return cue
 
 
@@ -3102,6 +3209,7 @@ async def upload_audio_cue(cue_id: int, request: Request, filename: str, db: Ses
     (render_dir / cue.filename).write_bytes(content)
     cue.uri, cue.mime_type, cue.status = f"/renders/{cue.filename}", allowed[suffix], "asset-ready"
     db.commit(); db.refresh(cue)
+    refresh_media_lifecycle(cue_project_id(cue, db), db)
     return cue
 
 
@@ -3135,6 +3243,7 @@ def render_timeline(timeline_id: int, db: Session = Depends(get_db)):
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
     db.commit(); db.refresh(render)
+    if render.status == "completed": refresh_media_lifecycle(timeline.project_id, db)
     return render
 
 
@@ -3175,6 +3284,7 @@ def render_master(timeline_id: int, payload: MasterRenderRequest, db: Session = 
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
     db.commit(); db.refresh(render)
+    if render.status == "completed": refresh_media_lifecycle(timeline.project_id, db)
     return render
 
 
@@ -3368,6 +3478,9 @@ def assemble_master_export_job(job: MasterExportJob, db: Session, strict: bool =
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
     db.commit()
+    if job.status == "completed":
+        timeline = db.get(Timeline, job.timeline_id)
+        if timeline: refresh_media_lifecycle(timeline.project_id, db)
 
 
 @app.post("/api/master-exports/{export_id}/assemble", response_model=MasterExportRead)

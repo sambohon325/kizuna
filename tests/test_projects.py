@@ -605,3 +605,39 @@ def test_asset_reviews_select_compare_and_rollback_without_deleting_versions(cli
     assert rolled_back["layers"][1]["source_asset_id"] == character_v1["id"]
     assert len(client.get(f"/api/projects/{project_id}/asset-reviews").json()["assets"]) == 6
     assert background_v2["id"] != background_v1["id"] and storyboard_v2["id"] != storyboard_v1["id"]
+
+
+def test_project_backups_retention_and_expiring_delivery_links(client, monkeypatch):
+    import shutil
+    from pathlib import Path
+    import app.main as main_module
+    from app.storage import LocalProductionStorage
+
+    storage_path = Path("work/test-production-storage").resolve()
+    if storage_path.exists():
+        shutil.rmtree(storage_path)
+    monkeypatch.setattr(main_module, "production_storage", LocalProductionStorage(storage_path))
+    project_id = client.post("/api/projects", json={"title": "Archive Test"}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari"}).json()
+    client.put(f"/api/characters/{character['id']}/design", json={"appearance": {"silhouette": "long coat"}, "consistency_anchors": ["red collar"]})
+    asset = client.post(f"/api/characters/{character['id']}/generate", json={"provider": "mock", "seed": 9}).json()["assets"][0]
+    policy = client.put(f"/api/projects/{project_id}/storage-policy", json={"retention_days": 30, "max_backups": 1, "include_media": True})
+    assert policy.json()["backend"] == "local"
+
+    first = client.post(f"/api/projects/{project_id}/backups").json()
+    second = client.post(f"/api/projects/{project_id}/backups").json()
+    backups = client.get(f"/api/projects/{project_id}/backups").json()
+    assert [item["id"] for item in backups] == [second["id"]]
+    assert second["asset_count"] == 1
+    assert len(second["checksum_sha256"]) == 64
+    assert client.get(second["download_url"]).headers["content-type"] == "application/zip"
+    assert client.get(f"/api/backups/{first['id']}/download").status_code == 404
+
+    delivery = client.post(f"/api/projects/{project_id}/delivery-links", json={"asset_uri": asset["uri"], "label": "Studio review", "expires_hours": 24, "max_downloads": 1})
+    assert delivery.status_code == 201
+    url = delivery.json()["url"]
+    assert client.get(url).status_code == 200
+    assert client.get(url).status_code == 410
+    revoked = client.post(f"/api/delivery-links/{delivery.json()['id']}/revoke")
+    assert revoked.json()["revoked"] is True
+    shutil.rmtree(storage_path)

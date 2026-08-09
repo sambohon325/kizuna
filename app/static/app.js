@@ -52,6 +52,7 @@ function openWorkspace(dialog) {
     back.setAttribute('aria-label', 'Back to productions');
   }
   setActiveNavigation(workspaceNav.get(dialog));
+  renderProductionFlow();
   window.scrollTo({top: 0, left: 0, behavior: 'auto'});
 }
 
@@ -64,7 +65,53 @@ function showDashboard() {
   dashboardHome.hidden = false;
   workspaceMain.classList.remove('tool-open');
   setActiveNavigation();
+  renderProductionFlow();
   window.scrollTo({top: 0, left: 0, behavior: 'auto'});
+}
+
+const productionStages = [
+  {key:'story',label:'Story',nav:'writer-nav'}, {key:'style',label:'Style',nav:'style-lab-nav'},
+  {key:'characters',label:'Cast',nav:'characters-nav'}, {key:'worlds',label:'Worlds',nav:'worlds-nav'},
+  {key:'shots',label:'Shots',nav:'shots-nav'}, {key:'timeline',label:'Edit',nav:'timeline-nav'},
+  {key:'audio',label:'Sound',nav:'audio-nav'}, {key:'composite',label:'Finish',nav:'compositor-nav'},
+  {key:'render',label:'Master',nav:'render-nav'}
+];
+
+function currentFlowProject() {
+  const openDialog=workspaceDialogs.find(dialog=>dialog.hasAttribute('open'));
+  const selected=openDialog?.querySelector('select[id$="-project"]')?.value;
+  return projects.find(project=>project.id===Number(selected))||projects[0]||null;
+}
+
+function currentFlowStage() {
+  const openDialog=workspaceDialogs.find(dialog=>dialog.hasAttribute('open'));
+  const nav=workspaceNav.get(openDialog);
+  return productionStages.find(stage=>stage.nav===nav)?.key||'';
+}
+
+function productionReadiness(project) {
+  const shots=project?.scenes?.flatMap(scene=>scene.shots||[])||[];
+  return {
+    story:Boolean(project?.story_brief?.synopsis), style:Boolean(project?.style_profile), characters:Boolean(project?.characters?.length),
+    worlds:Boolean(project?.locations?.length), shots:Boolean(shots.length), timeline:Boolean(activeTimeline?.project_id===project?.id),
+    audio:Boolean(activeAudioStudio?.project_id===project?.id), composite:Boolean(activeCompositorStudio?.project_id===project?.id&&activeCompositorStudio.shots?.some(shot=>shot.composition_id)), render:false
+  };
+}
+
+function renderProductionFlow() {
+  const host=document.querySelector('#production-flow');if(!host)return;const project=currentFlowProject(),ready=productionReadiness(project),current=currentFlowStage();
+  host.innerHTML=`<span class="flow-label">${project?safe(project.title):'PRODUCTION FLOW'}</span>${productionStages.map((stage,index)=>`<button type="button" class="flow-node ${ready[stage.key]?'ready':''} ${current===stage.key?'current':''}" data-flow-nav="${stage.nav}" title="Open ${stage.label}"><i>${ready[stage.key]?'âœ“':String(index+1).padStart(2,'0')}</i>${stage.label}</button>`).join('')}`;
+  host.querySelectorAll('[data-flow-nav]').forEach(button=>button.onclick=()=>document.querySelector(`#${button.dataset.flowNav}`)?.click());
+}
+
+function setupCraftWorkspaces() {
+  const form=document.querySelector('#writer-form');if(form&&!form.querySelector('.writer-document-sidebar')){
+    const sidebar=document.createElement('aside'),canvas=document.createElement('section'),page=document.createElement('div');sidebar.className='writer-document-sidebar';canvas.className='writer-document-canvas';page.className='writer-document-page';
+    const heading=form.querySelector(':scope > .eyebrow'),title=form.querySelector(':scope > h2'),intro=form.querySelector(':scope > .form-intro'),labels=[...form.querySelectorAll(':scope > label')],agent=form.querySelector(':scope > .writer-agent-panel');
+    [heading,title,intro,labels[0],agent].forEach(node=>node&&sidebar.appendChild(node));[labels[1],form.querySelector(':scope > .writer-grid'),labels[2],form.querySelector(':scope > button.primary'),form.querySelector(':scope > .story-result')].forEach(node=>node&&page.appendChild(node));canvas.appendChild(page);form.append(sidebar,canvas);
+  }
+  const shell=document.querySelector('.shell'),toggle=document.querySelector('#rail-toggle'),collapsed=localStorage.getItem('kizuna-rail-collapsed')==='true';shell.classList.toggle('rail-collapsed',collapsed);toggle.setAttribute('aria-expanded',String(!collapsed));toggle.setAttribute('aria-label',collapsed?'Expand navigation':'Collapse navigation');
+  toggle.onclick=()=>{const next=!shell.classList.contains('rail-collapsed');shell.classList.toggle('rail-collapsed',next);localStorage.setItem('kizuna-rail-collapsed',String(next));toggle.setAttribute('aria-expanded',String(!next));toggle.setAttribute('aria-label',next?'Expand navigation':'Collapse navigation');};
 }
 document.querySelector('#render-composition').insertAdjacentHTML('afterend','<button id="render-motion" type="button">Render motion preview</button>');
 document.querySelector('.compositor-title').insertAdjacentHTML('afterend','<section class="visual-agent-panel animator-agent-panel"><div class="visual-agent-head"><div><p class="eyebrow">AI ANIMATOR</p><h3>Delegate the motion pass</h3><p>Select a shot, then review camera movement, acting beats, and editable layer keyframes.</p></div></div><div class="visual-agent-controls"><label>Engine<select id="animator-provider"><option value="simulation">Local motion planner</option><option value="openai">OpenAI Animator</option></select></label><label>Assignment<textarea id="animator-objective" rows="2">Create an economical, performance-led motion pass that preserves continuity.</textarea></label><label>Output<select id="animator-output"><option value="plan">Motion plan only</option><option value="proxy">Plan + proxy preview</option><option value="full">Plan + full-resolution preview</option></select></label><button id="ask-animator" type="button">Ask Animator</button></div><div id="animator-result"></div></section>');
@@ -118,6 +165,7 @@ async function loadProjects() {
   projectsEl.innerHTML = projects.length ? projects.map(project => `
     <article class="project" data-id="${project.id}"><span class="tag">${safe(project.status)}</span><h3>${safe(project.title)}</h3><p>${safe(project.logline || 'Your story is waiting for its first scene.')}</p><footer><span class="era">${safe(project.style_profile?.era_primary || 'Style open')}</span><span>${project.scenes.length} scenes</span></footer></article>`).join('') : '<div class="empty">No productions yet. Start with a title and logline—everything else can evolve.</div>';
   document.querySelectorAll('.project').forEach(el => el.onclick = () => openProject(el.dataset.id));
+  renderProductionFlow();
 }
 
 async function openProject(id) {
@@ -128,9 +176,23 @@ async function openProject(id) {
     <div class="style-grid"><div class="style-card"><b>ERA BLEND</b>${safe(style.era_primary)} × ${safe(style.era_secondary)}</div><div class="style-card"><b>VISUAL DNA</b>${safe(Object.values(style.visual).join(' · '))}</div><div class="style-card"><b>STORY DNA</b>${safe(Object.values(style.narrative).join(' · '))}</div></div>
     <h3>Scenes</h3>${project.scenes.length ? project.scenes.map(scene => `<div class="scene"><strong>${scene.position}. ${safe(scene.title)}</strong><br><small>${safe(scene.summary)} · ${scene.shots.length} shots</small></div>`).join('') : '<div class="empty">Scene planning will appear here.</div>'}`;
   openWorkspace(detailDialog);
+  setupStorageConsole(project.id);
   document.querySelector('[data-close-detail]').onclick = showDashboard;
   document.querySelector('[data-style-id]').onclick = event => { detailDialog.close(); openStyleLab(Number(event.currentTarget.dataset.styleId)); };
   document.querySelector('[data-writer-id]').onclick = event => { detailDialog.close(); openWriterRoom(Number(event.currentTarget.dataset.writerId)); };
+}
+
+async function setupStorageConsole(projectId) {
+  const detail=document.querySelector('#detail');if(!detail.querySelector('#storage-console'))detail.insertAdjacentHTML('beforeend','<section id="storage-console" class="production-storage"><div class="storage-loading">Loading production storageâ€¦</div></section>');
+  const host=detail.querySelector('#storage-console');
+  try {
+    const [policy,backups,links,studio]=await Promise.all([api(`/api/projects/${projectId}/storage-policy`),api(`/api/projects/${projectId}/backups`),api(`/api/projects/${projectId}/delivery-links`),api(`/api/projects/${projectId}/compositor`)]);
+    const assets=studio.assets.filter(asset=>asset.active);
+    host.innerHTML=`<header><div><p class="eyebrow">PRODUCTION VAULT</p><h3>Backups & secure delivery</h3><p>Package the editable project with its media, then issue expiring review links without exposing the studio.</p></div><span>${safe(policy.backend)} storage</span></header><div class="storage-grid"><section><h4>Backup policy</h4><div class="storage-fields"><label>Keep for days<input id="storage-retention" type="number" min="1" max="3650" value="${policy.retention_days}"></label><label>Maximum copies<input id="storage-max" type="number" min="1" max="100" value="${policy.max_backups}"></label></div><label class="storage-check"><input id="storage-media" type="checkbox" ${policy.include_media?'checked':''}> Include generated media</label><div class="storage-actions"><button id="save-storage-policy" type="button">Save policy</button><button id="create-backup" class="primary" type="button">Create backup</button></div><div id="backup-list" class="vault-list">${backups.length?backups.map(item=>`<a href="${item.download_url}"><b>${safe(item.filename)}</b><small>${item.asset_count} assets Â· ${(item.size_bytes/1024).toFixed(1)} KB Â· ${safe(item.checksum_sha256.slice(0,10))}</small></a>`).join(''):'<span>No backups yet.</span>'}</div></section><section><h4>Expiring delivery link</h4><label>Approved asset<select id="delivery-asset">${assets.length?assets.map(asset=>`<option value="${safe(asset.uri)}">${safe(asset.name)} Â· v${asset.version}</option>`).join(''):'<option value="">Approve an asset first</option>'}</select></label><label>Label<input id="delivery-label" value="Studio review"></label><div class="storage-fields"><label>Expires in hours<input id="delivery-hours" type="number" min="1" max="720" value="72"></label><label>Download limit<input id="delivery-limit" type="number" min="1" max="10000" value="10"></label></div><button id="create-delivery" type="button" ${assets.length?'':'disabled'}>Create secure link</button><div id="delivery-result"></div><div class="vault-list">${links.length?links.map(link=>`<span><b>${safe(link.label)}</b><small>${link.download_count}/${link.max_downloads} downloads Â· ${link.revoked?'revoked':'expires '+new Date(link.expires_at).toLocaleDateString()}</small></span>`).join(''):'<span>No delivery links yet.</span>'}</div></section></div>`;
+    document.querySelector('#save-storage-policy').onclick=async()=>{await api(`/api/projects/${projectId}/storage-policy`,{method:'PUT',body:JSON.stringify({retention_days:Number(document.querySelector('#storage-retention').value),max_backups:Number(document.querySelector('#storage-max').value),include_media:document.querySelector('#storage-media').checked})});await setupStorageConsole(projectId);};
+    document.querySelector('#create-backup').onclick=async event=>{event.currentTarget.disabled=true;event.currentTarget.textContent='Packagingâ€¦';await api(`/api/projects/${projectId}/backups`,{method:'POST'});await setupStorageConsole(projectId);};
+    document.querySelector('#create-delivery').onclick=async()=>{const link=await api(`/api/projects/${projectId}/delivery-links`,{method:'POST',body:JSON.stringify({asset_uri:document.querySelector('#delivery-asset').value,label:document.querySelector('#delivery-label').value,expires_hours:Number(document.querySelector('#delivery-hours').value),max_downloads:Number(document.querySelector('#delivery-limit').value)})}),url=new URL(link.url,location.origin).href;document.querySelector('#delivery-result').innerHTML=`<div class="delivery-created"><b>Copy this link now</b><input readonly value="${safe(url)}"><button type="button" id="copy-delivery">Copy link</button></div>`;document.querySelector('#copy-delivery').onclick=()=>navigator.clipboard.writeText(url);};
+  } catch(error) { host.innerHTML=`<div class="job-error">${safe(error.message)}</div>`; }
 }
 
 function options(items, selected) {
@@ -211,6 +273,8 @@ function renderStory(brief) {
   const result = document.querySelector('#story-result');
   if (!brief?.synopsis) { result.innerHTML = ''; return; }
   result.innerHTML = `<div class="synopsis"><b>WORKING SYNOPSIS</b><div data-synopsis>${safe(brief.synopsis)}</div></div><div class="beats">${brief.beats.map(beat => `<div class="beat" data-position="${safe(beat.position)}" data-name="${safe(beat.name)}"><b>${safe(beat.position)} · ${safe(beat.name)}</b><textarea aria-label="${safe(beat.name)} summary">${safe(beat.summary)}</textarea></div>`).join('')}</div><div class="outline-actions"><button type="button" id="save-outline">Save outline edits</button></div>`;
+  result.insertAdjacentHTML('afterbegin',`<section class="story-flow-map"><header><span>STORY FLOW</span><small>Click any beat to open its card</small></header><div>${brief.beats.map(beat=>`<button type="button" data-story-beat="${safe(beat.position)}"><i>${safe(beat.position)}</i><b>${safe(beat.name)}</b></button>`).join('')}</div></section>`);
+  result.querySelectorAll('[data-story-beat]').forEach(button=>button.onclick=()=>result.querySelector(`.beat[data-position="${CSS.escape(button.dataset.storyBeat)}"]`)?.scrollIntoView({behavior:'smooth',block:'center'}));
   document.querySelector('#save-outline').onclick = saveOutline;
 }
 
@@ -254,7 +318,7 @@ async function openCharacterStudio(projectId) {
   openWorkspace(characterDialog);
 }
 
-function renderCharacterRoster(projectId) {
+function renderCharacterRosterLegacy(projectId) {
   const roster = projects.find(project => project.id === projectId)?.characters || [];
   document.querySelector('#character-roster').innerHTML = `<button type="button" class="character-pill ${activeCharacterId === null ? 'active' : ''}" data-new-character>＋ New</button>${roster.map(character => `<button type="button" class="character-pill ${activeCharacterId === character.id ? 'active' : ''}" data-character-id="${character.id}"><b>${safe(character.name)}</b> · ${safe(character.role)}${character.design ? ` · sheet v${character.design.version}` : ''}</button>`).join('')}`;
   document.querySelector('[data-new-character]').onclick = () => { activeCharacterId = null; clearCharacterForm(); renderCharacterRoster(projectId); };
@@ -781,7 +845,7 @@ async function loadAudioStudio(projectId) {
   catch(error) { activeAudioTimeline=null; activeAudioStudio=null; document.querySelector('#audio-summary').innerHTML='<span>Build the picture timeline before sound work begins.</span>'; document.querySelector('#audio-tracks').innerHTML=`<div class="empty">${safe(error.message)}</div>`; document.querySelector('#cue-form').style.display='none'; document.querySelector('#cue-empty').style.display='block'; fillVoiceBible(projectId); }
 }
 
-function renderAudioStudio(projectId) {
+function renderAudioStudioLegacy(projectId) {
   const cues=activeAudioStudio.tracks.flatMap(track=>track.cues); document.querySelector('#audio-summary').innerHTML=`<b>${activeAudioStudio.tracks.length} TRACKS</b><span>${cues.length} cues</span><span>${activeAudioStudio.total_duration_seconds.toFixed(1)}s picture lock</span>`;
   document.querySelector('#audio-tracks').innerHTML=activeAudioStudio.tracks.length?activeAudioStudio.tracks.map(track=>`<section class="track-group"><header class="track-head"><b>${safe(track.name)}</b><button type="button" data-new-cue="${track.id}">＋ Cue</button></header>${track.cues.length?track.cues.map(cue=>`<button type="button" class="cue-item ${activeAudioCueId===cue.id?'active':''}" data-cue-id="${cue.id}"><small>${cue.start_seconds.toFixed(1)}s</small><span><b>${safe(cue.text||cue.direction||'Untitled cue')}</b><small>${safe(cue.status)}</small></span><small>${cue.duration_seconds.toFixed(1)}s</small></button>`).join(''):'<div class="empty">No cues on this track.</div>'}</section>`).join(''):'<div class="empty">Initialize the standard production tracks.</div>';
   document.querySelectorAll('[data-new-cue]').forEach(button=>button.onclick=()=>newAudioCue(Number(button.dataset.newCue))); document.querySelectorAll('[data-cue-id]').forEach(button=>button.onclick=()=>selectAudioCue(Number(button.dataset.cueId)));
@@ -874,6 +938,20 @@ function selectCompositionLayer(layerId) {
 
 async function refreshComposition() { activeComposition=await api(`/api/shots/${activeCompositorShotId}/composition`);activeCompositorStudio=await api(`/api/projects/${activeCompositorStudio.project_id}/compositor`);renderAssetReview();renderCompositorShots();renderCompositionEditor();if(activeCompositionLayerId)selectCompositionLayer(activeCompositionLayerId); }
 
+function renderCharacterRoster(projectId) {
+  const roster=projects.find(project=>project.id===projectId)?.characters||[],host=document.querySelector('#character-roster');
+  host.innerHTML=`<button type="button" class="character-pill ${activeCharacterId===null?'active':''}" data-new-character data-initial="+">ï¼‹ Build a new character</button>${roster.map(character=>`<button type="button" class="character-pill ${activeCharacterId===character.id?'active':''}" data-character-id="${character.id}" data-initial="${safe(character.name.slice(0,1).toUpperCase())}"><b>${safe(character.name)}</b><small>${safe(character.role)}${character.design?` Â· model sheet v${character.design.version}`:' Â· identity open'}</small><small>${safe(character.want||'History and motivation ready to define')}</small></button>`).join('')}`;
+  host.querySelector('[data-new-character]').onclick=()=>{activeCharacterId=null;clearCharacterForm();renderCharacterRoster(projectId);};
+  host.querySelectorAll('[data-character-id]').forEach(button=>button.onclick=()=>selectCharacter(projectId,Number(button.dataset.characterId)));
+}
+
+function renderAudioStudio(projectId) {
+  const cues=activeAudioStudio.tracks.flatMap(track=>track.cues),duration=Math.max(activeAudioStudio.total_duration_seconds,10),colors={dialogue:'#79d7ff',music:'#a98aff',sfx:'#ffbd66',ambience:'#67d6a2'};
+  document.querySelector('#audio-summary').innerHTML=`<b>${activeAudioStudio.tracks.length} TRACKS</b><span>${cues.length} clips</span><span>${activeAudioStudio.total_duration_seconds.toFixed(1)}s picture lock</span><span>Arrangement view</span>`;
+  document.querySelector('#audio-tracks').innerHTML=activeAudioStudio.tracks.length?activeAudioStudio.tracks.map(track=>`<section class="track-group" style="--track-color:${colors[track.kind]||'#79d7ff'}"><header class="track-head"><b>${safe(track.name)}</b><button type="button" data-new-cue="${track.id}">ï¼‹ Clip</button></header><div class="track-lane">${track.cues.map(cue=>`<button type="button" class="cue-item ${activeAudioCueId===cue.id?'active':''}" data-cue-id="${cue.id}" style="left:${Math.min(96,cue.start_seconds/duration*100)}%;--cue-width:${Math.max(4,cue.duration_seconds/duration*100)}%"><small>${cue.start_seconds.toFixed(1)}s</small><span><b>${safe(cue.text||cue.direction||'Untitled clip')}</b><small>${safe(cue.status)}</small></span><small>${cue.duration_seconds.toFixed(1)}s</small></button>`).join('')}</div></section>`).join(''):'<div class="empty">Initialize the standard production tracks.</div>';
+  document.querySelectorAll('[data-new-cue]').forEach(button=>button.onclick=()=>newAudioCue(Number(button.dataset.newCue)));document.querySelectorAll('[data-cue-id]').forEach(button=>button.onclick=()=>selectAudioCue(Number(button.dataset.cueId)));fillVoiceBible(projectId);renderProductionFlow();
+}
+
 function collectStory(form) {
   return {premise:form.elements.premise.value, format:form.elements.format.value, target_duration_minutes:Number(form.elements.target_duration_minutes.value), genre:form.elements.genre.value, audience:form.elements.audience.value, themes:form.elements.themes.value.split(',').map(value => value.trim()).filter(Boolean)};
 }
@@ -937,4 +1015,5 @@ document.querySelector('#writer-form').onsubmit = async event => { event.prevent
 document.querySelector('#character-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#character-project').value); const character = activeCharacterId ? await api(`/api/characters/${activeCharacterId}`, {method:'PUT', body:JSON.stringify(collectCharacter(event.target))}) : await api(`/api/projects/${projectId}/characters`, {method:'POST', body:JSON.stringify(collectCharacter(event.target))}); activeCharacterId = character.id; const design = await api(`/api/characters/${character.id}/design`, {method:'PUT', body:JSON.stringify(collectCharacterDesign(event.target))}); await loadProjects(); renderCharacterRoster(projectId); renderCharacterDesign(character, design); };
 document.querySelector('#world-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#world-project').value); const location = activeLocationId ? await api(`/api/locations/${activeLocationId}`, {method:'PUT', body:JSON.stringify(collectWorld(event.target))}) : await api(`/api/projects/${projectId}/locations`, {method:'POST', body:JSON.stringify(collectWorld(event.target))}); activeLocationId = location.id; const design = await api(`/api/locations/${location.id}/design`, {method:'PUT', body:JSON.stringify(collectWorldDesign(event.target))}); await loadProjects(); renderWorldRoster(projectId); renderWorldDesign(location, design); };
 document.querySelector('#shot-form').onsubmit = async event => { event.preventDefault(); const project = currentShotProject(); const found = findShot(project, activeShotId); if (!found) return; const form = event.target; await api(`/api/shots/${activeShotId}`, {method:'PUT',body:JSON.stringify({title:form.elements.shot_title.value,description:form.elements.shot_description.value,position:found.shot.position,duration_seconds:Number(form.elements.shot_duration.value)})}); const plan = await api(`/api/shots/${activeShotId}/plan`, {method:'PUT',body:JSON.stringify(collectShotPlan(form))}); await loadProjects(); selectShot(project.id, activeShotId); renderShotPlan(plan); };
+setupCraftWorkspaces();
 loadProjects().catch(error => projectsEl.innerHTML = `<div class="empty">Could not load the studio: ${safe(error.message)}</div>`);

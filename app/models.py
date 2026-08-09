@@ -581,3 +581,45 @@ class MasterSegment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     export: Mapped[MasterExportJob] = relationship(back_populates="segments")
+
+
+class StoragePolicy(Base):
+    __tablename__ = "storage_policies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), unique=True)
+    backend: Mapped[str] = mapped_column(String(32), default="local")
+    retention_days: Mapped[int] = mapped_column(default=30)
+    max_backups: Mapped[int] = mapped_column(default=10)
+    include_media: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ProjectBackup(Base):
+    __tablename__ = "project_backups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    filename: Mapped[str] = mapped_column(String(255))
+    storage_key: Mapped[str] = mapped_column(Text)
+    checksum_sha256: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(default=0)
+    asset_count: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String(32), default="completed")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class DeliveryLink(Base):
+    __tablename__ = "delivery_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    asset_uri: Mapped[str] = mapped_column(Text)
+    label: Mapped[str] = mapped_column(String(160), default="Review delivery")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    max_downloads: Mapped[int] = mapped_column(default=10)
+    download_count: Mapped[int] = mapped_column(default=0)
+    revoked: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

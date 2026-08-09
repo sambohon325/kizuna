@@ -787,3 +787,50 @@ class ProjectRead(ProjectCreate):
     characters: list[CharacterRead] = Field(default_factory=list)
     locations: list[WorldLocationRead] = Field(default_factory=list)
     scenes: list[SceneRead] = Field(default_factory=list)
+
+
+class StoragePolicyUpdate(BaseModel):
+    retention_days: int = Field(default=30, ge=1, le=3650)
+    max_backups: int = Field(default=10, ge=1, le=100)
+    include_media: bool = True
+
+
+class StoragePolicyRead(StoragePolicyUpdate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int | None = None
+    project_id: int
+    backend: str
+
+
+class ProjectBackupRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    filename: str
+    checksum_sha256: str
+    size_bytes: int
+    asset_count: int
+    status: str
+    download_url: str = ""
+    created_at: datetime
+
+
+class DeliveryLinkCreate(BaseModel):
+    asset_uri: str = Field(min_length=1, max_length=2000)
+    label: str = Field(default="Review delivery", max_length=160)
+    expires_hours: int = Field(default=72, ge=1, le=720)
+    max_downloads: int = Field(default=10, ge=1, le=10000)
+
+
+class DeliveryLinkRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    asset_uri: str
+    label: str
+    expires_at: datetime
+    max_downloads: int
+    download_count: int
+    revoked: bool
+    url: str = ""
+    created_at: datetime

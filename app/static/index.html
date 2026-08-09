@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="/static/crew.css">
   <link rel="stylesheet" href="/static/compositor.css">
   <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/studio-shell.css">
 </head>
 <body>
   <header class="topbar">
@@ -27,6 +28,7 @@
   </header>
   <div class="shell">
     <nav class="rail">
+      <button id="rail-toggle" class="rail-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true">â‹<span>Collapse</span></button>
       <button class="active" id="productions-nav">⌂<span>Productions</span></button>
       <button id="crew-nav">✧<span>AI Crew</span></button>
       <button id="writer-nav">✎<span>Writer's Room</span></button>
@@ -40,6 +42,7 @@
       <button id="render-nav">▶<span>Render</span></button>
     </nav>
     <main id="workspace-main">
+      <section id="production-flow" class="production-flow" aria-label="Production flow"></section>
       <div id="dashboard-home">
       <section class="hero">
         <div><p class="eyebrow">AI ANIME STUDIO</p><h1>Create anime.<br><em>Direct every frame.</em></h1><p>Move from story and character design to shots, sound, and a finished master—all in one production workspace.</p></div>

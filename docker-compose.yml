@@ -7,12 +7,14 @@ services:
       KIZUNA_GENERATION_PROVIDER: ${KIZUNA_GENERATION_PROVIDER:-farm}
       KIZUNA_WORKER_ENROLLMENT_SECRET: ${WORKER_ENROLLMENT_SECRET:?Set a strong worker enrollment secret}
       KIZUNA_RENDER_DIRECTORY: /app/renders
+      KIZUNA_STORAGE_DIRECTORY: /app/storage
       KIZUNA_FFMPEG_PATH: /usr/bin/ffmpeg
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - render_data:/app/renders
+      - storage_data:/app/storage
 
   postgres:
     image: postgres:17-alpine
@@ -38,3 +40,4 @@ volumes:
   postgres_data:
   redis_data:
   render_data:
+  storage_data:

@@ -21,8 +21,9 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AssetReview, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AnimaticRender, AssetReview, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, ProjectBackup, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.storage import LocalProductionStorage
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -39,6 +40,7 @@ app = FastAPI(title=settings.app_name, version="0.1.0")
 static_dir = Path(__file__).parent / "static"
 render_dir = Path(settings.render_directory).resolve()
 render_dir.mkdir(parents=True, exist_ok=True)
+production_storage = LocalProductionStorage(Path(settings.storage_directory))
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 app.mount("/renders", StaticFiles(directory=render_dir), name="renders")
 
@@ -166,6 +168,148 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(404, "Project not found")
     return project
+
+
+def storage_policy_for(project_id: int, db: Session) -> StoragePolicy:
+    policy = db.scalar(select(StoragePolicy).where(StoragePolicy.project_id == project_id))
+    if policy is None:
+        policy = StoragePolicy(project_id=project_id, backend=settings.storage_backend, retention_days=settings.backup_retention_days, max_backups=settings.backup_max_copies)
+        db.add(policy); db.flush()
+    return policy
+
+
+def local_render_path(uri: str) -> Path | None:
+    if not uri.startswith("/renders/") or Path(uri).name != uri.removeprefix("/renders/"):
+        return None
+    path = (render_dir / Path(uri).name).resolve()
+    return path if render_dir == path.parent and path.is_file() else None
+
+
+def project_owned_uris(project_id: int, db: Session) -> set[str]:
+    uris = {item["uri"] for item in project_asset_library(project_id, db) if item.get("uri")}
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == project_id))
+    if timeline:
+        uris.update(item.uri for item in db.scalars(select(AnimaticRender).where(AnimaticRender.timeline_id == timeline.id)).all() if item.uri)
+        uris.update(item.final_uri for item in db.scalars(select(MasterExportJob).where(MasterExportJob.timeline_id == timeline.id)).all() if item.final_uri)
+        track_ids = list(db.scalars(select(AudioTrack.id).where(AudioTrack.timeline_id == timeline.id)).all())
+        if track_ids:
+            uris.update(item.uri for item in db.scalars(select(AudioCue).where(AudioCue.track_id.in_(track_ids))).all() if item.uri)
+    composition_ids = list(db.scalars(select(ShotComposition.id).join(Shot).join(Scene).where(Scene.project_id == project_id)).all())
+    if composition_ids:
+        uris.update(item.uri for item in db.scalars(select(CompositeRender).where(CompositeRender.composition_id.in_(composition_ids))).all() if item.uri)
+        uris.update(item.uri for item in db.scalars(select(ShotMotionRender).where(ShotMotionRender.composition_id.in_(composition_ids))).all() if item.uri)
+    return uris
+
+
+def backup_response(backup: ProjectBackup) -> dict:
+    return {"id": backup.id, "project_id": backup.project_id, "filename": backup.filename, "checksum_sha256": backup.checksum_sha256, "size_bytes": backup.size_bytes, "asset_count": backup.asset_count, "status": backup.status, "download_url": f"/api/backups/{backup.id}/download", "created_at": backup.created_at}
+
+
+@app.get("/api/projects/{project_id}/storage-policy", response_model=StoragePolicyRead)
+def get_storage_policy(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    policy = storage_policy_for(project_id, db); db.commit(); db.refresh(policy)
+    return policy
+
+
+@app.put("/api/projects/{project_id}/storage-policy", response_model=StoragePolicyRead)
+def update_storage_policy(project_id: int, payload: StoragePolicyUpdate, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    policy = storage_policy_for(project_id, db)
+    for key, value in payload.model_dump().items():
+        setattr(policy, key, value)
+    db.commit(); db.refresh(policy)
+    return policy
+
+
+@app.get("/api/projects/{project_id}/backups", response_model=list[ProjectBackupRead])
+def list_project_backups(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    return [backup_response(item) for item in db.scalars(select(ProjectBackup).where(ProjectBackup.project_id == project_id).order_by(ProjectBackup.id.desc())).all()]
+
+
+@app.post("/api/projects/{project_id}/backups", response_model=ProjectBackupRead, status_code=status.HTTP_201_CREATED)
+def create_project_backup(project_id: int, db: Session = Depends(get_db)):
+    project = db.scalars(project_query().where(Project.id == project_id)).one_or_none()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    policy = storage_policy_for(project_id, db)
+    manifest = {"format": "kizuna-project-backup", "version": 1, "created_at": utcnow().isoformat() + "Z", "project": ProjectRead.model_validate(project).model_dump(mode="json"), "assets": project_asset_library(project_id, db), "storage": {"backend": policy.backend, "include_media": policy.include_media}}
+    assets = [path for uri in project_owned_uris(project_id, db) if (path := local_render_path(uri))] if policy.include_media else []
+    filename = f"kizuna-project-{project_id}-{utcnow().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}.zip"
+    key, size, checksum, asset_count = production_storage.create_backup(project_id, filename, manifest, assets)
+    backup = ProjectBackup(project_id=project_id, filename=filename, storage_key=key, checksum_sha256=checksum, size_bytes=size, asset_count=asset_count)
+    db.add(backup); db.flush()
+    backups = db.scalars(select(ProjectBackup).where(ProjectBackup.project_id == project_id).order_by(ProjectBackup.created_at.desc(), ProjectBackup.id.desc())).all()
+    cutoff = utcnow() - timedelta(days=policy.retention_days)
+    for index, old in enumerate(backups):
+        if old.id == backup.id:
+            continue
+        if index >= policy.max_backups or old.created_at < cutoff:
+            production_storage.delete(old.storage_key); db.delete(old)
+    db.commit(); db.refresh(backup)
+    return backup_response(backup)
+
+
+@app.get("/api/backups/{backup_id}/download")
+def download_project_backup(backup_id: int, db: Session = Depends(get_db)):
+    backup = db.get(ProjectBackup, backup_id)
+    if not backup:
+        raise HTTPException(404, "Backup not found")
+    path = production_storage.resolve(backup.storage_key)
+    if not path.is_file():
+        raise HTTPException(410, "Backup file is no longer available")
+    return FileResponse(path, filename=backup.filename, media_type="application/zip")
+
+
+@app.get("/api/projects/{project_id}/delivery-links", response_model=list[DeliveryLinkRead])
+def list_delivery_links(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    links = db.scalars(select(DeliveryLink).where(DeliveryLink.project_id == project_id).order_by(DeliveryLink.id.desc())).all()
+    return [{**DeliveryLinkRead.model_validate(item).model_dump(), "url": ""} for item in links]
+
+
+@app.post("/api/projects/{project_id}/delivery-links", response_model=DeliveryLinkRead, status_code=status.HTTP_201_CREATED)
+def create_delivery_link(project_id: int, payload: DeliveryLinkCreate, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    if payload.asset_uri not in project_owned_uris(project_id, db) or not local_render_path(payload.asset_uri):
+        raise HTTPException(422, "Choose an available asset owned by this production")
+    secret = secrets.token_urlsafe(32)
+    link = DeliveryLink(project_id=project_id, asset_uri=payload.asset_uri, label=payload.label, token_hash=hashlib.sha256(secret.encode()).hexdigest(), expires_at=utcnow() + timedelta(hours=payload.expires_hours), max_downloads=payload.max_downloads)
+    db.add(link); db.commit(); db.refresh(link)
+    return {**DeliveryLinkRead.model_validate(link).model_dump(), "url": f"/delivery/{link.id}.{secret}"}
+
+
+@app.post("/api/delivery-links/{link_id}/revoke", response_model=DeliveryLinkRead)
+def revoke_delivery_link(link_id: int, db: Session = Depends(get_db)):
+    link = db.get(DeliveryLink, link_id)
+    if not link:
+        raise HTTPException(404, "Delivery link not found")
+    link.revoked = True; db.commit(); db.refresh(link)
+    return {**DeliveryLinkRead.model_validate(link).model_dump(), "url": ""}
+
+
+@app.get("/delivery/{token}")
+def open_delivery(token: str, db: Session = Depends(get_db)):
+    try:
+        raw_id, secret = token.split(".", 1); link_id = int(raw_id)
+    except (ValueError, TypeError):
+        raise HTTPException(404, "Delivery link not found")
+    link = db.get(DeliveryLink, link_id)
+    if not link or not secrets.compare_digest(link.token_hash, hashlib.sha256(secret.encode()).hexdigest()):
+        raise HTTPException(404, "Delivery link not found")
+    if link.revoked or link.expires_at <= utcnow() or link.download_count >= link.max_downloads:
+        raise HTTPException(410, "Delivery link has expired or reached its download limit")
+    path = local_render_path(link.asset_uri)
+    if not path:
+        raise HTTPException(410, "Delivered asset is no longer available")
+    link.download_count += 1; db.commit()
+    return FileResponse(path, filename=path.name)
 
 
 @app.put("/api/projects/{project_id}/style", response_model=StyleProfileRead)

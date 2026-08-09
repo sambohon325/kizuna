@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     comfyui_negative_node: str = "7"
     comfyui_sampler_node: str = "3"
     render_directory: str = "renders"
+    storage_backend: str = "local"
+    storage_directory: str = "storage"
+    backup_retention_days: int = 30
+    backup_max_copies: int = 10
     worker_enrollment_secret: str = "local-dev-enrollment"
     worker_lease_seconds: int = 300
     max_artifact_bytes: int = 67_108_864

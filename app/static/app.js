@@ -8,6 +8,7 @@ const renderDialog = document.querySelector('#render-dialog');
 const worldDialog = document.querySelector('#world-dialog');
 const shotDialog = document.querySelector('#shot-dialog');
 const timelineDialog = document.querySelector('#timeline-dialog');
+const audioDialog = document.querySelector('#audio-dialog');
 let projects = [];
 let catalog = null;
 let activeCharacterId = null;
@@ -15,6 +16,9 @@ let activeLocationId = null;
 let activeShotId = null;
 let activeTimeline = null;
 let activeClipId = null;
+let activeAudioStudio = null;
+let activeAudioTimeline = null;
+let activeAudioCueId = null;
 let generationProviders = [];
 
 async function api(path, options = {}) {
@@ -442,6 +446,62 @@ async function moveClip(delta) {
   activeTimeline = await api(`/api/timelines/${activeTimeline.id}/clips/order`,{method:'PUT',body:JSON.stringify({clip_ids:clips.map(clip=>clip.id)})}); renderTimeline();
 }
 
+async function openAudioStudio(projectId) {
+  if (!projects.length) await loadProjects();
+  if (!projects.length) { projectDialog.showModal(); return; }
+  const select=document.querySelector('#audio-project'); select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(projectId||projects[0].id));
+  select.onchange=()=>loadAudioStudio(Number(select.value)); audioDialog.showModal(); await loadAudioStudio(Number(select.value));
+}
+
+async function loadAudioStudio(projectId) {
+  activeAudioCueId=null;
+  try { activeAudioTimeline=await api(`/api/projects/${projectId}/timeline`); activeAudioStudio=await api(`/api/projects/${projectId}/audio-studio`); renderAudioStudio(projectId); }
+  catch(error) { activeAudioTimeline=null; activeAudioStudio=null; document.querySelector('#audio-summary').innerHTML='<span>Build the picture timeline before sound work begins.</span>'; document.querySelector('#audio-tracks').innerHTML=`<div class="empty">${safe(error.message)}</div>`; document.querySelector('#cue-form').style.display='none'; document.querySelector('#cue-empty').style.display='block'; fillVoiceBible(projectId); }
+}
+
+function renderAudioStudio(projectId) {
+  const cues=activeAudioStudio.tracks.flatMap(track=>track.cues); document.querySelector('#audio-summary').innerHTML=`<b>${activeAudioStudio.tracks.length} TRACKS</b><span>${cues.length} cues</span><span>${activeAudioStudio.total_duration_seconds.toFixed(1)}s picture lock</span>`;
+  document.querySelector('#audio-tracks').innerHTML=activeAudioStudio.tracks.length?activeAudioStudio.tracks.map(track=>`<section class="track-group"><header class="track-head"><b>${safe(track.name)}</b><button type="button" data-new-cue="${track.id}">＋ Cue</button></header>${track.cues.length?track.cues.map(cue=>`<button type="button" class="cue-item ${activeAudioCueId===cue.id?'active':''}" data-cue-id="${cue.id}"><small>${cue.start_seconds.toFixed(1)}s</small><span><b>${safe(cue.text||cue.direction||'Untitled cue')}</b><small>${safe(cue.status)}</small></span><small>${cue.duration_seconds.toFixed(1)}s</small></button>`).join(''):'<div class="empty">No cues on this track.</div>'}</section>`).join(''):'<div class="empty">Initialize the standard production tracks.</div>';
+  document.querySelectorAll('[data-new-cue]').forEach(button=>button.onclick=()=>newAudioCue(Number(button.dataset.newCue))); document.querySelectorAll('[data-cue-id]').forEach(button=>button.onclick=()=>selectAudioCue(Number(button.dataset.cueId)));
+  fillVoiceBible(projectId);
+}
+
+function fillVoiceBible(projectId) {
+  const project=projects.find(item=>item.id===projectId); const select=document.querySelector('#voice-character');
+  select.innerHTML=project?.characters.length?options(project.characters.map(character=>({id:String(character.id),label:character.name})),select.value):'<option value="">Create a character first</option>';
+  select.onchange=()=>fillVoiceProfile(Number(select.value)); fillVoiceProfile(Number(select.value));
+}
+
+function fillVoiceProfile(characterId) {
+  const profile=activeAudioStudio?.voice_profiles.find(item=>item.character_id===characterId);
+  document.querySelector('#voice-texture').value=profile?.texture||'clear and grounded'; document.querySelector('#voice-energy').value=profile?.energy||'restrained'; document.querySelector('#voice-pace').value=profile?.pace||1; document.querySelector('#voice-pitch').value=profile?.pitch||0; document.querySelector('#voice-direction').value=profile?.direction_notes||'';
+}
+
+function findAudioCue(cueId) { for(const track of activeAudioStudio?.tracks||[]){const cue=track.cues.find(item=>item.id===cueId);if(cue)return {track,cue};} return null; }
+
+function cueFormOptions(trackId, characterId) {
+  const form=document.querySelector('#cue-form'); const project=projects.find(item=>item.id===activeAudioStudio.project_id);
+  form.elements.cue_track.innerHTML=options(activeAudioStudio.tracks.map(track=>({id:String(track.id),label:track.name})),String(trackId));
+  form.elements.cue_character.innerHTML='<option value="">No character / non-dialogue</option>'+options(project.characters.map(character=>({id:String(character.id),label:character.name})),String(characterId||'')); form.elements.cue_character.value=characterId||'';
+}
+
+function newAudioCue(trackId) {
+  activeAudioCueId=null; const form=document.querySelector('#cue-form'); const track=activeAudioStudio.tracks.find(item=>item.id===trackId); const project=projects.find(item=>item.id===activeAudioStudio.project_id); const defaultCharacter=track?.kind==='dialogue'?project?.characters[0]?.id:null; document.querySelector('#cue-empty').style.display='none'; form.style.display='block'; document.querySelector('#cue-mode').textContent='NEW AUDIO CUE'; cueFormOptions(trackId,defaultCharacter); form.elements.cue_track.disabled=false; form.elements.cue_start.value=0; form.elements.cue_duration.value=2; form.elements.cue_text.value=''; form.elements.cue_direction.value=''; document.querySelector('#cue-result').innerHTML=''; renderAudioStudio(activeAudioStudio.project_id);
+}
+
+function selectAudioCue(cueId,rerender=true) {
+  const found=findAudioCue(cueId);if(!found)return; activeAudioCueId=cueId; const {track,cue}=found; const form=document.querySelector('#cue-form'); document.querySelector('#cue-empty').style.display='none'; form.style.display='block'; document.querySelector('#cue-mode').textContent=`${track.name.toUpperCase()} CUE`; cueFormOptions(track.id,cue.character_id); form.elements.cue_track.disabled=true; form.elements.cue_start.value=cue.start_seconds; form.elements.cue_duration.value=cue.duration_seconds; form.elements.cue_text.value=cue.text; form.elements.cue_direction.value=cue.direction; renderCueResult(cue); if(rerender)renderAudioStudio(activeAudioStudio.project_id);
+}
+
+function renderCueResult(cue) {
+  document.querySelector('#cue-result').innerHTML=`<div class="audio-actions"><button type="button" id="generate-scratch">Generate timing slate</button><label class="audio-upload">Upload performance<input id="audio-file" type="file" accept=".wav,.mp3,.m4a,.ogg,audio/*"></label>${cue.uri?`<audio controls src="${safe(cue.uri)}"></audio>`:''}</div>${cue.uri?`<div class="sound-ready">${safe(cue.status)} · ${safe(cue.filename)}</div>`:''}`;
+  document.querySelector('#generate-scratch').onclick=generateScratchAudio; document.querySelector('#audio-file').onchange=uploadCueAudio;
+}
+
+async function generateScratchAudio() { if(!activeAudioCueId)return; const cue=await api(`/api/audio-cues/${activeAudioCueId}/generate-scratch`,{method:'POST'}); await refreshAudioAndSelect(cue.id); }
+async function uploadCueAudio(event) { const file=event.target.files[0];if(!file||!activeAudioCueId)return; const response=await fetch(`/api/audio-cues/${activeAudioCueId}/upload?filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file}); if(!response.ok)throw new Error(await response.text()); const cue=await response.json(); await refreshAudioAndSelect(cue.id); }
+async function refreshAudioAndSelect(cueId) { activeAudioStudio=await api(`/api/projects/${activeAudioStudio.project_id}/audio-studio`); renderAudioStudio(activeAudioStudio.project_id); selectAudioCue(cueId); }
+
 function collectStory(form) {
   return {premise:form.elements.premise.value, format:form.elements.format.value, target_duration_minutes:Number(form.elements.target_duration_minutes.value), genre:form.elements.genre.value, audience:form.elements.audience.value, themes:form.elements.themes.value.split(',').map(value => value.trim()).filter(Boolean)};
 }
@@ -454,6 +514,7 @@ document.querySelector('#render-nav').onclick = () => openRenderFarm();
 document.querySelector('#worlds-nav').onclick = () => openWorldStudio();
 document.querySelector('#shots-nav').onclick = () => openShotPlanner();
 document.querySelector('#timeline-nav').onclick = () => openTimeline();
+document.querySelector('#audio-nav').onclick = () => openAudioStudio();
 document.querySelector('.close').onclick = () => projectDialog.close();
 document.querySelector('#style-close').onclick = () => styleDialog.close();
 document.querySelector('#writer-close').onclick = () => writerDialog.close();
@@ -462,6 +523,10 @@ document.querySelector('#render-close').onclick = () => renderDialog.close();
 document.querySelector('#world-close').onclick = () => worldDialog.close();
 document.querySelector('#shot-close').onclick = () => shotDialog.close();
 document.querySelector('#timeline-close').onclick = () => timelineDialog.close();
+document.querySelector('#audio-close').onclick = () => audioDialog.close();
+document.querySelector('#build-audio').onclick = async () => { const projectId=Number(document.querySelector('#audio-project').value); try { if(!activeAudioTimeline)activeAudioTimeline=await api(`/api/projects/${projectId}/timeline`); activeAudioStudio=await api(`/api/timelines/${activeAudioTimeline.id}/audio/build`,{method:'POST'}); renderAudioStudio(projectId); } catch(error) { document.querySelector('#audio-tracks').innerHTML=`<div class="job-error">${safe(error.message)}</div>`; } };
+document.querySelector('#save-voice').onclick = async () => { const characterId=Number(document.querySelector('#voice-character').value);if(!characterId)return; const existing=activeAudioStudio?.voice_profiles.find(item=>item.character_id===characterId); await api(`/api/characters/${characterId}/voice`,{method:'PUT',body:JSON.stringify({vocal_age:existing?.vocal_age||'young adult',texture:document.querySelector('#voice-texture').value,energy:document.querySelector('#voice-energy').value,accent:existing?.accent||'neutral',language:existing?.language||'English',pace:Number(document.querySelector('#voice-pace').value),pitch:Number(document.querySelector('#voice-pitch').value),provider:existing?.provider||'simulation',provider_voice_id:existing?.provider_voice_id||'',direction_notes:document.querySelector('#voice-direction').value})}); if(activeAudioStudio){activeAudioStudio=await api(`/api/projects/${activeAudioStudio.project_id}/audio-studio`);renderAudioStudio(activeAudioStudio.project_id);} };
+document.querySelector('#cue-form').onsubmit = async event => { event.preventDefault(); const form=event.target; const payload={clip_id:null,character_id:form.elements.cue_character.value?Number(form.elements.cue_character.value):null,start_seconds:Number(form.elements.cue_start.value),duration_seconds:Number(form.elements.cue_duration.value),text:form.elements.cue_text.value,direction:form.elements.cue_direction.value}; const cue=activeAudioCueId?await api(`/api/audio-cues/${activeAudioCueId}`,{method:'PUT',body:JSON.stringify(payload)}):await api(`/api/audio-tracks/${Number(form.elements.cue_track.value)}/cues`,{method:'POST',body:JSON.stringify(payload)}); await refreshAudioAndSelect(cue.id); };
 document.querySelector('#build-timeline').onclick = async () => { const projectId=Number(document.querySelector('#timeline-project').value); try { activeTimeline=await api(`/api/projects/${projectId}/timeline/build`,{method:'POST',body:JSON.stringify({fps:24,width:1920,height:1080})}); renderTimeline(); } catch(error) { document.querySelector('#timeline-clips').innerHTML=`<div class="job-error">${safe(error.message)}</div>`; } };
 document.querySelector('#clip-form').onsubmit = async event => { event.preventDefault(); const form=event.target; activeTimeline=await api(`/api/timeline-clips/${activeClipId}`,{method:'PUT',body:JSON.stringify({duration_seconds:Number(form.elements.clip_duration.value),transition:form.elements.clip_transition.value,transition_duration:Number(form.elements.clip_transition_duration.value),audio_cue:form.elements.clip_audio_cue.value})}); renderTimeline(); };
 document.querySelector('#clip-earlier').onclick = () => moveClip(-1);

@@ -72,6 +72,7 @@ class Character(Base):
 
     project: Mapped[Project] = relationship(back_populates="characters")
     design: Mapped[CharacterDesign | None] = relationship(back_populates="character", cascade="all, delete-orphan", uselist=False)
+    voice_profile: Mapped[VoiceProfile | None] = relationship(back_populates="character", cascade="all, delete-orphan", uselist=False)
 
 
 class CharacterDesign(Base):
@@ -329,3 +330,56 @@ class AnimaticRender(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     timeline: Mapped[Timeline] = relationship(back_populates="renders")
+
+
+class VoiceProfile(Base):
+    __tablename__ = "voice_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    character_id: Mapped[int] = mapped_column(ForeignKey("characters.id"), unique=True)
+    vocal_age: Mapped[str] = mapped_column(String(80), default="young adult")
+    texture: Mapped[str] = mapped_column(String(120), default="clear and grounded")
+    energy: Mapped[str] = mapped_column(String(120), default="restrained")
+    accent: Mapped[str] = mapped_column(String(120), default="neutral")
+    language: Mapped[str] = mapped_column(String(40), default="English")
+    pace: Mapped[float] = mapped_column(default=1.0)
+    pitch: Mapped[float] = mapped_column(default=0.0)
+    provider: Mapped[str] = mapped_column(String(40), default="simulation")
+    provider_voice_id: Mapped[str] = mapped_column(String(160), default="")
+    direction_notes: Mapped[str] = mapped_column(Text, default="")
+    version: Mapped[int] = mapped_column(default=1)
+
+    character: Mapped[Character] = relationship(back_populates="voice_profile")
+
+
+class AudioTrack(Base):
+    __tablename__ = "audio_tracks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    timeline_id: Mapped[int] = mapped_column(ForeignKey("timelines.id"))
+    name: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(32), default="dialogue")
+    position: Mapped[int] = mapped_column(default=1)
+    volume: Mapped[float] = mapped_column(default=1.0)
+    muted: Mapped[bool] = mapped_column(default=False)
+
+    cues: Mapped[list[AudioCue]] = relationship(back_populates="track", cascade="all, delete-orphan", order_by="AudioCue.start_seconds")
+
+
+class AudioCue(Base):
+    __tablename__ = "audio_cues"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    track_id: Mapped[int] = mapped_column(ForeignKey("audio_tracks.id"))
+    clip_id: Mapped[int | None] = mapped_column(ForeignKey("timeline_clips.id"), nullable=True)
+    character_id: Mapped[int | None] = mapped_column(ForeignKey("characters.id"), nullable=True)
+    start_seconds: Mapped[float] = mapped_column(default=0.0)
+    duration_seconds: Mapped[float] = mapped_column(default=2.0)
+    text: Mapped[str] = mapped_column(Text, default="")
+    direction: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="planned")
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    uri: Mapped[str] = mapped_column(Text, default="")
+    mime_type: Mapped[str] = mapped_column(String(80), default="")
+
+    track: Mapped[AudioTrack] = relationship(back_populates="cues")

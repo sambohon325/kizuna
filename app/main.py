@@ -13,11 +13,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
 from app.animatic import render_animatic
+from app.audio import generate_timing_slate
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, BackgroundAsset, BackgroundJob, Character, CharacterDesign, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCreate, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
+from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCreate, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -733,6 +734,117 @@ def reorder_timeline(timeline_id: int, payload: TimelineOrderUpdate, db: Session
     return timeline_response(timeline, db)
 
 
+def audio_studio_response(timeline: Timeline, db: Session):
+    project = db.get(Project, timeline.project_id)
+    tracks = db.scalars(select(AudioTrack).options(selectinload(AudioTrack.cues)).where(AudioTrack.timeline_id == timeline.id).order_by(AudioTrack.position)).unique().all()
+    profiles = db.scalars(select(VoiceProfile).join(Character).where(Character.project_id == project.id).order_by(VoiceProfile.id)).all()
+    return {"timeline_id": timeline.id, "project_id": project.id, "total_duration_seconds": timeline_response(timeline, db)["total_duration_seconds"], "voice_profiles": profiles, "tracks": tracks}
+
+
+@app.get("/api/projects/{project_id}/audio-studio", response_model=AudioStudioRead)
+def get_audio_studio(project_id: int, db: Session = Depends(get_db)):
+    timeline = db.scalar(select(Timeline).where(Timeline.project_id == project_id))
+    if not timeline:
+        raise HTTPException(409, "Build the timeline before opening Audio Studio")
+    return audio_studio_response(timeline, db)
+
+
+@app.post("/api/timelines/{timeline_id}/audio/build", response_model=AudioStudioRead)
+def build_audio_tracks(timeline_id: int, db: Session = Depends(get_db)):
+    timeline = db.get(Timeline, timeline_id)
+    if not timeline:
+        raise HTTPException(404, "Timeline not found")
+    if not db.scalar(select(AudioTrack).where(AudioTrack.timeline_id == timeline_id)):
+        defaults = [("Dialogue", "dialogue"), ("Music", "music"), ("Sound FX", "sfx"), ("Ambience", "ambience")]
+        for position, (name, kind) in enumerate(defaults, start=1):
+            db.add(AudioTrack(timeline_id=timeline_id, name=name, kind=kind, position=position))
+        db.commit()
+    return audio_studio_response(timeline, db)
+
+
+@app.put("/api/characters/{character_id}/voice", response_model=VoiceProfileRead)
+def update_voice_profile(character_id: int, payload: VoiceProfileInput, db: Session = Depends(get_db)):
+    if not db.get(Character, character_id):
+        raise HTTPException(404, "Character not found")
+    profile = db.scalar(select(VoiceProfile).where(VoiceProfile.character_id == character_id))
+    if profile is None:
+        profile = VoiceProfile(character_id=character_id)
+        db.add(profile)
+    else:
+        profile.version += 1
+    for key, value in payload.model_dump().items():
+        setattr(profile, key, value)
+    db.commit(); db.refresh(profile)
+    return profile
+
+
+def validate_audio_cue(track: AudioTrack, payload: AudioCueInput, db: Session):
+    timeline = db.get(Timeline, track.timeline_id)
+    if payload.clip_id:
+        clip = db.get(TimelineClip, payload.clip_id)
+        if not clip or clip.timeline_id != timeline.id:
+            raise HTTPException(422, "Clip does not belong to this timeline")
+    if payload.character_id:
+        character = db.get(Character, payload.character_id)
+        if not character or character.project_id != timeline.project_id:
+            raise HTTPException(422, "Character does not belong to this production")
+
+
+@app.post("/api/audio-tracks/{track_id}/cues", response_model=AudioCueRead, status_code=status.HTTP_201_CREATED)
+def create_audio_cue(track_id: int, payload: AudioCueInput, db: Session = Depends(get_db)):
+    track = db.get(AudioTrack, track_id)
+    if not track:
+        raise HTTPException(404, "Audio track not found")
+    validate_audio_cue(track, payload, db)
+    cue = AudioCue(track_id=track_id, **payload.model_dump())
+    db.add(cue); db.commit(); db.refresh(cue)
+    return cue
+
+
+@app.put("/api/audio-cues/{cue_id}", response_model=AudioCueRead)
+def update_audio_cue(cue_id: int, payload: AudioCueInput, db: Session = Depends(get_db)):
+    cue = db.get(AudioCue, cue_id)
+    if not cue:
+        raise HTTPException(404, "Audio cue not found")
+    validate_audio_cue(db.get(AudioTrack, cue.track_id), payload, db)
+    for key, value in payload.model_dump().items():
+        setattr(cue, key, value)
+    db.commit(); db.refresh(cue)
+    return cue
+
+
+@app.post("/api/audio-cues/{cue_id}/generate-scratch", response_model=AudioCueRead)
+def generate_scratch_audio(cue_id: int, db: Session = Depends(get_db)):
+    cue = db.get(AudioCue, cue_id)
+    if not cue:
+        raise HTTPException(404, "Audio cue not found")
+    profile = db.scalar(select(VoiceProfile).where(VoiceProfile.character_id == cue.character_id)) if cue.character_id else None
+    cue.filename = f"audio-cue-{cue.id}-{uuid4().hex[:8]}.wav"
+    generate_timing_slate(render_dir / cue.filename, cue.text, cue.duration_seconds, profile.pitch if profile else 0, profile.pace if profile else 1)
+    cue.uri, cue.mime_type, cue.status = f"/renders/{cue.filename}", "audio/wav", "scratch-ready"
+    db.commit(); db.refresh(cue)
+    return cue
+
+
+@app.post("/api/audio-cues/{cue_id}/upload", response_model=AudioCueRead)
+async def upload_audio_cue(cue_id: int, request: Request, filename: str, db: Session = Depends(get_db)):
+    cue = db.get(AudioCue, cue_id)
+    if not cue:
+        raise HTTPException(404, "Audio cue not found")
+    content = await request.body()
+    if not content or len(content) > settings.max_artifact_bytes:
+        raise HTTPException(413, "Audio file is empty or too large")
+    suffix = Path(filename).suffix.lower()
+    allowed = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".ogg": "audio/ogg"}
+    if suffix not in allowed:
+        raise HTTPException(422, "Upload WAV, MP3, M4A, or OGG audio")
+    cue.filename = f"audio-cue-{cue.id}-{uuid4().hex[:8]}{suffix}"
+    (render_dir / cue.filename).write_bytes(content)
+    cue.uri, cue.mime_type, cue.status = f"/renders/{cue.filename}", allowed[suffix], "asset-ready"
+    db.commit(); db.refresh(cue)
+    return cue
+
+
 @app.post("/api/timelines/{timeline_id}/render", response_model=AnimaticRenderRead, status_code=status.HTTP_201_CREATED)
 def render_timeline(timeline_id: int, db: Session = Depends(get_db)):
     timeline = db.get(Timeline, timeline_id)
@@ -747,8 +859,15 @@ def render_timeline(timeline_id: int, db: Session = Depends(get_db)):
         for clip in data["clips"]:
             source = render_dir / Path(clip["storyboard_uri"]).name if clip["storyboard_uri"] else None
             clips.append({"source": source, "title": clip["shot_title"], "subtitle": f"{clip['scene_title']}  /  {clip['duration_seconds']:.1f}s  /  {clip['transition']}", "duration": clip["duration_seconds"], "transition": clip["transition"], "transition_duration": clip["transition_duration"]})
+        audio_clips = []
+        tracks = db.scalars(select(AudioTrack).options(selectinload(AudioTrack.cues)).where(AudioTrack.timeline_id == timeline.id, AudioTrack.muted.is_(False))).unique().all()
+        for track in tracks:
+            for cue in track.cues:
+                if cue.uri:
+                    audio_clips.append({"source": render_dir / Path(cue.uri).name, "start": cue.start_seconds, "duration": cue.duration_seconds, "volume": track.volume})
         render.filename = f"animatic-{render.id}.mp4"
-        render_animatic(clips, render_dir / render.filename, work_dir, timeline.fps, timeline.width, timeline.height)
+        render.render_settings = {**render.render_settings, "audio_cues": len(audio_clips)}
+        render_animatic(clips, render_dir / render.filename, work_dir, timeline.fps, timeline.width, timeline.height, audio_clips)
         render.uri, render.status = f"/renders/{render.filename}", "completed"
         timeline.status = "preview-ready"
     except Exception as exc:

@@ -47,7 +47,7 @@ def prepare_frame(source: Path | None, target: Path, width: int, height: int, ti
     canvas.save(target, "PNG")
 
 
-def render_animatic(clips: list[dict], output: Path, work_dir: Path, fps: int, width: int, height: int) -> None:
+def render_animatic(clips: list[dict], output: Path, work_dir: Path, fps: int, width: int, height: int, audio_clips: list[dict] | None = None) -> None:
     if not clips:
         raise ValueError("The timeline has no clips")
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -61,6 +61,9 @@ def render_animatic(clips: list[dict], output: Path, work_dir: Path, fps: int, w
     for frame, clip in zip(frames, clips):
         command += ["-loop", "1", "-t", f"{clip['duration']:.3f}", "-i", str(frame)]
     command += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
+    usable_audio = [cue for cue in (audio_clips or []) if cue.get("source") and Path(cue["source"]).exists()]
+    for cue in usable_audio:
+        command += ["-i", str(cue["source"])]
 
     filters = [f"[{i}:v]fps={fps},scale={width}:{height},format=yuv420p,settb=AVTB[v{i}]" for i in range(len(clips))]
     current = "v0"
@@ -73,8 +76,24 @@ def render_animatic(clips: list[dict], output: Path, work_dir: Path, fps: int, w
         filters.append(f"[{current}][v{i}]xfade=transition=fade:duration={duration:.4f}:offset={offset:.4f}[{output_label}]")
         current = output_label
         elapsed = offset + clips[i]["duration"]
+    silence_index = len(clips)
+    filters.append(f"[{silence_index}:a]atrim=0:{elapsed:.4f},asetpts=PTS-STARTPTS[bed]")
+    audio_labels = ["bed"]
+    for index, cue in enumerate(usable_audio):
+        input_index = silence_index + 1 + index
+        delay = max(0, int(float(cue.get("start", 0)) * 1000))
+        duration = max(.05, float(cue.get("duration", elapsed)))
+        volume = max(0, min(2, float(cue.get("volume", 1))))
+        label = f"cue{index}"
+        filters.append(f"[{input_index}:a]atrim=0:{duration:.4f},asetpts=PTS-STARTPTS,adelay={delay}:all=1,volume={volume:.3f}[{label}]")
+        audio_labels.append(label)
+    if len(audio_labels) > 1:
+        filters.append("".join(f"[{label}]" for label in audio_labels) + f"amix=inputs={len(audio_labels)}:duration=longest:normalize=0[audio]")
+        audio_map = "[audio]"
+    else:
+        audio_map = "[bed]"
     command += [
-        "-filter_complex", ";".join(filters), "-map", f"[{current}]", "-map", f"{len(clips)}:a",
+        "-filter_complex", ";".join(filters), "-map", f"[{current}]", "-map", audio_map,
         "-t", f"{elapsed:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(output),
     ]

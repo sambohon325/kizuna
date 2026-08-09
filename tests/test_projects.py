@@ -200,3 +200,28 @@ def test_timeline_edits_reorders_and_renders_proxy(client):
     video = client.get(rendered.json()["uri"])
     assert video.status_code == 200
     assert video.headers["content-type"] == "video/mp4"
+
+
+def test_audio_studio_builds_voice_cues_and_mixes_animatic(client):
+    project_id = client.post("/api/projects", json={"title": "Sound Pass"}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "pilot"}).json()
+    voice = client.put(f"/api/characters/{character['id']}/voice", json={"texture": "clear and weathered", "energy": "contained urgency", "pace": 0.9, "pitch": -1, "direction_notes": "Precise until the final word."})
+    assert voice.status_code == 200
+    assert voice.json()["texture"] == "clear and weathered"
+
+    scene_id = client.post(f"/api/projects/{project_id}/scenes", json={"title": "Contact", "position": 1}).json()["id"]
+    client.post(f"/api/scenes/{scene_id}/shots", json={"title": "Ari answers", "position": 1, "duration_seconds": 0.8})
+    timeline = client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 12, "width": 320, "height": 180}).json()
+    studio = client.post(f"/api/timelines/{timeline['id']}/audio/build")
+    assert studio.status_code == 200
+    assert [track["kind"] for track in studio.json()["tracks"]] == ["dialogue", "music", "sfx", "ambience"]
+    dialogue_track = studio.json()["tracks"][0]
+    cue = client.post(f"/api/audio-tracks/{dialogue_track['id']}/cues", json={"character_id": character["id"], "start_seconds": 0.1, "duration_seconds": 0.5, "text": "Is anyone listening?", "direction": "A guarded whisper."})
+    assert cue.status_code == 201
+    scratch = client.post(f"/api/audio-cues/{cue.json()['id']}/generate-scratch")
+    assert scratch.json()["status"] == "scratch-ready"
+    assert client.get(scratch.json()["uri"]).headers["content-type"] == "audio/wav"
+
+    rendered = client.post(f"/api/timelines/{timeline['id']}/render")
+    assert rendered.json()["status"] == "completed", rendered.json().get("error")
+    assert rendered.json()["render_settings"]["audio_cues"] == 1

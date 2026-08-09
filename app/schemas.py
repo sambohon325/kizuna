@@ -326,6 +326,65 @@ class AnimaticRenderRead(BaseModel):
     render_settings: dict[str, Any]
 
 
+class VoiceProfileInput(BaseModel):
+    vocal_age: str = "young adult"
+    texture: str = "clear and grounded"
+    energy: str = "restrained"
+    accent: str = "neutral"
+    language: str = "English"
+    pace: float = Field(default=1.0, ge=0.5, le=2.0)
+    pitch: float = Field(default=0.0, ge=-12, le=12)
+    provider: str = "simulation"
+    provider_voice_id: str = ""
+    direction_notes: str = ""
+
+
+class VoiceProfileRead(VoiceProfileInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    character_id: int
+    version: int
+
+
+class AudioCueInput(BaseModel):
+    clip_id: int | None = None
+    character_id: int | None = None
+    start_seconds: float = Field(default=0, ge=0, le=86400)
+    duration_seconds: float = Field(default=2, gt=0, le=3600)
+    text: str = ""
+    direction: str = ""
+
+
+class AudioCueRead(AudioCueInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    track_id: int
+    status: str
+    filename: str
+    uri: str
+    mime_type: str
+
+
+class AudioTrackRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    timeline_id: int
+    name: str
+    kind: str
+    position: int
+    volume: float
+    muted: bool
+    cues: list[AudioCueRead] = Field(default_factory=list)
+
+
+class AudioStudioRead(BaseModel):
+    timeline_id: int
+    project_id: int
+    total_duration_seconds: float
+    voice_profiles: list[VoiceProfileRead] = Field(default_factory=list)
+    tracks: list[AudioTrackRead] = Field(default_factory=list)
+
+
 class ProjectCreate(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     logline: str = ""

@@ -282,3 +282,30 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):
     assert master.json()["render_settings"]["audio_cues"] == 1
     assert master.json()["render_settings"]["width"] == 320
     assert client.get(master.json()["uri"]).headers["content-type"] == "video/mp4"
+
+    export_plan = client.post(f"/api/timelines/{rebuilt_timeline['id']}/master-exports", json={"profile": "preview", "fps": 8, "segment_size": 1})
+    assert export_plan.status_code == 201
+    export = export_plan.json()
+    assert export["total_segments"] == 2
+    first_pass = client.post(f"/api/master-exports/{export['id']}/run-next").json()
+    assert first_pass["completed_segments"] == 1
+    assert first_pass["progress_percent"] == 50
+    assert len(first_pass["segments"][0]["checksum_sha256"]) == 64
+    resumed = client.post(f"/api/master-exports/{export['id']}/resume").json()
+    assert resumed["completed_segments"] == 1
+    finished = client.post(f"/api/master-exports/{export['id']}/run-all").json()
+    assert finished["status"] == "segments-ready"
+    assembled = client.post(f"/api/master-exports/{export['id']}/assemble")
+    assert assembled.json()["status"] == "completed", assembled.json().get("error")
+    assert client.get(assembled.json()["final_uri"]).headers["content-type"] == "video/mp4"
+
+    farm_plan = client.post(f"/api/timelines/{rebuilt_timeline['id']}/master-exports", json={"profile": "preview", "fps": 8, "segment_size": 2}).json()
+    worker = client.post("/api/workers/register", headers={"X-Enrollment-Secret": "local-dev-enrollment"}, json={"name": "Master Worker", "hostname": "render-02", "supported_tasks": ["master_segment"]}).json()
+    headers = {"Authorization": f"Bearer {worker['token']}"}
+    claimed = client.post(f"/api/workers/{worker['id']}/master-segments/claim", headers=headers)
+    assert claimed.status_code == 200
+    segment_id = claimed.json()["segment"]["id"]
+    artifact = client.get(assembled.json()["final_uri"]).content
+    uploaded = client.put(f"/api/workers/{worker['id']}/master-segments/{segment_id}/artifact", headers={**headers, "Content-Type": "video/mp4"}, content=artifact)
+    assert uploaded.json()["status"] == "completed"
+    assert len(uploaded.json()["checksum_sha256"]) == 64

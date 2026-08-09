@@ -332,6 +332,42 @@ class MasterRenderRequest(BaseModel):
     fps: int | None = Field(default=None, ge=1, le=60)
 
 
+class SegmentedExportRequest(MasterRenderRequest):
+    segment_size: int = Field(default=4, ge=1, le=20)
+
+
+class MasterSegmentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    export_id: int
+    position: int
+    status: str
+    attempts: int
+    worker_id: int | None
+    filename: str
+    uri: str
+    checksum_sha256: str
+    manifest: dict[str, Any]
+    error: str
+
+
+class MasterExportRead(BaseModel):
+    id: int
+    timeline_id: int
+    profile: str
+    fps: int
+    width: int
+    height: int
+    status: str
+    final_filename: str
+    final_uri: str
+    error: str
+    completed_segments: int
+    total_segments: int
+    progress_percent: float
+    segments: list[MasterSegmentRead] = Field(default_factory=list)
+
+
 class VoiceProfileInput(BaseModel):
     vocal_age: str = "young adult"
     texture: str = "clear and grounded"

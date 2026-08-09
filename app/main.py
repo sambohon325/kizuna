@@ -17,11 +17,12 @@ from app.audio import generate_timing_slate
 from app.compositor import render_composite
 from app.motion import render_motion_video
 from app.mastering import render_timeline_master
+from app.segmented_export import assemble_segments, clip_start_times, segment_clip_ranges, sha256_file
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterRenderRequest, MotionRenderRequest, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
+from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, Project, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceProfile, WorkerAssignment, WorldLocation
+from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -1091,6 +1092,193 @@ def render_master(timeline_id: int, payload: MasterRenderRequest, db: Session = 
         shutil.rmtree(work_dir, ignore_errors=True)
     db.commit(); db.refresh(render)
     return render
+
+
+def export_job_response(job: MasterExportJob, db: Session):
+    segments = db.scalars(select(MasterSegment).where(MasterSegment.export_id == job.id).order_by(MasterSegment.position)).all()
+    completed = sum(segment.status == "completed" for segment in segments)
+    total = len(segments)
+    return {"id": job.id, "timeline_id": job.timeline_id, "profile": job.profile, "fps": job.fps, "width": job.width, "height": job.height, "status": job.status, "final_filename": job.final_filename, "final_uri": job.final_uri, "error": job.error, "completed_segments": completed, "total_segments": total, "progress_percent": round(completed / total * 100, 1) if total else 0, "segments": segments}
+
+
+def master_dimensions(timeline: Timeline, profile: str):
+    if profile == "4k":
+        return 3840, 2160
+    if profile == "1080p":
+        return 1920, 1080
+    scale = min(1, 1280 / timeline.width, 720 / timeline.height)
+    return max(2, int(timeline.width * scale) // 2 * 2), max(2, int(timeline.height * scale) // 2 * 2)
+
+
+@app.post("/api/timelines/{timeline_id}/master-exports", response_model=MasterExportRead, status_code=status.HTTP_201_CREATED)
+def plan_segmented_export(timeline_id: int, payload: SegmentedExportRequest, db: Session = Depends(get_db)):
+    timeline = db.get(Timeline, timeline_id)
+    if not timeline:
+        raise HTTPException(404, "Timeline not found")
+    timeline_data = timeline_response(timeline, db)
+    if not timeline_data["clips"]:
+        raise HTTPException(409, "Timeline has no clips")
+    width, height = master_dimensions(timeline, payload.profile)
+    fps = payload.fps or timeline.fps
+    job = MasterExportJob(timeline_id=timeline.id, profile=payload.profile, fps=fps, width=width, height=height)
+    db.add(job); db.flush()
+    starts = clip_start_times(timeline_data["clips"], fps)
+    tracks = db.scalars(select(AudioTrack).options(selectinload(AudioTrack.cues)).where(AudioTrack.timeline_id == timeline.id, AudioTrack.muted.is_(False))).unique().all()
+    audio = [{"uri": cue.uri, "start": cue.start_seconds, "duration": cue.duration_seconds, "volume": track.volume} for track in tracks for cue in track.cues if cue.uri]
+    ranges = segment_clip_ranges(timeline_data["clips"], payload.segment_size)
+    for position, (start, end) in enumerate(ranges, start=1):
+        segment_start = starts[start]
+        segment_end = starts[end] if end < len(starts) else timeline_data["total_duration_seconds"]
+        clips = [{"motion_uri": clip["motion_uri"], "still_uri": clip["storyboard_uri"], "title": clip["shot_title"], "subtitle": f"{clip['scene_title']}  /  {clip['duration_seconds']:.1f}s", "duration": clip["duration_seconds"], "transition": clip["transition"] if index > start else "cut", "transition_duration": clip["transition_duration"] if index > start else 0} for index, clip in enumerate(timeline_data["clips"][start:end], start=start)]
+        segment_audio = [{**cue, "start": max(0, cue["start"] - segment_start)} for cue in audio if cue["start"] < segment_end and cue["start"] + cue["duration"] > segment_start]
+        db.add(MasterSegment(export_id=job.id, position=position, manifest={"clip_start": start + 1, "clip_end": end, "start_seconds": segment_start, "end_seconds": segment_end, "clips": clips, "audio": segment_audio}))
+    db.commit()
+    return export_job_response(job, db)
+
+
+@app.get("/api/timelines/{timeline_id}/master-exports/latest", response_model=MasterExportRead)
+def latest_master_export(timeline_id: int, db: Session = Depends(get_db)):
+    job = db.scalar(select(MasterExportJob).where(MasterExportJob.timeline_id == timeline_id).order_by(MasterExportJob.id.desc()))
+    if not job:
+        raise HTTPException(404, "No resumable export plan yet")
+    return export_job_response(job, db)
+
+
+@app.get("/api/master-exports/{export_id}", response_model=MasterExportRead)
+def get_master_export(export_id: int, db: Session = Depends(get_db)):
+    job = db.get(MasterExportJob, export_id)
+    if not job:
+        raise HTTPException(404, "Master export not found")
+    return export_job_response(job, db)
+
+
+def render_master_segment(segment: MasterSegment, job: MasterExportJob, db: Session):
+    segment.status, segment.attempts, segment.error = "rendering", segment.attempts + 1, ""
+    job.status = "rendering"
+    db.commit()
+    work_dir = render_dir / f"segment-work-{segment.id}"
+    try:
+        clips = [{"motion_source": render_dir / Path(clip["motion_uri"]).name if clip.get("motion_uri") else None, "still_source": render_dir / Path(clip["still_uri"]).name if clip.get("still_uri") else None, **{key: clip[key] for key in ("title", "subtitle", "duration", "transition", "transition_duration")}} for clip in segment.manifest["clips"]]
+        audio = [{"source": render_dir / Path(cue["uri"]).name, "start": cue["start"], "duration": cue["duration"], "volume": cue["volume"]} for cue in segment.manifest.get("audio", [])]
+        segment.filename = f"master-export-{job.id}-segment-{segment.position:04d}.mp4"
+        render_timeline_master(clips, audio, render_dir / segment.filename, work_dir, job.fps, job.width, job.height)
+        segment.uri, segment.status = f"/renders/{segment.filename}", "completed"
+        segment.checksum_sha256 = sha256_file(render_dir / segment.filename)
+    except Exception as exc:
+        segment.status, segment.error = "failed", str(exc)
+        job.status, job.error = "needs-attention", str(exc)
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+    db.commit()
+
+
+@app.post("/api/master-exports/{export_id}/run-next", response_model=MasterExportRead)
+def run_next_segment(export_id: int, db: Session = Depends(get_db)):
+    job = db.get(MasterExportJob, export_id)
+    if not job:
+        raise HTTPException(404, "Master export not found")
+    segment = db.scalar(select(MasterSegment).where(MasterSegment.export_id == export_id, MasterSegment.status.in_(["queued", "failed"])).order_by(MasterSegment.position))
+    if segment:
+        render_master_segment(segment, job, db)
+    remaining = db.scalar(select(MasterSegment).where(MasterSegment.export_id == export_id, MasterSegment.status != "completed"))
+    if not remaining:
+        job.status = "segments-ready"; db.commit()
+    return export_job_response(job, db)
+
+
+@app.post("/api/master-exports/{export_id}/run-all", response_model=MasterExportRead)
+def run_all_segments(export_id: int, db: Session = Depends(get_db)):
+    job = db.get(MasterExportJob, export_id)
+    if not job:
+        raise HTTPException(404, "Master export not found")
+    for segment in db.scalars(select(MasterSegment).where(MasterSegment.export_id == export_id, MasterSegment.status.in_(["queued", "failed"])).order_by(MasterSegment.position)).all():
+        render_master_segment(segment, job, db)
+        if segment.status == "failed":
+            break
+    if not db.scalar(select(MasterSegment).where(MasterSegment.export_id == export_id, MasterSegment.status != "completed")):
+        job.status = "segments-ready"; db.commit()
+    return export_job_response(job, db)
+
+
+@app.post("/api/master-exports/{export_id}/resume", response_model=MasterExportRead)
+def resume_master_export(export_id: int, db: Session = Depends(get_db)):
+    job = db.get(MasterExportJob, export_id)
+    if not job:
+        raise HTTPException(404, "Master export not found")
+    for segment in db.scalars(select(MasterSegment).where(MasterSegment.export_id == export_id)).all():
+        if segment.status == "completed":
+            path = render_dir / segment.filename
+            if not path.exists() or sha256_file(path) != segment.checksum_sha256:
+                segment.status, segment.error, segment.checksum_sha256 = "queued", "Output missing or checksum mismatch; queued for recovery", ""
+        elif segment.status in {"rendering", "leased", "failed"}:
+            segment.status = "queued"
+    job.status, job.error = "planned", ""
+    db.commit()
+    return export_job_response(job, db)
+
+
+@app.post("/api/master-exports/{export_id}/assemble", response_model=MasterExportRead)
+def assemble_master_export(export_id: int, db: Session = Depends(get_db)):
+    job = db.get(MasterExportJob, export_id)
+    if not job:
+        raise HTTPException(404, "Master export not found")
+    segments = db.scalars(select(MasterSegment).where(MasterSegment.export_id == export_id).order_by(MasterSegment.position)).all()
+    if not segments or any(segment.status != "completed" for segment in segments):
+        raise HTTPException(409, "All segments must complete before assembly")
+    files = [render_dir / segment.filename for segment in segments]
+    if any(not path.exists() for path in files):
+        raise HTTPException(409, "One or more segment files are missing; resume the export")
+    work_dir = render_dir / f"assembly-work-{job.id}"
+    try:
+        job.final_filename = f"master-export-{job.id}-{job.profile}.mp4"
+        assemble_segments(files, render_dir / job.final_filename, work_dir)
+        job.final_uri, job.status = f"/renders/{job.final_filename}", "completed"
+    except Exception as exc:
+        job.status, job.error = "needs-attention", str(exc)
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+    db.commit()
+    return export_job_response(job, db)
+
+
+@app.post("/api/workers/{worker_id}/master-segments/claim")
+def claim_master_segment(worker_id: int, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    worker = authenticate_worker(worker_id, authorization, db)
+    if "master_segment" not in worker.supported_tasks:
+        raise HTTPException(409, "Worker is not configured for master segments")
+    for expired in db.scalars(select(MasterSegment).where(MasterSegment.status == "leased", MasterSegment.leased_until < utcnow())).all():
+        expired.status, expired.worker_id, expired.leased_until = "queued", None, None
+    db.commit()
+    segment = next((item for item in db.scalars(select(MasterSegment).where(MasterSegment.status == "queued").order_by(MasterSegment.id)).all()), None)
+    if not segment:
+        return Response(status_code=204)
+    segment.status, segment.worker_id, segment.attempts = "leased", worker.id, segment.attempts + 1
+    segment.leased_until = utcnow() + timedelta(seconds=settings.worker_lease_seconds)
+    worker.status, worker.last_seen = "busy", utcnow()
+    db.commit()
+    job = db.get(MasterExportJob, segment.export_id)
+    return {"segment": MasterSegmentRead.model_validate(segment).model_dump(), "export": {"id": job.id, "fps": job.fps, "width": job.width, "height": job.height, "profile": job.profile}}
+
+
+@app.put("/api/workers/{worker_id}/master-segments/{segment_id}/artifact", response_model=MasterSegmentRead)
+async def upload_master_segment(worker_id: int, segment_id: int, request: Request, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    worker = authenticate_worker(worker_id, authorization, db)
+    segment = db.get(MasterSegment, segment_id)
+    if not segment or segment.worker_id != worker.id or segment.status != "leased":
+        raise HTTPException(409, "Segment is not leased to this worker")
+    content = await request.body()
+    if not content or len(content) > settings.max_artifact_bytes * 16:
+        raise HTTPException(413, "Segment artifact is empty or too large")
+    segment.filename = f"master-export-{segment.export_id}-segment-{segment.position:04d}.mp4"
+    path = render_dir / segment.filename
+    path.write_bytes(content)
+    segment.uri, segment.status, segment.checksum_sha256 = f"/renders/{segment.filename}", "completed", sha256_file(path)
+    worker.status, worker.last_seen = "online", utcnow()
+    job = db.get(MasterExportJob, segment.export_id)
+    if not db.scalar(select(MasterSegment).where(MasterSegment.export_id == segment.export_id, MasterSegment.status != "completed")):
+        job.status = "segments-ready"
+    db.commit(); db.refresh(segment)
+    return segment
 
 
 @app.get("/", include_in_schema=False)

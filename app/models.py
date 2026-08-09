@@ -454,3 +454,41 @@ class ShotMotionRender(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     composition: Mapped[ShotComposition] = relationship(back_populates="motion_renders")
+
+
+class MasterExportJob(Base):
+    __tablename__ = "master_export_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    timeline_id: Mapped[int] = mapped_column(ForeignKey("timelines.id"))
+    profile: Mapped[str] = mapped_column(String(32), default="preview")
+    fps: Mapped[int] = mapped_column(default=24)
+    width: Mapped[int] = mapped_column(default=1280)
+    height: Mapped[int] = mapped_column(default=720)
+    status: Mapped[str] = mapped_column(String(32), default="planned")
+    final_filename: Mapped[str] = mapped_column(String(255), default="")
+    final_uri: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    segments: Mapped[list[MasterSegment]] = relationship(back_populates="export", cascade="all, delete-orphan", order_by="MasterSegment.position")
+
+
+class MasterSegment(Base):
+    __tablename__ = "master_segments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    export_id: Mapped[int] = mapped_column(ForeignKey("master_export_jobs.id"))
+    position: Mapped[int] = mapped_column(default=1)
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    attempts: Mapped[int] = mapped_column(default=0)
+    worker_id: Mapped[int | None] = mapped_column(ForeignKey("render_workers.id"), nullable=True)
+    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    filename: Mapped[str] = mapped_column(String(255), default="")
+    uri: Mapped[str] = mapped_column(Text, default="")
+    checksum_sha256: Mapped[str] = mapped_column(String(64), default="")
+    manifest: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    export: Mapped[MasterExportJob] = relationship(back_populates="segments")

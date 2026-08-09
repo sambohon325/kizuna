@@ -33,3 +33,13 @@ Workers report operating system, CPU threads, NVIDIA GPU names, and VRAM. The sc
 - Upload size is bounded by `KIZUNA_MAX_ARTIFACT_BYTES`.
 
 Use TLS and a private overlay network such as Tailscale or WireGuard. Do not expose worker tokens, the enrollment secret, ComfyUI, PostgreSQL, or Redis to the public internet.
+
+## Master export segments
+
+Workers may opt into the `master_segment` capability. The authenticated contract is:
+
+- `POST /api/workers/{worker_id}/master-segments/claim` leases one queued segment and returns its frozen clip/audio manifest plus output settings.
+- The worker downloads the manifest assets, renders with matching FPS and dimensions, then uploads an MP4 to `PUT /api/workers/{worker_id}/master-segments/{segment_id}/artifact`.
+- The server stores a SHA-256 checksum and marks the segment complete. Missing or altered files are detected by the resume audit and queued again.
+
+The bundled worker agent currently handles ComfyUI character jobs. Worker-side FFmpeg segment execution and automatic lease renewal are the next worker-agent increment; the server contract and local reference renderer are available now.

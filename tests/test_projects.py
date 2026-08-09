@@ -955,3 +955,47 @@ def test_media_index_keeps_thumbnails_and_tracks_hive_originals(client, monkeypa
     assert refreshed["summary"]["hive_assets"] == 1
     assert client.get(generated["assets"][0]["uri"]).status_code == 200
     shutil.rmtree(thumbnail_root)
+
+
+def test_media_transfer_queue_claims_verifies_and_preserves_server_original(client, monkeypatch):
+    import hashlib
+    import shutil
+    from pathlib import Path
+    import app.main as main_module
+
+    thumbnail_root = Path("work/test-transfer-thumbnails").resolve()
+    if thumbnail_root.exists(): shutil.rmtree(thumbnail_root)
+    thumbnail_root.mkdir(parents=True)
+    monkeypatch.setattr(main_module, "thumbnail_dir", thumbnail_root)
+    project_id = client.post("/api/projects", json={"title": "Verified Hive Transfer"}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ren"}).json()
+    client.put(f"/api/characters/{character['id']}/design", json={"appearance": {"silhouette": "long field coat"}, "consistency_anchors": ["amber visor"]})
+    generated = client.post(f"/api/characters/{character['id']}/generate", json={"provider": "mock", "seed": 73}).json()
+    media = client.get(f"/api/projects/{project_id}/media-index").json()
+    item = next(entry for entry in media["assets"] if entry["source_kind"] == "media_asset")
+    original = next(place for place in item["residencies"] if place["representation"] == "original" and place["backend"] == "server")
+
+    enrollment = client.post("/api/settings/compute/enrollment").json()
+    profile = {"code": enrollment["code"], "node_key": "transfer-node-0001", "name": "Media Vault", "os_name": "Windows", "architecture": "AMD64", "logical_cores": 8, "ram_gb": 16, "capabilities": ["video_encode"]}
+    enrolled = client.post("/api/nodes/enroll", json=profile).json(); headers = {"Authorization": f"Bearer {enrolled['token']}"}
+    assert "media_replication" in enrolled["supported_tasks"]
+    policy = client.put(f"/api/projects/{project_id}/media-storage-policy", json={"original_strategy": "hive", "preferred_node_key": "transfer-node-0001", "keep_server_proxies": True, "thumbnail_width": 480, "proxy_width": 1280, "minimum_replicas": 1, "evict_server_originals": True})
+    assert policy.status_code == 200
+    queued = client.post(f"/api/projects/{project_id}/media-transfers/queue", json={})
+    assert queued.status_code == 200 and queued.json()["queued"] == 1
+
+    claim = client.post("/api/nodes/transfer-node-0001/media-transfers/claim", headers=headers, json={})
+    assert claim.status_code == 200
+    job = claim.json(); source = client.get(job["download_url"], headers=headers)
+    assert source.status_code == 200
+    assert hashlib.sha256(source.content).hexdigest() == original["checksum_sha256"]
+    wrong = client.post(f"/api/nodes/transfer-node-0001/media-transfers/{job['id']}/complete", headers=headers, json={"object_ref": "vault://ren-reference", "checksum_sha256": "0" * 64, "size_bytes": len(source.content)})
+    assert wrong.status_code == 422
+    completed = client.post(f"/api/nodes/transfer-node-0001/media-transfers/{job['id']}/complete", headers=headers, json={"object_ref": "vault://ren-reference", "checksum_sha256": original["checksum_sha256"], "size_bytes": len(source.content)})
+    assert completed.status_code == 200 and completed.json()["status"] == "completed"
+    refreshed = client.get(f"/api/projects/{project_id}/media-index").json()
+    assert refreshed["summary"]["completed_transfers"] == 1
+    assert refreshed["summary"]["cleanup_eligible_assets"] == 1
+    assert client.get(generated["assets"][0]["uri"]).status_code == 200
+    assert client.post(f"/api/projects/{project_id}/media-transfers/queue", json={}).json()["already_safe"] == 1
+    shutil.rmtree(thumbnail_root)

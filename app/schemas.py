@@ -950,6 +950,30 @@ class NodeResidencyBatch(BaseModel):
     items: list[NodeResidencyInput] = Field(default_factory=list, max_length=1000)
 
 
+class MediaTransferComplete(BaseModel):
+    object_ref: str = Field(pattern="^vault://[A-Za-z0-9._-]{1,240}$")
+    checksum_sha256: str = Field(pattern="^[a-fA-F0-9]{64}$")
+    size_bytes: int = Field(ge=0)
+
+
+class MediaTransferRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    asset_key: str
+    target_node_key: str
+    status: str
+    expected_checksum_sha256: str
+    expected_size_bytes: int
+    attempts: int
+    max_attempts: int
+    object_ref: str
+    error: str
+    leased_until: datetime | None
+    completed_at: datetime | None
+    created_at: datetime
+
+
 class ProjectBackupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

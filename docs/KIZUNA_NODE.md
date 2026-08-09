@@ -21,13 +21,15 @@ Every enrolled device receives one private credential that identifies both its c
 
 Each computer has creator-controlled settings for pause, drain, maximum parallel jobs, CPU/GPU/RAM ceilings, days and local-time availability, scheduling priority, and allowed job types. Drain finishes active jobs and then stops new assignments. Usage ceilings gate new work without terminating a render already in progress, preventing partial or corrupt output.
 
-Run `KizunaNode hive --poll-seconds 3` after enrollment. Final video segments work anywhere FFmpeg is available. ComfyUI character work additionally needs an exported API workflow passed with `--workflow` (or `KIZUNA_COMFYUI_WORKFLOW_PATH`).
+Run `KizunaNode hive --poll-seconds 3` after enrollment. Final video segments work anywhere FFmpeg is available. ComfyUI character work additionally needs an exported API workflow passed with `--workflow` (or `KIZUNA_COMFYUI_WORKFLOW_PATH`). Media storage uses `~/KizunaVault` by default; choose another dedicated folder with `--vault` or `KIZUNA_VAULT_PATH`.
+
+Media copies are written to a temporary file, checked against the server's SHA-256 checksum and declared byte size, and atomically promoted only after verification. Kizuna receives an opaque `vault://` reference rather than the computer's filesystem path. The **Media storage** job toggle follows the same device schedule, throttles, pause, and drain controls as render work.
 
 ## Scanner privacy
 
 The default `creative` software level reports creative-production tools only. `none` omits software names. `all` reports installed application or package names and must be selected explicitly.
 
-The profile can contain OS and architecture, CPU name and logical cores, total RAM, detected GPU names and memory, selected software names, a short local CPU benchmark, derived capabilities, timezone offset, and live CPU/GPU/RAM use. It never scans or uploads project files, prompts, scripts, passwords, API keys, license keys, documents, or browser history.
+The profile can contain OS and architecture, CPU name and logical cores, total RAM, detected GPU names and memory, selected software names, a short local CPU benchmark, derived capabilities, timezone offset, and live CPU/GPU/RAM use. The scanner never inventories personal folders, prompts, scripts, passwords, API keys, license keys, documents, or browser history. When **Media storage** is enabled, the companion receives only production files explicitly assigned to its dedicated Kizuna vault.
 
 ## Local and cloud placement
 

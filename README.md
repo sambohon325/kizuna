@@ -32,7 +32,7 @@ pytest
 - Provider-neutral image generation jobs with versioned media assets
 - Unified asset review with side-by-side versions, approval and rejection notes, an explicit production master, and non-destructive rollback that invalidates stale composites
 - Production vault with local or S3-compatible destinations, automatic off-server schedules, configurable retention, media-inclusive project ZIPs, SHA-256 verification, backup pruning, and revocable download-limited delivery links
-- Metadata-first media residency index that preserves storytelling context, checksums, thumbnails, and file locations while allowing full-resolution originals to live on Hive computers or S3-compatible storage
+- Metadata-first media residency and transfer queue that preserves storytelling context and lightweight previews while checksum-verifying full-resolution originals copied to creator-controlled Hive computers
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
 - Authenticated network workers with capability reporting, heartbeats, leased jobs, retries, and artifact upload
 - Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, background assets, and a Background Artist bot that can propose or apply a production-ready location bible before optionally queuing background generation

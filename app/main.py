@@ -24,8 +24,8 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaStoragePolicy, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaStoragePolicyInput, MediaStoragePolicyRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
@@ -230,6 +230,7 @@ def hive_control_response(control: HiveNodeControl | None, node: KizunaNode, db:
         return {"paused": False, "drain": False, "max_concurrency": 1, "cpu_limit_percent": 75, "gpu_limit_percent": 90, "memory_limit_gb": 0, "available_days": [0, 1, 2, 3, 4, 5, 6], "start_hour": 0, "end_hour": 24, "priority": 50, "allowed_tasks": [], "active_jobs": 0, "accepting_work": False, "reason": "Hive worker setup pending"}
     active_generation = len(db.scalars(select(WorkerAssignment).where(WorkerAssignment.worker_id == control.render_worker_id, WorkerAssignment.status.in_(["leased", "running"]))).all()) if control.render_worker_id else 0
     active_segments = len(db.scalars(select(MasterSegment).where(MasterSegment.worker_id == control.render_worker_id, MasterSegment.status.in_(["leased", "rendering"]))).all()) if control.render_worker_id else 0
+    active_transfers = len(db.scalars(select(MediaTransferJob).where(MediaTransferJob.target_node_key == control.node_key, MediaTransferJob.status.in_(["leased", "transferring"]))).all())
     local_now = utcnow() + timedelta(minutes=control.timezone_offset_minutes)
     in_day = local_now.weekday() in (control.available_days or [])
     in_hour = control.start_hour <= local_now.hour < control.end_hour if control.start_hour < control.end_hour else local_now.hour >= control.start_hour or local_now.hour < control.end_hour
@@ -241,7 +242,7 @@ def hive_control_response(control: HiveNodeControl | None, node: KizunaNode, db:
     if metrics.get("cpu_percent", 0) >= control.cpu_limit_percent: reasons.append("CPU throttle reached")
     if metrics.get("gpu_percent", 0) >= control.gpu_limit_percent: reasons.append("GPU throttle reached")
     if control.memory_limit_gb and metrics.get("memory_used_gb", 0) >= control.memory_limit_gb: reasons.append("RAM throttle reached")
-    active_jobs = active_generation + active_segments
+    active_jobs = active_generation + active_segments + active_transfers
     if active_jobs >= control.max_concurrency: reasons.append("All slots busy")
     return {"paused": control.paused, "drain": control.drain, "max_concurrency": control.max_concurrency, "cpu_limit_percent": control.cpu_limit_percent, "gpu_limit_percent": control.gpu_limit_percent, "memory_limit_gb": control.memory_limit_gb, "available_days": control.available_days, "start_hour": control.start_hour, "end_hour": control.end_hour, "priority": control.priority, "allowed_tasks": control.allowed_tasks, "active_jobs": active_jobs, "accepting_work": not reasons, "reason": reasons[0] if reasons else "Ready for work", "metrics": metrics, "render_worker_id": control.render_worker_id}
 
@@ -285,7 +286,8 @@ def get_compute_settings(db: Session = Depends(get_db)):
     node_rows = [node_response(node, controls.get(node.node_key), db) for node in nodes]
     queued_generation = len(db.scalars(select(GenerationJob).where(GenerationJob.provider == "farm", GenerationJob.status == "queued")).all())
     queued_segments = len(db.scalars(select(MasterSegment).where(MasterSegment.status == "queued")).all())
-    return {"nodes": node_rows, "hive": {"devices": len(nodes), "online": sum(node["status"] == "online" for node in node_rows), "accepting_work": sum(node["status"] == "online" and node["hive"]["accepting_work"] for node in node_rows), "active_jobs": sum(node["hive"]["active_jobs"] for node in node_rows), "queued_jobs": queued_generation + queued_segments, "capacity": sum(node["hive"]["max_concurrency"] for node in node_rows), "platforms": sorted({node.os_name for node in nodes})}, "workloads": policy_rows, "usage": usage, "rates": rate_rows, "privacy": {"sent": ["OS and architecture", "CPU name and logical cores", "total RAM", "detected GPUs", "selected installed-software names", "short local benchmark", "live CPU/GPU/RAM utilization", "declared capabilities"], "never_sent": ["project files", "prompts or scripts", "passwords or API keys", "license keys", "documents or browser history"]}}
+    queued_transfers = len(db.scalars(select(MediaTransferJob).where(MediaTransferJob.status == "queued")).all())
+    return {"nodes": node_rows, "hive": {"devices": len(nodes), "online": sum(node["status"] == "online" for node in node_rows), "accepting_work": sum(node["status"] == "online" and node["hive"]["accepting_work"] for node in node_rows), "active_jobs": sum(node["hive"]["active_jobs"] for node in node_rows), "queued_jobs": queued_generation + queued_segments + queued_transfers, "capacity": sum(node["hive"]["max_concurrency"] for node in node_rows), "platforms": sorted({node.os_name for node in nodes})}, "workloads": policy_rows, "usage": usage, "rates": rate_rows, "privacy": {"sent": ["OS and architecture", "CPU name and logical cores", "total RAM", "detected GPUs", "selected installed-software names", "short local benchmark", "live CPU/GPU/RAM utilization", "declared capabilities", "production media explicitly assigned to the Kizuna vault"], "never_sent": ["files outside the dedicated Kizuna vault", "unassigned documents or personal media", "passwords or API keys", "license keys", "documents or browser history"]}}
 
 
 @app.post("/api/settings/compute/enrollment")
@@ -313,7 +315,7 @@ def enroll_kizuna_node(payload: NodeProfileInput, db: Session = Depends(get_db))
     data = payload.model_dump(exclude={"code", "timezone_offset_minutes"})
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     node = KizunaNode(**data, token_hash=token_hash, last_seen=now)
-    supported_tasks = ["master_segment"]
+    supported_tasks = ["master_segment", "media_replication"]
     if "comfyui" in payload.capabilities: supported_tasks.append("character_reference")
     worker = RenderWorker(name=payload.name, hostname=payload.name, token_hash=token_hash, status="online", capabilities={"os": payload.os_name, "architecture": payload.architecture, "cpu_threads": payload.logical_cores, "ram_gb": payload.ram_gb, "gpus": payload.gpu}, supported_tasks=supported_tasks, last_seen=now)
     enrollment.used_at = now; db.add_all([node, worker]); db.flush()
@@ -344,7 +346,7 @@ def update_hive_node_control(node_key: str, payload: HiveNodeControlInput, db: S
     node = db.scalar(select(KizunaNode).where(KizunaNode.node_key == node_key))
     control = db.scalar(select(HiveNodeControl).where(HiveNodeControl.node_key == node_key))
     if not node or not control: raise HTTPException(404, "Hive computer not found")
-    valid_tasks = {"character_reference", "master_segment"}
+    valid_tasks = {"character_reference", "master_segment", "media_replication"}
     if set(payload.allowed_tasks) - valid_tasks: raise HTTPException(400, "Unsupported hive task")
     for key, value in payload.model_dump().items(): setattr(control, key, value)
     if control.render_worker_id:
@@ -1738,8 +1740,11 @@ def build_media_index(project_id: int, db: Session) -> dict:
     db.commit()
     rows = db.scalars(select(AssetResidency).where(AssetResidency.project_id == project_id)).all()
     original_rows = [item for item in rows if item.representation == "original" and item.status == "available"]
+    server_originals = {item.asset_key: item for item in original_rows if item.backend == "server"}
+    verified_copy_counts = {asset_key: len({(item.backend, item.node_key or item.object_ref) for item in original_rows if item.asset_key == asset_key and item.backend in {"hive", "s3"} and item.checksum_sha256 and item.checksum_sha256 == source.checksum_sha256}) for asset_key, source in server_originals.items()}
+    transfers = db.scalars(select(MediaTransferJob).where(MediaTransferJob.project_id == project_id)).all()
     nodes = db.scalars(select(KizunaNode).order_by(KizunaNode.name)).all()
-    return {"project_id": project_id, "policy": MediaStoragePolicyRead.model_validate(policy).model_dump(), "nodes": [{"node_key": node.node_key, "name": node.name, "status": node.status} for node in nodes], "assets": result, "summary": {"assets": len(result), "server_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "server"), "hive_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "hive"), "s3_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "s3"), "lightweight_server_bytes": sum(item.size_bytes for item in rows if item.backend == "server" and item.representation in {"thumbnail", "proxy"}), "hive_assets": len({item.asset_key for item in original_rows if item.backend == "hive"}), "verified_originals": len({item.asset_key for item in original_rows})}}
+    return {"project_id": project_id, "policy": MediaStoragePolicyRead.model_validate(policy).model_dump(), "nodes": [{"node_key": node.node_key, "name": node.name, "status": node.status} for node in nodes], "assets": result, "summary": {"assets": len(result), "server_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "server"), "hive_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "hive"), "s3_original_bytes": sum(item.size_bytes for item in original_rows if item.backend == "s3"), "lightweight_server_bytes": sum(item.size_bytes for item in rows if item.backend == "server" and item.representation in {"thumbnail", "proxy"}), "hive_assets": len({item.asset_key for item in original_rows if item.backend == "hive"}), "verified_originals": len({item.asset_key for item in original_rows}), "queued_transfers": sum(item.status == "queued" for item in transfers), "active_transfers": sum(item.status in {"leased", "transferring"} for item in transfers), "completed_transfers": sum(item.status == "completed" for item in transfers), "cleanup_eligible_assets": sum(policy.evict_server_originals and count >= policy.minimum_replicas for count in verified_copy_counts.values())}}
 
 
 @app.get("/api/projects/{project_id}/media-index")
@@ -1777,6 +1782,121 @@ def register_node_media_residencies(node_key: str, project_id: int, payload: Nod
         upsert_residency(db, project_id, item.asset_key, item.representation, "hive", node_key=node_key, object_ref=item.object_ref, checksum=item.checksum_sha256.lower(), size=item.size_bytes, status_value=item.status)
     db.commit()
     return {"project_id": project_id, "node_key": node_key, "registered": len(payload.items)}
+
+
+def authenticate_media_node(node_key: str, authorization: str | None, db: Session) -> KizunaNode:
+    node = db.scalar(select(KizunaNode).where(KizunaNode.node_key == node_key))
+    token = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    if not node or not token or not secrets.compare_digest(node.token_hash, hashlib.sha256(token.encode()).hexdigest()):
+        raise HTTPException(401, "Invalid node credentials")
+    return node
+
+
+def recover_expired_media_transfers(db: Session) -> None:
+    for job in db.scalars(select(MediaTransferJob).where(MediaTransferJob.leased_until < utcnow(), MediaTransferJob.status.in_(["leased", "transferring"]))).all():
+        job.status = "queued" if job.attempts < job.max_attempts else "failed"
+        job.leased_until = None
+        job.error = "Transfer lease expired before the node confirmed a verified copy."
+
+
+@app.post("/api/projects/{project_id}/media-transfers/queue")
+def queue_media_transfers(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    build_media_index(project_id, db)
+    policy = media_policy_for(project_id, db)
+    if policy.original_strategy != "hive": raise HTTPException(409, "Choose Hive computers as the original file home first")
+    controls = db.scalars(select(HiveNodeControl).where(HiveNodeControl.allowed_tasks.contains("media_replication")).order_by(HiveNodeControl.priority.desc())).all()
+    if policy.preferred_node_key:
+        controls = [control for control in controls if control.node_key == policy.preferred_node_key]
+    if not controls: raise HTTPException(409, "Enable Media storage on at least one Hive computer")
+    originals = db.scalars(select(AssetResidency).where(AssetResidency.project_id == project_id, AssetResidency.representation == "original", AssetResidency.backend == "server", AssetResidency.status == "available")).all()
+    queued = 0; already_safe = 0; shortfall = 0
+    for source in originals:
+        if not source.checksum_sha256 or not local_render_path(source.uri): continue
+        copies = db.scalars(select(AssetResidency).where(AssetResidency.project_id == project_id, AssetResidency.asset_key == source.asset_key, AssetResidency.representation == "original", AssetResidency.backend == "hive", AssetResidency.status == "available", AssetResidency.checksum_sha256 == source.checksum_sha256)).all()
+        verified_nodes = {copy.node_key for copy in copies}
+        needed = max(0, policy.minimum_replicas - len(verified_nodes))
+        if not needed:
+            already_safe += 1
+            continue
+        for control in controls:
+            if control.node_key in verified_nodes or needed <= 0: continue
+            key = hashlib.sha256(f"{project_id}|{source.asset_key}|{control.node_key}".encode()).hexdigest()
+            job = db.scalar(select(MediaTransferJob).where(MediaTransferJob.job_key == key))
+            if job is None:
+                job = MediaTransferJob(job_key=key, project_id=project_id, asset_key=source.asset_key, source_residency_id=source.id, target_node_key=control.node_key, status="queued", expected_checksum_sha256=source.checksum_sha256, expected_size_bytes=source.size_bytes)
+                db.add(job)
+            elif job.status in {"failed", "completed"}:
+                job.status, job.attempts, job.error, job.leased_until, job.completed_at = "queued", 0, "", None, None
+                job.source_residency_id, job.expected_checksum_sha256, job.expected_size_bytes = source.id, source.checksum_sha256, source.size_bytes
+            if job.status == "queued": queued += 1
+            needed -= 1
+        shortfall += max(0, needed)
+    db.commit()
+    return {"project_id": project_id, "queued": queued, "already_safe": already_safe, "replica_shortfall": shortfall, "jobs": len(db.scalars(select(MediaTransferJob).where(MediaTransferJob.project_id == project_id)).all())}
+
+
+@app.get("/api/projects/{project_id}/media-transfers", response_model=list[MediaTransferRead])
+def list_media_transfers(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    recover_expired_media_transfers(db); db.commit()
+    return db.scalars(select(MediaTransferJob).where(MediaTransferJob.project_id == project_id).order_by(MediaTransferJob.id.desc())).all()
+
+
+@app.post("/api/nodes/{node_key}/media-transfers/claim")
+def claim_media_transfer(node_key: str, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    node = authenticate_media_node(node_key, authorization, db); recover_expired_media_transfers(db)
+    control = db.scalar(select(HiveNodeControl).where(HiveNodeControl.node_key == node_key))
+    if not control or "media_replication" not in (control.allowed_tasks or []) or not hive_control_response(control, node, db)["accepting_work"]:
+        db.commit(); return Response(status_code=204)
+    job = db.scalar(select(MediaTransferJob).where(MediaTransferJob.target_node_key == node_key, MediaTransferJob.status == "queued").order_by(MediaTransferJob.id).with_for_update(skip_locked=True))
+    if not job:
+        db.commit(); return Response(status_code=204)
+    source = db.get(AssetResidency, job.source_residency_id); path = local_render_path(source.uri) if source else None
+    if not source or not path:
+        job.status, job.error = "failed", "The server source file is no longer available."
+        db.commit(); return Response(status_code=204)
+    job.status, job.attempts, job.leased_until, job.error = "leased", job.attempts + 1, utcnow() + timedelta(minutes=10), ""
+    node.last_seen = utcnow(); db.commit()
+    return {"id": job.id, "project_id": job.project_id, "asset_key": job.asset_key, "filename": path.name, "expected_checksum_sha256": job.expected_checksum_sha256, "expected_size_bytes": job.expected_size_bytes, "download_url": f"/api/nodes/{node_key}/media-transfers/{job.id}/source"}
+
+
+def leased_media_transfer(node_key: str, transfer_id: int, authorization: str | None, db: Session) -> MediaTransferJob:
+    authenticate_media_node(node_key, authorization, db)
+    job = db.get(MediaTransferJob, transfer_id)
+    if not job or job.target_node_key != node_key: raise HTTPException(404, "Media transfer not found")
+    if job.status not in {"leased", "transferring"}: raise HTTPException(409, "Media transfer is not leased to this computer")
+    if job.leased_until and job.leased_until < utcnow(): raise HTTPException(409, "Media transfer lease expired")
+    return job
+
+
+@app.get("/api/nodes/{node_key}/media-transfers/{transfer_id}/source")
+def download_media_transfer_source(node_key: str, transfer_id: int, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    job = leased_media_transfer(node_key, transfer_id, authorization, db)
+    source = db.get(AssetResidency, job.source_residency_id); path = local_render_path(source.uri) if source else None
+    if not path: raise HTTPException(404, "Server source file is unavailable")
+    job.status, job.leased_until = "transferring", utcnow() + timedelta(minutes=10); db.commit()
+    return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+
+
+@app.post("/api/nodes/{node_key}/media-transfers/{transfer_id}/complete", response_model=MediaTransferRead)
+def complete_media_transfer(node_key: str, transfer_id: int, payload: MediaTransferComplete, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    job = leased_media_transfer(node_key, transfer_id, authorization, db); checksum = payload.checksum_sha256.lower()
+    if checksum != job.expected_checksum_sha256 or payload.size_bytes != job.expected_size_bytes:
+        raise HTTPException(422, "Transferred file does not match the server checksum and size")
+    upsert_residency(db, job.project_id, job.asset_key, "original", "hive", node_key=node_key, object_ref=payload.object_ref, checksum=checksum, size=payload.size_bytes, status_value="available")
+    job.status, job.object_ref, job.error, job.leased_until, job.completed_at = "completed", payload.object_ref, "", None, utcnow()
+    db.commit(); db.refresh(job)
+    return job
+
+
+@app.post("/api/nodes/{node_key}/media-transfers/{transfer_id}/fail", response_model=MediaTransferRead)
+def fail_media_transfer(node_key: str, transfer_id: int, payload: JobFailure, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    job = leased_media_transfer(node_key, transfer_id, authorization, db)
+    job.status = "queued" if payload.retryable and job.attempts < job.max_attempts else "failed"
+    job.error, job.leased_until = payload.error[:4000], None
+    db.commit(); db.refresh(job)
+    return job
 
 
 @app.get("/api/projects/{project_id}/asset-reviews")

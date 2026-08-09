@@ -21,7 +21,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 CREATIVE_TOOLS = {
     "blender": ["blender"], "krita": ["krita"], "gimp": ["gimp", "gimp-3.0"],
     "ffmpeg": ["ffmpeg"], "ollama": ["ollama"], "comfyui": ["comfyui"],
@@ -215,7 +215,8 @@ def request_json(url: str, payload: dict | None = None, token: str = "") -> dict
     request = Request(url, data=data, headers=headers, method="POST" if payload is not None else "GET")
     try:
         with urlopen(request, timeout=20) as response:
-            return json.loads(response.read().decode("utf-8"))
+            raw = response.read()
+            return json.loads(raw.decode("utf-8")) if raw else {}
     except HTTPError as exc:
         raise RuntimeError(f"Kizuna returned {exc.code}: {exc.read().decode('utf-8', errors='replace')[:300]}") from exc
     except URLError as exc:
@@ -248,6 +249,55 @@ def sync_once(quiet: bool = False) -> dict:
     return result
 
 
+def vault_index_path(vault_root: Path) -> Path:
+    return vault_root / "vault_index.json"
+
+
+def save_vault_entry(vault_root: Path, object_ref: str, relative_path: str, checksum: str, size_bytes: int) -> None:
+    vault_root.mkdir(parents=True, exist_ok=True); index_path = vault_index_path(vault_root)
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8")) if index_path.exists() else {}
+    except (OSError, json.JSONDecodeError):
+        index = {}
+    index[object_ref] = {"path": relative_path, "checksum_sha256": checksum, "size_bytes": size_bytes, "verified_at": datetime.now().astimezone().isoformat()}
+    temporary = index_path.with_suffix(".tmp"); temporary.write_text(json.dumps(index, indent=2), encoding="utf-8"); temporary.replace(index_path)
+
+
+def sync_media_once(config: dict, vault_root: Path) -> bool:
+    claim_url = f"{config['server']}/api/nodes/{config['node_key']}/media-transfers/claim"
+    job = request_json(claim_url, {}, config["token"])
+    if not job: return False
+    safe_name = "".join(character if character.isalnum() or character in "._-" else "_" for character in job.get("filename", "media.bin"))[:180] or "media.bin"
+    relative = Path(f"project-{job['project_id']}") / f"{job['expected_checksum_sha256'][:16]}-{safe_name}"
+    destination = (vault_root / relative).resolve(); root = vault_root.resolve()
+    if root != destination and root not in destination.parents: raise RuntimeError("Kizuna produced an unsafe vault destination")
+    destination.parent.mkdir(parents=True, exist_ok=True); temporary = destination.with_suffix(destination.suffix + ".part")
+    digest = hashlib.sha256(); size_bytes = 0
+    try:
+        request = Request(config["server"] + job["download_url"], headers={"Authorization": f"Bearer {config['token']}"})
+        with urlopen(request, timeout=120) as response, temporary.open("wb") as output:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk: break
+                size_bytes += len(chunk)
+                if size_bytes > int(job["expected_size_bytes"]): raise RuntimeError("Transfer exceeded its declared size")
+                digest.update(chunk); output.write(chunk)
+        checksum = digest.hexdigest()
+        if checksum != job["expected_checksum_sha256"] or size_bytes != int(job["expected_size_bytes"]): raise RuntimeError("Downloaded file failed checksum verification")
+        temporary.replace(destination)
+        object_ref = f"vault://p{job['project_id']}-{job['id']}-{checksum[:24]}"
+        save_vault_entry(root, object_ref, relative.as_posix(), checksum, size_bytes)
+        request_json(f"{config['server']}/api/nodes/{config['node_key']}/media-transfers/{job['id']}/complete", {"object_ref": object_ref, "checksum_sha256": checksum, "size_bytes": size_bytes}, config["token"])
+        print(f"Verified media copy: {relative}")
+        return True
+    except Exception as exc:
+        try: request_json(f"{config['server']}/api/nodes/{config['node_key']}/media-transfers/{job['id']}/fail", {"error": str(exc), "retryable": True}, config["token"])
+        except RuntimeError: pass
+        raise RuntimeError(f"Media transfer failed: {exc}") from exc
+    finally:
+        if temporary.exists(): temporary.unlink()
+
+
 def hive(args: argparse.Namespace) -> None:
     path = config_path()
     if not path.exists(): raise RuntimeError("This computer is not enrolled. Run the enroll command first.")
@@ -260,19 +310,31 @@ def hive(args: argparse.Namespace) -> None:
         tasks.remove("character_reference")
         print("ComfyUI work is disabled until --workflow points to an API workflow JSON file.")
     if not tasks: raise RuntimeError("No runnable Hive tasks are enabled for this computer.")
+    media_enabled = "media_replication" in tasks
+    render_tasks = [task for task in tasks if task != "media_replication"]
+    vault_root = Path(args.vault).expanduser()
     stop = threading.Event()
     def monitor():
         while not stop.wait(max(10, args.metrics_interval)):
-            try: sync_once(quiet=True)
+            try:
+                sync_once(quiet=True)
+                if media_enabled: sync_media_once(config, vault_root)
             except RuntimeError as exc: print(f"Metrics heartbeat: {exc}", file=sys.stderr)
     threading.Thread(target=monitor, name="kizuna-metrics", daemon=True).start()
+    if media_enabled:
+        try: sync_media_once(config, vault_root)
+        except RuntimeError as exc: print(str(exc), file=sys.stderr)
+    if not render_tasks:
+        try:
+            while True: time.sleep(max(10, args.metrics_interval))
+        finally: stop.set()
     try:
         from worker.agent import KizunaWorker
     except ImportError:
         print("This source-only download can monitor the computer but cannot render. Use a standalone Kizuna Node build or run it from the Kizuna repository.")
         while True:
             time.sleep(max(10, args.metrics_interval)); sync_once()
-    worker_args = argparse.Namespace(server=config["server"], worker_id=int(config["worker_id"]), token=config["token"], tasks=",".join(tasks), concurrency=args.concurrency or 32, comfyui_url=args.comfyui_url, workflow=args.workflow, positive_node=args.positive_node, negative_node=args.negative_node, sampler_node=args.sampler_node, poll_seconds=args.poll_seconds)
+    worker_args = argparse.Namespace(server=config["server"], worker_id=int(config["worker_id"]), token=config["token"], tasks=",".join(render_tasks), concurrency=args.concurrency or 32, comfyui_url=args.comfyui_url, workflow=args.workflow, positive_node=args.positive_node, negative_node=args.negative_node, sampler_node=args.sampler_node, poll_seconds=args.poll_seconds)
     try: KizunaWorker(worker_args).run()
     finally: stop.set()
 
@@ -295,6 +357,7 @@ def main() -> int:
     hive_parser.add_argument("--metrics-interval", type=int, default=15)
     hive_parser.add_argument("--concurrency", type=int, default=0, help="Optional local ceiling; studio control remains authoritative")
     hive_parser.add_argument("--tasks", default="", help="Optional comma-separated task subset")
+    hive_parser.add_argument("--vault", default=os.getenv("KIZUNA_VAULT_PATH", str(Path.home() / "KizunaVault")), help="Folder used for verified local production media")
     hive_parser.add_argument("--comfyui-url", default=os.getenv("KIZUNA_COMFYUI_URL", "http://127.0.0.1:8188"))
     hive_parser.add_argument("--workflow", default=os.getenv("KIZUNA_COMFYUI_WORKFLOW_PATH"))
     hive_parser.add_argument("--positive-node", default=os.getenv("KIZUNA_COMFYUI_POSITIVE_NODE", "6"))

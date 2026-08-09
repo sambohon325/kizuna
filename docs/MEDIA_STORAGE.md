@@ -18,8 +18,12 @@ Kizuna Node reports only files inside its dedicated Kizuna vault. It sends an op
 
 Each production can choose whether new originals should ultimately live on the Kizuna server, Hive computers, or S3-compatible storage. It can also select a preferred Hive computer, thumbnail and editing-proxy sizes, the number of verified replicas required, and whether server originals may be removed after replication.
 
-Policy changes do not delete or move files immediately. A future transfer queue will execute those decisions. Server cleanup must require the requested number of checksum-matching original replicas first. This protects projects from an offline, replaced, or failed workstation.
+Policy changes do not delete or move files immediately. The creator explicitly queues missing copies from the Production Vault. Server cleanup must require the requested number of checksum-matching original replicas first. This protects projects from an offline, replaced, or failed workstation.
 
-## Current transition state
+## Verified Hive transfers
 
-Existing generators and renderers still write their original output to the server. The residency index now catalogs those files and produces lightweight image thumbnails. Hive companions can register verified local copies. The next scheduling work will use this index to place render and AI jobs near their inputs, transfer only necessary source files, and safely evict redundant server originals.
+The transfer queue assigns each original to a specific Hive computer and honors that device's pause, drain, schedule, concurrency, CPU, GPU, RAM, and allowed-work settings. A node leases one job at a time, streams the original into a temporary file, verifies its SHA-256 checksum and byte size, and only then atomically moves it into the local vault. Interrupted leases return to the queue and retry up to five times.
+
+Each local vault has a small `vault_index.json` mapping opaque Kizuna object references to files inside that dedicated vault. Actual device paths are not sent back to the server. The companion can use a custom vault folder through `--vault` or `KIZUNA_VAULT_PATH`.
+
+Existing generators and renderers still write their first original output to the server. The queue now replicates those originals to Hive storage and marks assets eligible for cleanup when the production's replica requirement is met. Automatic server deletion remains disabled; the next cleanup milestone will require an explicit creator-approved policy and a fresh verification pass before removing any original.

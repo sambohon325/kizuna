@@ -737,6 +737,28 @@ class AssetResidency(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class MediaTransferJob(Base):
+    __tablename__ = "media_transfer_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_key: Mapped[str] = mapped_column(String(64), unique=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    asset_key: Mapped[str] = mapped_column(String(160))
+    source_residency_id: Mapped[int] = mapped_column(ForeignKey("asset_residencies.id"))
+    target_node_key: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24), default="queued")
+    expected_checksum_sha256: Mapped[str] = mapped_column(String(64))
+    expected_size_bytes: Mapped[int] = mapped_column(default=0)
+    attempts: Mapped[int] = mapped_column(default=0)
+    max_attempts: Mapped[int] = mapped_column(default=5)
+    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    object_ref: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class DeliveryLink(Base):
     __tablename__ = "delivery_links"
 

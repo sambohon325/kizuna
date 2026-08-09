@@ -147,3 +147,31 @@ def test_background_generation_requires_design(client):
     location_id = client.post(f"/api/projects/{project_id}/locations", json={"name": "Blank Room"}).json()["id"]
     response = client.post(f"/api/locations/{location_id}/generate", json={"provider": "mock"})
     assert response.status_code == 409
+
+
+def test_story_expands_into_shot_plans_and_generates_storyboard(client):
+    project_id = client.post("/api/projects", json={"title": "Shot Test", "logline": "A pilot follows a signal beyond the mapped sky."}).json()["id"]
+    client.put(f"/api/projects/{project_id}/story", json={"premise": "A pilot follows a forbidden signal.", "format": "short film", "target_duration_minutes": 8, "genre": "orbital mystery", "audience": "general", "themes": ["identity"]})
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "pilot"}).json()
+    client.put(f"/api/characters/{character['id']}/design", json={"appearance": {"hair": "silver undercut"}, "consistency_anchors": ["split eyebrow"]})
+    location = client.post(f"/api/projects/{project_id}/locations", json={"name": "Listening Hall"}).json()
+    client.put(f"/api/locations/{location['id']}/design", json={"appearance": {"architecture": "orbital rings"}, "continuity_anchors": ["central hatch"]})
+    expanded = client.post(f"/api/projects/{project_id}/expand-story", json={"shots_per_beat": 2})
+    assert expanded.status_code == 200
+    project = expanded.json()
+    assert len(project["scenes"]) == 8
+    assert len(project["scenes"][0]["shots"]) == 2
+    shot = project["scenes"][0]["shots"][0]
+    assert shot["plan"]["camera"]["shot_size"] == "wide"
+    plan_payload = {"location_id": location["id"], "character_ids": [character["id"]], "action": "Ari enters beneath the silent telescope.", "dialogue": "Is anyone listening?", "camera": {"shot_size": "wide", "angle": "low", "lens": "24mm", "movement": "slow push"}, "lighting": "quiet dawn", "continuity_notes": "Keep Ari frame-left and the hatch centered."}
+    planned = client.put(f"/api/shots/{shot['id']}/plan", json=plan_payload)
+    assert planned.status_code == 200
+    assert "Ari" in planned.json()["storyboard_prompt"]
+    assert "central hatch" in planned.json()["storyboard_prompt"]
+    storyboard = client.post(f"/api/shots/{shot['id']}/storyboard", json={"provider": "mock"})
+    assert storyboard.status_code == 201
+    assert storyboard.json()["assets"][0]["version"] == 1
+    preview = client.get(storyboard.json()["assets"][0]["uri"])
+    assert "STORYBOARD FRAME SIMULATION" in preview.text
+    conflict = client.post(f"/api/projects/{project_id}/expand-story", json={"shots_per_beat": 2})
+    assert conflict.status_code == 409

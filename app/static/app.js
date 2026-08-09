@@ -6,10 +6,12 @@ const writerDialog = document.querySelector('#writer-dialog');
 const characterDialog = document.querySelector('#character-dialog');
 const renderDialog = document.querySelector('#render-dialog');
 const worldDialog = document.querySelector('#world-dialog');
+const shotDialog = document.querySelector('#shot-dialog');
 let projects = [];
 let catalog = null;
 let activeCharacterId = null;
 let activeLocationId = null;
+let activeShotId = null;
 let generationProviders = [];
 
 async function api(path, options = {}) {
@@ -290,6 +292,94 @@ function renderBackgroundJob(job) {
   if (sync) sync.onclick = async () => renderBackgroundJob(await api(`/api/background-jobs/${job.id}/sync`, {method:'POST'}));
 }
 
+async function openShotPlanner(projectId) {
+  if (!projects.length) await loadProjects();
+  if (!projects.length) { projectDialog.showModal(); return; }
+  if (!generationProviders.length) generationProviders = (await api('/api/generation/providers')).providers;
+  const projectSelect = document.querySelector('#shot-project');
+  projectSelect.innerHTML = options(projects.map(project => ({id:String(project.id),label:project.title})), String(projectId || projects[0].id));
+  projectSelect.onchange = () => { activeShotId = null; renderShotTree(Number(projectSelect.value)); hideShotEditor(); };
+  renderShotTree(Number(projectSelect.value));
+  hideShotEditor();
+  shotDialog.showModal();
+}
+
+function currentShotProject() {
+  return projects.find(project => project.id === Number(document.querySelector('#shot-project').value));
+}
+
+function findShot(project, shotId) {
+  for (const scene of project?.scenes || []) { const shot = scene.shots.find(item => item.id === shotId); if (shot) return {scene,shot}; }
+  return null;
+}
+
+function renderShotTree(projectId) {
+  const project = projects.find(item => item.id === projectId);
+  const expandButton = document.querySelector('#expand-story');
+  expandButton.disabled = Boolean(project?.scenes.length);
+  expandButton.textContent = project?.scenes.length ? 'Scenes already built' : 'Build from story';
+  document.querySelector('#shot-tree').innerHTML = project?.scenes.length ? project.scenes.map(scene => `<section class="scene-group"><h4>${scene.position} · ${safe(scene.title)}</h4>${scene.shots.map(shot => `<button type="button" class="shot-item ${activeShotId === shot.id ? 'active' : ''}" data-shot-id="${shot.id}"><b>${shot.position}. ${safe(shot.title)}</b>${shot.duration_seconds}s · ${shot.plan ? safe(shot.plan.camera.shot_size || 'planned') : 'unplanned'}</button>`).join('')}</section>`).join('') : '<div class="empty">No scenes yet. Develop the story, then build its initial shots.</div>';
+  document.querySelectorAll('[data-shot-id]').forEach(button => button.onclick = () => selectShot(projectId, Number(button.dataset.shotId)));
+}
+
+function hideShotEditor() {
+  document.querySelector('#shot-editor-empty').style.display = 'block';
+  document.querySelector('#shot-form').style.display = 'none';
+}
+
+function selectShot(projectId, shotId) {
+  const project = projects.find(item => item.id === projectId);
+  const found = findShot(project, shotId);
+  if (!found) return;
+  activeShotId = shotId;
+  const {shot} = found; const plan = shot.plan || {character_ids:[],camera:{}}; const form = document.querySelector('#shot-form');
+  form.elements.shot_title.value = shot.title;
+  form.elements.shot_duration.value = shot.duration_seconds;
+  form.elements.shot_description.value = shot.description;
+  form.elements.shot_location.innerHTML = `<option value="">No location assigned</option>${options(project.locations.map(location => ({id:String(location.id),label:location.name})), String(plan.location_id || ''))}`;
+  form.elements.shot_location.value = plan.location_id || '';
+  document.querySelector('#shot-characters').innerHTML = project.characters.length ? project.characters.map(character => `<label class="chip"><input type="checkbox" name="shot_character" value="${character.id}" ${plan.character_ids.includes(character.id) ? 'checked' : ''}><span>${safe(character.name)}</span></label>`).join('') : '<span class="form-intro">Create characters before assigning them to shots.</span>';
+  form.elements.shot_action.value = plan.action || shot.description;
+  form.elements.shot_dialogue.value = plan.dialogue || '';
+  form.elements.shot_lighting.value = plan.lighting || '';
+  form.elements.camera_size.value = plan.camera.shot_size || 'wide';
+  form.elements.camera_angle.value = plan.camera.angle || 'eye level';
+  form.elements.camera_lens.value = plan.camera.lens || '35mm';
+  form.elements.camera_movement.value = plan.camera.movement || 'locked';
+  form.elements.camera_composition.value = plan.camera.composition || '';
+  form.elements.camera_focus.value = plan.camera.focus || '';
+  form.elements.shot_continuity.value = plan.continuity_notes || '';
+  document.querySelector('#shot-editor-empty').style.display = 'none'; form.style.display = 'block';
+  renderShotTree(projectId);
+  if (shot.plan) renderShotPlan(shot.plan); else document.querySelector('#shot-result').innerHTML = '';
+}
+
+function collectShotPlan(form) {
+  return {location_id:form.elements.shot_location.value ? Number(form.elements.shot_location.value) : null, character_ids:[...document.querySelectorAll('[name="shot_character"]:checked')].map(input => Number(input.value)), action:form.elements.shot_action.value, dialogue:form.elements.shot_dialogue.value, camera:{shot_size:form.elements.camera_size.value, angle:form.elements.camera_angle.value, lens:form.elements.camera_lens.value, movement:form.elements.camera_movement.value, composition:form.elements.camera_composition.value, focus:form.elements.camera_focus.value}, lighting:form.elements.shot_lighting.value, continuity_notes:form.elements.shot_continuity.value};
+}
+
+function renderShotPlan(plan) {
+  const providerOptions = generationProviders.filter(provider => provider.id !== 'farm').map(provider => `<option value="${safe(provider.id)}" ${provider.id === 'mock' ? 'selected' : ''}>${safe(provider.label)}${provider.ready ? '' : ' · setup required'}</option>`).join('');
+  document.querySelector('#shot-result').innerHTML = `<div class="shot-prompt"><b>STORYBOARD PROMPT · PLAN V${plan.version}</b>${safe(plan.storyboard_prompt)}</div><div class="storyboard-actions"><select id="storyboard-provider" aria-label="Storyboard provider">${providerOptions}</select><button type="button" id="generate-storyboard">Generate storyboard frame</button></div><div id="storyboard-result"></div>`;
+  document.querySelector('#generate-storyboard').onclick = generateStoryboard;
+}
+
+async function generateStoryboard() {
+  if (!activeShotId) return;
+  const button = document.querySelector('#generate-storyboard'); button.disabled = true; button.textContent = 'Generating…';
+  try { renderStoryboardJob(await api(`/api/shots/${activeShotId}/storyboard`, {method:'POST',body:JSON.stringify({provider:document.querySelector('#storyboard-provider').value})})); }
+  catch (error) { document.querySelector('#storyboard-result').innerHTML = `<div class="job-error">${safe(error.message)}</div>`; }
+  finally { button.disabled = false; button.textContent = 'Generate storyboard frame'; }
+}
+
+function renderStoryboardJob(job) {
+  const result = document.querySelector('#storyboard-result');
+  if (job.status === 'failed') { result.innerHTML = `<div class="job-error">${safe(job.error)}</div>`; return; }
+  if (job.assets.length) { const asset = job.assets[0]; result.innerHTML = `<div class="storyboard-preview"><img src="${safe(asset.uri)}" alt="Generated storyboard for the selected shot"></div><div class="generation-actions"><small>${safe(job.provider)} · frame v${asset.version} · job ${job.id}</small></div>`; return; }
+  result.innerHTML = `<div class="storyboard-actions"><small>${safe(job.provider)} job ${job.external_id || job.id} is ${safe(job.status)}.</small>${job.provider === 'comfyui' ? `<button type="button" data-sync-storyboard="${job.id}">Check result</button>` : ''}</div>`;
+  const sync = document.querySelector('[data-sync-storyboard]'); if (sync) sync.onclick = async () => renderStoryboardJob(await api(`/api/storyboard-jobs/${job.id}/sync`, {method:'POST'}));
+}
+
 async function openRenderFarm() {
   renderDialog.showModal();
   await refreshRenderFarm();
@@ -315,16 +405,20 @@ document.querySelector('#writer-nav').onclick = () => openWriterRoom();
 document.querySelector('#characters-nav').onclick = () => openCharacterStudio();
 document.querySelector('#render-nav').onclick = () => openRenderFarm();
 document.querySelector('#worlds-nav').onclick = () => openWorldStudio();
+document.querySelector('#shots-nav').onclick = () => openShotPlanner();
 document.querySelector('.close').onclick = () => projectDialog.close();
 document.querySelector('#style-close').onclick = () => styleDialog.close();
 document.querySelector('#writer-close').onclick = () => writerDialog.close();
 document.querySelector('#character-close').onclick = () => characterDialog.close();
 document.querySelector('#render-close').onclick = () => renderDialog.close();
 document.querySelector('#world-close').onclick = () => worldDialog.close();
+document.querySelector('#shot-close').onclick = () => shotDialog.close();
+document.querySelector('#expand-story').onclick = async () => { const projectId = Number(document.querySelector('#shot-project').value); try { await api(`/api/projects/${projectId}/expand-story`, {method:'POST',body:JSON.stringify({shots_per_beat:Number(document.querySelector('#shots-per-beat').value)})}); await loadProjects(); renderShotTree(projectId); } catch(error) { document.querySelector('#shot-tree').innerHTML = `<div class="job-error">${safe(error.message)}</div>`; } };
 document.querySelector('#refresh-farm').onclick = () => refreshRenderFarm();
 document.querySelector('#project-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); await api('/api/projects', {method:'POST', body:JSON.stringify(data)}); event.target.reset(); projectDialog.close(); await loadProjects(); };
 document.querySelector('#style-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#style-project').value); await api(`/api/projects/${projectId}/style`, {method:'PUT', body:JSON.stringify(collectStyle(event.target))}); styleDialog.close(); await loadProjects(); openProject(projectId); };
 document.querySelector('#writer-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#writer-project').value); const brief = await api(`/api/projects/${projectId}/story`, {method:'PUT', body:JSON.stringify(collectStory(event.target))}); await loadProjects(); renderStory(brief); };
 document.querySelector('#character-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#character-project').value); const character = activeCharacterId ? await api(`/api/characters/${activeCharacterId}`, {method:'PUT', body:JSON.stringify(collectCharacter(event.target))}) : await api(`/api/projects/${projectId}/characters`, {method:'POST', body:JSON.stringify(collectCharacter(event.target))}); activeCharacterId = character.id; const design = await api(`/api/characters/${character.id}/design`, {method:'PUT', body:JSON.stringify(collectCharacterDesign(event.target))}); await loadProjects(); renderCharacterRoster(projectId); renderCharacterDesign(character, design); };
 document.querySelector('#world-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#world-project').value); const location = activeLocationId ? await api(`/api/locations/${activeLocationId}`, {method:'PUT', body:JSON.stringify(collectWorld(event.target))}) : await api(`/api/projects/${projectId}/locations`, {method:'POST', body:JSON.stringify(collectWorld(event.target))}); activeLocationId = location.id; const design = await api(`/api/locations/${location.id}/design`, {method:'PUT', body:JSON.stringify(collectWorldDesign(event.target))}); await loadProjects(); renderWorldRoster(projectId); renderWorldDesign(location, design); };
+document.querySelector('#shot-form').onsubmit = async event => { event.preventDefault(); const project = currentShotProject(); const found = findShot(project, activeShotId); if (!found) return; const form = event.target; await api(`/api/shots/${activeShotId}`, {method:'PUT',body:JSON.stringify({title:form.elements.shot_title.value,description:form.elements.shot_description.value,position:found.shot.position,duration_seconds:Number(form.elements.shot_duration.value)})}); const plan = await api(`/api/shots/${activeShotId}/plan`, {method:'PUT',body:JSON.stringify(collectShotPlan(form))}); await loadProjects(); selectShot(project.id, activeShotId); renderShotPlan(plan); };
 loadProjects().catch(error => projectsEl.innerHTML = `<div class="empty">Could not load the studio: ${safe(error.message)}</div>`);

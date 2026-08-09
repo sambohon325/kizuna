@@ -208,6 +208,35 @@ class BackgroundAsset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class StoryboardJob(Base):
+    __tablename__ = "storyboard_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shot_id: Mapped[int] = mapped_column(ForeignKey("shots.id"))
+    provider: Mapped[str] = mapped_column(String(40), default="mock")
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    prompt: Mapped[str] = mapped_column(Text)
+    negative_prompt: Mapped[str] = mapped_column(Text, default="")
+    external_id: Mapped[str] = mapped_column(String(160), default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    result_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class StoryboardAsset(Base):
+    __tablename__ = "storyboard_assets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shot_id: Mapped[int] = mapped_column(ForeignKey("shots.id"))
+    storyboard_job_id: Mapped[int] = mapped_column(ForeignKey("storyboard_jobs.id"))
+    filename: Mapped[str] = mapped_column(String(255))
+    uri: Mapped[str] = mapped_column(Text)
+    mime_type: Mapped[str] = mapped_column(String(80), default="image/png")
+    asset_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    version: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Scene(Base):
     __tablename__ = "scenes"
 
@@ -233,3 +262,22 @@ class Shot(Base):
     status: Mapped[str] = mapped_column(String(32), default="draft")
 
     scene: Mapped[Scene] = relationship(back_populates="shots")
+    plan: Mapped[ShotPlan | None] = relationship(back_populates="shot", cascade="all, delete-orphan", uselist=False)
+
+
+class ShotPlan(Base):
+    __tablename__ = "shot_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shot_id: Mapped[int] = mapped_column(ForeignKey("shots.id"), unique=True)
+    location_id: Mapped[int | None] = mapped_column(ForeignKey("world_locations.id"), nullable=True)
+    character_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    action: Mapped[str] = mapped_column(Text, default="")
+    dialogue: Mapped[str] = mapped_column(Text, default="")
+    camera: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    lighting: Mapped[str] = mapped_column(String(160), default="")
+    continuity_notes: Mapped[str] = mapped_column(Text, default="")
+    storyboard_prompt: Mapped[str] = mapped_column(Text, default="")
+    version: Mapped[int] = mapped_column(default=1)
+
+    shot: Mapped[Shot] = relationship(back_populates="plan")

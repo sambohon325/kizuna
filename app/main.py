@@ -14,8 +14,9 @@ from app.config import settings
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import BackgroundAsset, BackgroundJob, Character, CharacterDesign, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, StoryBrief, StyleProfile, WorkerAssignment, WorldLocation
-from app.schemas import BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCreate, ShotRead, StoryBriefInput, StoryBriefRead, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
+from app.models import BackgroundAsset, BackgroundJob, Character, CharacterDesign, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, WorkerAssignment, WorldLocation
+from app.schemas import BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCreate, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
+from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
 from app.world_development import compile_background_brief
@@ -30,7 +31,7 @@ app.mount("/renders", StaticFiles(directory=render_dir), name="renders")
 
 
 def project_query():
-    return select(Project).options(selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters).selectinload(Character.design), selectinload(Project.locations).selectinload(WorldLocation.design), selectinload(Project.scenes).selectinload(Scene.shots))
+    return select(Project).options(selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters).selectinload(Character.design), selectinload(Project.locations).selectinload(WorldLocation.design), selectinload(Project.scenes).selectinload(Scene.shots).selectinload(Shot.plan))
 
 
 @app.get("/api/health")
@@ -522,6 +523,133 @@ def create_shot(scene_id: int, payload: ShotCreate, db: Session = Depends(get_db
     db.commit()
     db.refresh(shot)
     return shot
+
+
+@app.put("/api/shots/{shot_id}", response_model=ShotRead)
+def update_shot(shot_id: int, payload: ShotCreate, db: Session = Depends(get_db)):
+    shot = db.get(Shot, shot_id)
+    if not shot:
+        raise HTTPException(404, "Shot not found")
+    for key, value in payload.model_dump().items():
+        setattr(shot, key, value)
+    db.commit()
+    return db.scalars(select(Shot).options(selectinload(Shot.plan)).where(Shot.id == shot_id)).one()
+
+
+def shot_context(shot: Shot, payload: ShotPlanInput, db: Session):
+    scene = db.get(Scene, shot.scene_id)
+    style = db.scalar(select(StyleProfile).where(StyleProfile.project_id == scene.project_id))
+    location = db.scalars(select(WorldLocation).options(selectinload(WorldLocation.design)).where(WorldLocation.id == payload.location_id, WorldLocation.project_id == scene.project_id)).one_or_none() if payload.location_id else None
+    if payload.location_id and not location:
+        raise HTTPException(422, "Location does not belong to this project")
+    characters = db.scalars(select(Character).options(selectinload(Character.design)).where(Character.project_id == scene.project_id, Character.id.in_(payload.character_ids))).unique().all() if payload.character_ids else []
+    if len(characters) != len(set(payload.character_ids)):
+        raise HTTPException(422, "One or more characters do not belong to this project")
+    return style, location, characters
+
+
+@app.put("/api/shots/{shot_id}/plan", response_model=ShotPlanRead)
+def update_shot_plan(shot_id: int, payload: ShotPlanInput, db: Session = Depends(get_db)):
+    shot = db.get(Shot, shot_id)
+    if not shot:
+        raise HTTPException(404, "Shot not found")
+    style, location, characters = shot_context(shot, payload, db)
+    plan = db.scalar(select(ShotPlan).where(ShotPlan.shot_id == shot_id))
+    if plan is None:
+        plan = ShotPlan(shot_id=shot_id)
+        db.add(plan)
+    else:
+        plan.version += 1
+    for key, value in payload.model_dump().items():
+        setattr(plan, key, value)
+    plan.storyboard_prompt = compile_storyboard_prompt(shot, payload, style, location, characters)
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
+@app.post("/api/projects/{project_id}/expand-story", response_model=ProjectRead)
+def expand_story_to_shots(project_id: int, payload: StoryExpansionRequest, db: Session = Depends(get_db)):
+    project = db.scalars(project_query().where(Project.id == project_id)).one_or_none()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    if not project.story_brief or not project.story_brief.beats:
+        raise HTTPException(409, "Develop the story in Writer's Room first")
+    if project.scenes:
+        raise HTTPException(409, "This project already has scenes; expansion will not overwrite them")
+    shot_labels = ["Establish", "Action", "Reaction", "Detail", "Reversal", "Exit"]
+    camera_sizes = ["wide", "medium", "close-up", "insert", "medium close-up", "wide"]
+    style = project.style_profile
+    for scene_position, beat in enumerate(project.story_brief.beats, start=1):
+        scene = Scene(project_id=project.id, title=beat["name"], summary=beat["summary"], position=scene_position)
+        db.add(scene)
+        db.flush()
+        for shot_position in range(1, payload.shots_per_beat + 1):
+            label = shot_labels[shot_position - 1]
+            shot = Shot(scene_id=scene.id, title=f"{beat['name']} — {label}", description=beat["summary"], position=shot_position, duration_seconds=4.0 if shot_position == 1 else 3.0)
+            db.add(shot)
+            db.flush()
+            plan_payload = ShotPlanInput(action=beat["summary"], camera={"shot_size": camera_sizes[shot_position - 1], "angle": "eye level", "lens": "35mm", "movement": "locked"}, continuity_notes=f"Carry the emotional turn of {beat['name']} into the next shot.")
+            prompt = compile_storyboard_prompt(shot, plan_payload, style, None, [])
+            db.add(ShotPlan(shot_id=shot.id, **plan_payload.model_dump(), storyboard_prompt=prompt))
+    db.commit()
+    db.expire_all()
+    return db.scalars(project_query().where(Project.id == project_id)).one()
+
+
+def storyboard_job_response(job: StoryboardJob, db: Session):
+    assets = db.scalars(select(StoryboardAsset).where(StoryboardAsset.storyboard_job_id == job.id)).all()
+    return {"id": job.id, "shot_id": job.shot_id, "provider": job.provider, "status": job.status, "prompt": job.prompt, "negative_prompt": job.negative_prompt, "external_id": job.external_id, "error": job.error, "result_data": job.result_data, "assets": assets}
+
+
+def record_storyboard_assets(job: StoryboardJob, outputs: list[dict], db: Session):
+    existing = db.scalars(select(StoryboardAsset).where(StoryboardAsset.shot_id == job.shot_id)).all()
+    version = len(existing) + 1
+    for output in outputs:
+        filename = output["filename"]
+        uri = f"/renders/{filename}" if output.get("path") else output.get("url", "")
+        db.add(StoryboardAsset(shot_id=job.shot_id, storyboard_job_id=job.id, filename=filename, uri=uri, mime_type=output.get("mime_type", "image/png"), asset_metadata={key: value for key, value in output.items() if key != "path"}, version=version))
+
+
+@app.post("/api/shots/{shot_id}/storyboard", response_model=StoryboardJobRead, status_code=status.HTTP_201_CREATED)
+def generate_storyboard(shot_id: int, payload: GenerationRequest, db: Session = Depends(get_db)):
+    shot = db.scalars(select(Shot).options(selectinload(Shot.plan)).where(Shot.id == shot_id)).one_or_none()
+    if not shot:
+        raise HTTPException(404, "Shot not found")
+    if not shot.plan or not shot.plan.storyboard_prompt:
+        raise HTTPException(409, "Save the shot plan before generating a storyboard")
+    provider_name = payload.provider or settings.generation_provider
+    if provider_name == "farm":
+        raise HTTPException(409, "Storyboard farm scheduling is not enabled yet; choose Simulation or Local ComfyUI")
+    job = StoryboardJob(shot_id=shot.id, provider=provider_name, prompt=shot.plan.storyboard_prompt, negative_prompt=payload.negative_prompt)
+    db.add(job); db.commit(); db.refresh(job)
+    try:
+        result = provider_for(provider_name).submit(job.id, shot.title, job.prompt, negative_prompt=job.negative_prompt, seed=payload.seed, asset_kind="storyboard-frame")
+        job.status, job.external_id, job.result_data = result.status, result.external_id, result.metadata
+        if result.outputs:
+            record_storyboard_assets(job, result.outputs, db)
+    except ProviderError as exc:
+        job.status, job.error = "failed", str(exc)
+    db.commit()
+    return storyboard_job_response(job, db)
+
+
+@app.post("/api/storyboard-jobs/{job_id}/sync", response_model=StoryboardJobRead)
+def sync_storyboard_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(StoryboardJob, job_id)
+    if not job:
+        raise HTTPException(404, "Storyboard job not found")
+    if job.provider != "comfyui" or job.status in {"completed", "failed"}:
+        return storyboard_job_response(job, db)
+    try:
+        provider = provider_for(job.provider); result = provider.poll(job.external_id)
+        job.status, job.result_data = result.status, result.metadata
+        if result.outputs:
+            record_storyboard_assets(job, provider.materialize(result.outputs, render_dir, job.id), db)
+    except ProviderError as exc:
+        job.status, job.error = "failed", str(exc)
+    db.commit()
+    return storyboard_job_response(job, db)
 
 
 @app.get("/", include_in_schema=False)

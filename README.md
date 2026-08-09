@@ -33,6 +33,7 @@ pytest
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
 - Authenticated network workers with capability reporting, heartbeats, leased jobs, retries, and artifact upload
 - Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, and background assets
+- Storyboard and Shot Planner with beat expansion, camera language, cast/location assignment, continuity prompts, and storyboard assets
 - Provider and render-worker interfaces to be added behind stable job APIs
 - Docker Compose foundation for eventual Coolify deployment
 
@@ -40,6 +41,6 @@ pytest
 
 1. AI provider adapters for screenplay and outline development
 2. Background render-farm scheduling and production object storage
-3. Storyboard generation jobs and review workflow
-4. Redis-backed render queue and authenticated remote workers
+3. Storyboard review workflow and render-farm scheduling
+4. Redis-backed production queue and worker scaling
 5. Timeline, audio, compositing, and FFmpeg export

@@ -184,6 +184,32 @@ class BackgroundJobRead(BaseModel):
     assets: list[BackgroundAssetRead] = Field(default_factory=list)
 
 
+class StoryboardAssetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    shot_id: int
+    storyboard_job_id: int
+    filename: str
+    uri: str
+    mime_type: str
+    asset_metadata: dict[str, Any]
+    version: int
+
+
+class StoryboardJobRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    shot_id: int
+    provider: str
+    status: str
+    prompt: str
+    negative_prompt: str
+    external_id: str
+    error: str
+    result_data: dict[str, Any]
+    assets: list[StoryboardAssetRead] = Field(default_factory=list)
+
+
 class JobCompletion(BaseModel):
     result_data: dict[str, Any] = Field(default_factory=dict)
 
@@ -207,11 +233,34 @@ class ShotCreate(BaseModel):
     duration_seconds: float = Field(default=4.0, gt=0, le=3600)
 
 
+class ShotPlanInput(BaseModel):
+    location_id: int | None = None
+    character_ids: list[int] = Field(default_factory=list)
+    action: str = ""
+    dialogue: str = ""
+    camera: dict[str, Any] = Field(default_factory=dict)
+    lighting: str = ""
+    continuity_notes: str = ""
+
+
+class ShotPlanRead(ShotPlanInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    shot_id: int
+    storyboard_prompt: str
+    version: int
+
+
 class ShotRead(ShotCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     scene_id: int
     status: str
+    plan: ShotPlanRead | None = None
+
+
+class StoryExpansionRequest(BaseModel):
+    shots_per_beat: int = Field(default=2, ge=1, le=6)
 
 
 class SceneCreate(BaseModel):

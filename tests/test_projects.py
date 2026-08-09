@@ -40,6 +40,28 @@ def test_durable_jobs_are_idempotent_inspectable_cancelable_and_recoverable(clie
         assert any("lease expired" in event.message for event in events)
 
 
+def test_compliance_scans_block_imitation_track_stale_work_and_chain_audit_events(client):
+    project_id = client.post("/api/projects", json={"title": "Original Signal", "logline": "A cartographer redraws a city that changes overnight."}).json()["id"]
+    client.put(f"/api/projects/{project_id}/story", json={"premise": "A cartographer must choose which changing streets deserve to survive.", "themes": ["memory"]})
+    passed = client.post(f"/api/projects/{project_id}/compliance/scan", json={"stage": "story"}).json()["scans"][0]
+    assert passed["status"] == "pass"
+
+    client.put(f"/api/projects/{project_id}/story", json={"premise": "A cartographer follows a new map and discovers who is rewriting the city.", "themes": ["memory"]})
+    stale = client.get(f"/api/projects/{project_id}/compliance").json()
+    story = next(item for item in stale["stages"] if item["stage"] == "story")
+    assert story["status"] == "scan_required" and story["stale"] is True
+
+    client.put(f"/api/projects/{project_id}/story", json={"premise": "Copy the story exactly like a famous movie and reproduce the character.", "themes": ["memory"]})
+    blocked = client.post(f"/api/projects/{project_id}/compliance/scan", json={"stage": "story"}).json()["scans"][0]
+    assert blocked["status"] == "blocked"
+    assert blocked["findings"] and blocked["suggestions"]
+
+    client.post(f"/api/projects/{project_id}/compliance/acknowledge", json={"accepted": True, "accepted_by": "Test Producer"})
+    ledger = client.get(f"/api/projects/{project_id}/audit-ledger").json()["events"]
+    assert len(ledger) >= 3
+    assert all(ledger[index]["previous_hash"] == ledger[index + 1]["event_hash"] for index in range(len(ledger) - 1))
+
+
 def test_integration_settings_support_builtin_and_custom_tools(client):
     settings_response = client.get("/api/settings/integrations")
     assert settings_response.status_code == 200
@@ -226,6 +248,13 @@ def test_production_status_uses_saved_milestones_not_screen_visits(client):
         f"/api/projects/{project_id}/story",
         json={"premise": "A signal changes the city.", "format": "short film", "target_duration_minutes": 8, "audience": "general", "genre": "science fiction", "themes": ["connection"]},
     )
+    updated = client.get(f"/api/projects/{project_id}/production-status").json()
+    stages = {item["key"]: item for item in updated["stages"]}
+    assert updated["complete_count"] == 0
+    assert stages["story"]["state"] == "in_progress"
+    assert "compliance scan" in stages["story"]["summary"]
+    scanned = client.post(f"/api/projects/{project_id}/compliance/scan", json={"stage": "all"})
+    assert scanned.status_code == 200
     updated = client.get(f"/api/projects/{project_id}/production-status").json()
     stages = {item["key"]: item for item in updated["stages"]}
     assert updated["complete_count"] == 2
@@ -818,13 +847,19 @@ def test_producer_workflow_routes_deployed_bots_and_resumes_after_approval(clien
     client.post(f"/api/crew-actions/{writer_action_id}/approve")
 
     resumed = client.get(f"/api/projects/{project_id}/producer/workflow").json()
+    assert resumed["current_stage"] == "story"
+    assert resumed["stages"][0]["status"] == "blocked"
+    client.post(f"/api/projects/{project_id}/compliance/scan", json={"stage": "story"})
+    resumed = client.get(f"/api/projects/{project_id}/producer/workflow").json()
     assert resumed["current_stage"] == "cast"
     character_step = client.post(f"/api/producer-workflows/{workflow_id}/advance").json()
     client.post(f"/api/crew-actions/{character_step['last_action_id']}/approve")
+    client.post(f"/api/projects/{project_id}/compliance/scan", json={"stage": "characters"})
     assert client.get(f"/api/projects/{project_id}/producer/workflow").json()["current_stage"] == "worlds"
 
     background_step = client.post(f"/api/producer-workflows/{workflow_id}/advance").json()
     client.post(f"/api/crew-actions/{background_step['last_action_id']}/approve")
+    client.post(f"/api/projects/{project_id}/compliance/scan", json={"stage": "worlds"})
     directing = client.post(f"/api/producer-workflows/{workflow_id}/advance").json()
     assert directing["current_stage"] == "direction"
     assert directing["status"] == "awaiting_approval"
@@ -936,7 +971,12 @@ def test_project_backups_retention_and_expiring_delivery_links(client, monkeypat
     assert result == {"due": 1, "completed": 1, "failed": 0}
     assert client.get(f"/api/projects/{project_id}/backup-schedule").json()["last_status"] == "completed"
 
-    delivery = client.post(f"/api/projects/{project_id}/delivery-links", json={"asset_uri": asset["uri"], "label": "Studio review", "expires_hours": 24, "max_downloads": 1})
+    delivery_payload = {"asset_uri": asset["uri"], "label": "Studio review", "expires_hours": 24, "max_downloads": 1}
+    assert client.post(f"/api/projects/{project_id}/delivery-links", json=delivery_payload).status_code == 409
+    assert client.post(f"/api/projects/{project_id}/compliance/scan", json={"stage": "all"}).status_code == 200
+    assert client.post(f"/api/projects/{project_id}/compliance/acknowledge", json={"accepted": True, "accepted_by": "Archive Producer"}).status_code == 200
+    assert client.post(f"/api/projects/{project_id}/compliance/release-clearance", json={"confirmed_by": "Studio Rights Reviewer", "notes": "Reviewed the current release materials and documented the source asset rights.", "evidence_refs": ["rights-report-001"]}).status_code == 200
+    delivery = client.post(f"/api/projects/{project_id}/delivery-links", json=delivery_payload)
     assert delivery.status_code == 201
     url = delivery.json()["url"]
     assert client.get(url).status_code == 200
@@ -993,11 +1033,14 @@ def test_media_index_keeps_thumbnails_and_tracks_hive_originals(client, monkeypa
     assert media["summary"]["lightweight_server_bytes"] > 0
     assert item["preview_uri"].startswith("/api/media/thumbnails/")
     assert client.get(item["preview_uri"]).headers["content-type"] in {"image/jpeg", "image/svg+xml"}
+    original = next(place for place in item["residencies"] if place["representation"] == "original" and place["backend"] == "server")
+    audit = client.get(f"/api/projects/{project_id}/audit-ledger").json()["events"]
+    output_events = [event for event in audit if event["category"] == "asset" and event["action"] == "output_registered"]
+    assert output_events and any(event["details"].get("checksum_sha256") == original["checksum_sha256"] for event in output_events)
 
     enrollment = client.post("/api/settings/compute/enrollment").json()
     profile = {"code": enrollment["code"], "node_key": "media-node-0001", "name": "Creator Workstation", "os_name": "Linux", "architecture": "x86_64", "logical_cores": 12, "ram_gb": 32, "capabilities": ["video_encode"]}
     enrolled = client.post("/api/nodes/enroll", json=profile).json(); headers = {"Authorization": f"Bearer {enrolled['token']}"}
-    original = next(place for place in item["residencies"] if place["representation"] == "original" and place["backend"] == "server")
     registered = client.post(f"/api/nodes/media-node-0001/projects/{project_id}/media-residencies", headers=headers, json={"items": [{"asset_key": item["asset_key"], "representation": "original", "object_ref": "vault://mika-reference-v1", "checksum_sha256": original["checksum_sha256"], "size_bytes": original["size_bytes"], "status": "available"}]})
     assert registered.json()["registered"] == 1
     policy = client.put(f"/api/projects/{project_id}/media-storage-policy", json={"original_strategy": "hive", "preferred_node_key": "media-node-0001", "keep_server_proxies": True, "thumbnail_width": 480, "proxy_width": 1280, "minimum_replicas": 1, "evict_server_originals": True})

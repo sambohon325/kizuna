@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.animatic import ffmpeg_executable
 from app.config import settings
+from app.compliance import append_audit_event
 from app.models import AssetResidency, DurableJob
 from app.segmented_export import sha256_file
 
@@ -81,6 +82,7 @@ def execute_media_proxy_job(db: Session, job: DurableJob) -> dict[str, Any]:
 
     residency_key = hashlib.sha256(f"{project_id}|{asset_key}|proxy|server|".encode()).hexdigest()
     residency = db.scalar(select(AssetResidency).where(AssetResidency.residency_key == residency_key))
+    changed = residency is None or not residency.checksum_sha256 or residency.uri != f"/api/media/proxies/{project_id}/{filename}"
     if residency is None:
         residency = AssetResidency(
             residency_key=residency_key,
@@ -98,6 +100,8 @@ def execute_media_proxy_job(db: Session, job: DurableJob) -> dict[str, Any]:
     residency.status = "available"
     residency.last_verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.flush()
+    if changed:
+        append_audit_event(db, project_id, "asset", "output_registered", subject_type="proxy", subject_key=asset_key, details={"backend": "server", "uri": residency.uri, "checksum_sha256": residency.checksum_sha256, "size_bytes": residency.size_bytes})
     return {
         "residency_id": residency.id,
         "uri": residency.uri,

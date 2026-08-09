@@ -24,10 +24,11 @@ from app.segmented_export import assemble_segments, clip_start_times, segment_cl
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, Project, ProjectBackup, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
+from app.compliance import COMPLIANCE_STAGES, append_audit_event, compliance_overview, latest_current_scan, policy_for as compliance_policy_for, require_release_clearance, run_stage_scan
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
@@ -624,6 +625,49 @@ def ask_project_assistant(project_id: int, request: AssistantRequest, db: Sessio
     return {"message": assistant_message, "actions": actions, "project_summary": assistant_project_summary(project, scope)}
 
 
+@app.get("/api/projects/{project_id}/compliance")
+def get_project_compliance(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    return compliance_overview(project_id, db)
+
+
+@app.post("/api/projects/{project_id}/compliance/scan")
+def scan_project_compliance(project_id: int, payload: ComplianceScanRequest, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    stages = COMPLIANCE_STAGES if payload.stage == "all" else [payload.stage]
+    scans = [run_stage_scan(project_id, stage, db) for stage in stages]
+    db.commit()
+    return {"scans": [{"id": scan.id, "stage": scan.stage, "status": scan.status, "risk_score": scan.risk_score, "summary": scan.summary, "findings": scan.findings, "suggestions": scan.suggestions, "coverage": scan.coverage} for scan in scans], "overview": compliance_overview(project_id, db)}
+
+
+@app.post("/api/projects/{project_id}/compliance/acknowledge")
+def acknowledge_project_compliance(project_id: int, payload: ComplianceAcknowledgement, db: Session = Depends(get_db)):
+    if not payload.accepted: raise HTTPException(422, "The creator-responsibility acknowledgement must be accepted")
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    policy = compliance_policy_for(project_id, db)
+    policy.accepted_by, policy.accepted_at = payload.accepted_by.strip(), utcnow()
+    append_audit_event(db, project_id, "compliance", "creator_responsibility_acknowledged", actor_type="creator", subject_type="terms", subject_key=policy.terms_version, details={"accepted_by": policy.accepted_by, "terms_version": policy.terms_version})
+    db.commit()
+    return compliance_overview(project_id, db)
+
+
+@app.post("/api/projects/{project_id}/compliance/release-clearance")
+def record_project_release_clearance(project_id: int, payload: ComplianceClearanceInput, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    clearance = ComplianceClearance(project_id=project_id, scope="release", confirmed_by=payload.confirmed_by.strip(), notes=payload.notes.strip(), evidence_refs=payload.evidence_refs)
+    db.add(clearance); db.flush()
+    append_audit_event(db, project_id, "compliance", "release_clearance_recorded", actor_type="rights_reviewer", subject_type="clearance", subject_key=str(clearance.id), details={"confirmed_by": clearance.confirmed_by, "evidence_refs": clearance.evidence_refs, "notes_hash": hashlib.sha256(clearance.notes.encode()).hexdigest()})
+    db.commit()
+    return compliance_overview(project_id, db)
+
+
+@app.get("/api/projects/{project_id}/audit-ledger")
+def get_project_audit_ledger(project_id: int, limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    events = db.scalars(select(AuditLedgerEvent).where(AuditLedgerEvent.project_id == project_id).order_by(AuditLedgerEvent.sequence.desc()).limit(limit)).all()
+    return {"project_id": project_id, "events": [{"sequence": item.sequence, "previous_hash": item.previous_hash, "event_hash": item.event_hash, "category": item.category, "action": item.action, "actor_type": item.actor_type, "subject_type": item.subject_type, "subject_key": item.subject_key, "details": item.details, "created_at": item.created_at} for item in events]}
+
+
 def mark_project_milestone(project_id: int, key: str, db: Session) -> None:
     if not db.scalar(select(ProjectMilestone).where(ProjectMilestone.project_id == project_id, ProjectMilestone.key == key)):
         db.add(ProjectMilestone(project_id=project_id, key=key))
@@ -660,6 +704,12 @@ def get_production_status(project_id: int, db: Session = Depends(get_db)):
     completed_masters = db.scalars(select(AnimaticRender).where(AnimaticRender.timeline_id == timeline.id, AnimaticRender.status == "completed")).all() if timeline else []
     production_master_exists = any(render.render_settings.get("kind") == "production_master" and render.uri for render in completed_masters)
     master_complete = production_master_exists and edit_complete and sound_complete and finish_complete
+    compliance_pass = {key: bool((scan := latest_current_scan(project_id, key, db)) and scan.status == "pass") for key in COMPLIANCE_STAGES}
+    story_approved, style_approved = story_complete and compliance_pass["story"], style_complete and compliance_pass["style"]
+    cast_approved, worlds_approved = cast_complete and compliance_pass["characters"], worlds_complete and compliance_pass["worlds"]
+    shots_approved, edit_approved = shots_complete and compliance_pass["shots"], edit_complete and compliance_pass["timeline"]
+    sound_approved, finish_approved = sound_complete and compliance_pass["audio"], finish_complete and compliance_pass["composite"]
+    master_approved = master_complete and compliance_pass["render"]
 
     def stage(key: str, label: str, nav: str, complete: bool, started: bool, available: bool, done: str, underway: str, next_action: str, blocked: str) -> dict:
         state = "complete" if complete else "in_progress" if started else "ready" if available else "blocked"
@@ -667,15 +717,15 @@ def get_production_status(project_id: int, db: Session = Depends(get_db)):
         return {"key": key, "label": label, "state": state, "summary": summary, "nav": nav}
 
     stages = [
-        stage("story", "Story", "writer-nav", story_complete, bool(project.story_brief), True, "Outline and beats are saved.", "The story foundation still needs work.", "Develop the story foundation.", "Start the production."),
-        stage("style", "Creative DNA", "style-lab-nav", style_complete, False, True, "Creative direction is confirmed.", "Review the creative direction.", "Review and save the starter Creative DNA.", "Start the production."),
-        stage("characters", "Characters", "characters-nav", cast_complete, bool(project.characters), story_complete, "Every character has a model bible.", "Some character bibles are incomplete.", "Build the principal cast.", "Complete the story foundation first."),
-        stage("worlds", "Worlds", "worlds-nav", worlds_complete, bool(project.locations), story_complete, "Every location has an environment bible.", "Some environment bibles are incomplete.", "Design the recurring locations.", "Complete the story foundation first."),
-        stage("shots", "Shots", "shots-nav", shots_complete, bool(shots), story_complete and cast_complete and worlds_complete, "Every shot has a saved camera plan.", "Some shots still need camera plans.", "Create the scene and shot plan.", "Finish story, characters, and worlds first."),
-        stage("timeline", "Edit", "timeline-nav", edit_complete, bool(timeline), shots_complete, "The picture edit is approved.", "A timeline exists but is not edit-ready.", "Assemble and approve the picture edit.", "Finish shot planning first."),
-        stage("audio", "Sound", "audio-nav", sound_complete, bool(tracks or cues), bool(timeline), "Every planned cue has produced audio.", "Sound work exists but is incomplete.", "Initialize sound and add cues.", "Build the timeline first."),
-        stage("composite", "Finish", "compositor-nav", finish_complete, bool(compositions), shots_complete, "Every shot has a finished render.", "Some shots still need composition or renders.", "Composite and render every shot.", "Finish shot planning first."),
-        stage("render", "Master", "render-nav", master_complete, bool(completed_masters), edit_complete and sound_complete and finish_complete, "A production master is ready.", "A review render exists; the final master is not ready.", "Export the production master.", "Complete picture, sound, and shot finishing first."),
+        stage("story", "Story", "writer-nav", story_approved, bool(project.story_brief), True, "Outline and originality scan are current.", "Story ready; run or resolve its compliance scan." if story_complete else "The story foundation still needs work.", "Develop the story foundation.", "Start the production."),
+        stage("style", "Creative DNA", "style-lab-nav", style_approved, style_complete, True, "Creative direction and originality scan are current.", "Creative direction ready; run or resolve its compliance scan." if style_complete else "Review the creative direction.", "Review and save the starter Creative DNA.", "Start the production."),
+        stage("characters", "Characters", "characters-nav", cast_approved, bool(project.characters), story_approved, "Character bibles and originality scan are current.", "Character bibles ready; run or resolve their compliance scan." if cast_complete else "Some character bibles are incomplete.", "Build the principal cast.", "Complete and scan the story foundation first."),
+        stage("worlds", "Worlds", "worlds-nav", worlds_approved, bool(project.locations), story_approved, "Environment bibles and originality scan are current.", "World bibles ready; run or resolve their compliance scan." if worlds_complete else "Some environment bibles are incomplete.", "Design the recurring locations.", "Complete and scan the story foundation first."),
+        stage("shots", "Shots", "shots-nav", shots_approved, bool(shots), story_approved and cast_approved and worlds_approved, "Shot plans and originality scan are current.", "Shot plans ready; run or resolve their compliance scan." if shots_complete else "Some shots still need camera plans.", "Create the scene and shot plan.", "Finish and scan story, characters, and worlds first."),
+        stage("timeline", "Edit", "timeline-nav", edit_approved, bool(timeline), shots_approved, "Picture edit and compliance scan are current.", "Edit ready; run or resolve its compliance scan." if edit_complete else "A timeline exists but is not edit-ready.", "Assemble and approve the picture edit.", "Finish and scan shot planning first."),
+        stage("audio", "Sound", "audio-nav", sound_approved, bool(tracks or cues), edit_approved, "Sound plan, rights cues, and scan are current.", "Sound ready; run or resolve its compliance scan." if sound_complete else "Sound work exists but is incomplete.", "Initialize sound and add cues.", "Build and scan the timeline first."),
+        stage("composite", "Finish", "compositor-nav", finish_approved, bool(compositions), shots_approved, "Finished shots and visual scan are current.", "Finished shots ready; run or resolve their compliance scan." if finish_complete else "Some shots still need composition or renders.", "Composite and render every shot.", "Finish and scan shot planning first."),
+        stage("render", "Master", "render-nav", master_approved, bool(completed_masters), edit_approved and sound_approved and finish_approved, "Production master and final scan are current.", "Master exists; run or resolve the final compliance scan." if master_complete else "A review render exists; the final master is not ready.", "Export the production master.", "Complete and scan picture, sound, and shot finishing first."),
     ]
     complete_count = sum(item["state"] == "complete" for item in stages)
     next_stage = next((item for item in stages if item["state"] in {"in_progress", "ready"}), None)
@@ -852,6 +902,8 @@ def list_delivery_links(project_id: int, db: Session = Depends(get_db)):
 def create_delivery_link(project_id: int, payload: DeliveryLinkCreate, db: Session = Depends(get_db)):
     if not db.get(Project, project_id):
         raise HTTPException(404, "Project not found")
+    try: require_release_clearance(project_id, db)
+    except PermissionError as exc: raise HTTPException(409, f"Release blocked: {exc}") from exc
     if payload.asset_uri not in project_owned_uris(project_id, db) or not local_render_path(payload.asset_uri):
         raise HTTPException(422, "Choose an available asset owned by this production")
     secret = secrets.token_urlsafe(32)
@@ -1704,10 +1756,13 @@ def residency_identity(project_id: int, asset_key: str, representation: str, bac
 def upsert_residency(db: Session, project_id: int, asset_key: str, representation: str, backend: str, *, node_key: str = "", object_ref: str = "", uri: str = "", checksum: str = "", size: int = 0, status_value: str = "available") -> AssetResidency:
     key = residency_identity(project_id, asset_key, representation, backend, node_key)
     item = db.scalar(select(AssetResidency).where(AssetResidency.residency_key == key))
+    changed = item is None or item.uri != uri or item.checksum_sha256 != checksum or item.size_bytes != size or item.status != status_value
     if item is None:
         item = AssetResidency(residency_key=key, project_id=project_id, asset_key=asset_key, representation=representation, backend=backend, node_key=node_key); db.add(item)
     item.object_ref, item.uri, item.checksum_sha256, item.size_bytes, item.status = object_ref, uri, checksum, size, status_value
     item.last_verified_at = utcnow()
+    if changed and checksum:
+        append_audit_event(db, project_id, "asset", "output_registered", subject_type=representation, subject_key=asset_key, details={"backend": backend, "node_key": node_key, "uri": uri, "checksum_sha256": checksum, "size_bytes": size, "status": status_value})
     return item
 
 
@@ -2767,24 +2822,29 @@ def workflow_stages(project: Project, db: Session) -> list[dict]:
             state = "blocked"
         return {"key": key, "label": label, "role": role, "status": state, "reason": reason, "progress": progress, "action_id": pending.id if pending else None}
 
-    story_complete = bool(story and story.beats)
-    cast_complete = bool(characters) and all(item.design for item in characters)
-    worlds_complete = bool(locations) and all(item.design for item in locations)
-    direction_complete = bool(shots) and all(shot.plan for shot in shots)
+    scan_pass = {key: bool((scan := latest_current_scan(project.id, key, db)) and scan.status == "pass") for key in COMPLIANCE_STAGES}
+    story_ready = bool(story and story.beats)
+    cast_ready = bool(characters) and all(item.design for item in characters)
+    worlds_ready = bool(locations) and all(item.design for item in locations)
+    direction_ready = bool(shots) and all(shot.plan for shot in shots)
     animated = sum(1 for shot in shots if shot_has_current_motion(shot, db))
-    animation_complete = bool(shots) and animated == len(shots)
-    edit_complete = bool(timeline and timeline.status in {"edit-ready", "master-ready"})
-    sound_complete = bool(tracks and cues) and all(cue.uri for cue in cues)
-    delivery_complete = bool(master and master.render_settings.get("kind") == "production_master")
+    animation_ready = bool(shots) and animated == len(shots)
+    edit_ready = bool(timeline and timeline.status in {"edit-ready", "master-ready"})
+    sound_ready = bool(tracks and cues) and all(cue.uri for cue in cues)
+    delivery_ready = bool(master and master.render_settings.get("kind") == "production_master")
+    story_complete, cast_complete, worlds_complete = story_ready and scan_pass["story"], cast_ready and scan_pass["characters"], worlds_ready and scan_pass["worlds"]
+    direction_complete, animation_complete = direction_ready and scan_pass["shots"], animation_ready and scan_pass["composite"]
+    edit_complete, sound_complete, delivery_complete = edit_ready and scan_pass["timeline"], sound_ready and scan_pass["audio"], delivery_ready and scan_pass["render"]
+    compliance_block = lambda ready, key: f"Run or resolve the {key} compliance scan before advancing." if ready and not scan_pass[key] else ""
     return [
-        stage("story", "Story foundation", "writer", story_complete, True, "Develop the premise, structure, and beats.", "Outline approved" if story_complete else "Outline needed"),
-        stage("cast", "Character bibles", "character_designer", cast_complete, bool(characters), "Lock every character model.", f"{sum(1 for item in characters if item.design)}/{len(characters)} designed" if characters else "No cast", "Add at least one character in Character Studio." if not characters else ""),
-        stage("worlds", "Environment bibles", "background_artist", worlds_complete, bool(locations), "Lock every recurring location.", f"{sum(1 for item in locations if item.design)}/{len(locations)} designed" if locations else "No locations", "Add at least one location in Worlds." if not locations else ""),
-        stage("direction", "Scenes and coverage", "director", direction_complete, story_complete and cast_complete and worlds_complete, "Translate the approved foundation into shot coverage.", f"{len(shots)} planned shots" if direction_complete else "Coverage needed", "Finish story, cast, and world bibles first." if not (story_complete and cast_complete and worlds_complete) else ""),
-        stage("animation", "Motion passes", "animator", animation_complete, direction_complete, "Create current motion previews for every shot.", f"{animated}/{len(shots)} animated" if shots else "No shots", "Approve shot coverage first." if not direction_complete else ""),
-        stage("edit", "Picture edit", "editor", edit_complete, direction_complete, "Assemble pacing, transitions, and continuity.", timeline.status if timeline else "No timeline", "Approve shot coverage first." if not direction_complete else ""),
-        stage("sound", "Sound and performances", "sound_producer", sound_complete, bool(timeline), "Initialize sound lanes and complete every planned cue.", f"{sum(1 for cue in cues if cue.uri)}/{len(cues)} cues complete" if cues else ("Tracks initialized; add cues" if tracks else "Sound lanes needed"), "Build the picture edit first." if not timeline else ("Add dialogue, music, ambience, or effects cues in Audio Studio." if tracks and not cues else "")),
-        stage("delivery", "Review master", "editor", delivery_complete, edit_complete and sound_complete, "Render the coordinated picture and sound review master.", "Master ready" if delivery_complete else "Master needed", "Complete picture and sound first." if not (edit_complete and sound_complete) else ""),
+        stage("story", "Story foundation", "writer", story_complete, True, "Develop the premise, structure, and beats.", "Outline approved" if story_complete else "Outline needed", compliance_block(story_ready, "story")),
+        stage("cast", "Character bibles", "character_designer", cast_complete, bool(characters), "Lock every character model.", f"{sum(1 for item in characters if item.design)}/{len(characters)} designed" if characters else "No cast", compliance_block(cast_ready, "characters") or ("Add at least one character in Character Studio." if not characters else "")),
+        stage("worlds", "Environment bibles", "background_artist", worlds_complete, bool(locations), "Lock every recurring location.", f"{sum(1 for item in locations if item.design)}/{len(locations)} designed" if locations else "No locations", compliance_block(worlds_ready, "worlds") or ("Add at least one location in Worlds." if not locations else "")),
+        stage("direction", "Scenes and coverage", "director", direction_complete, story_complete and cast_complete and worlds_complete, "Translate the approved foundation into shot coverage.", f"{len(shots)} planned shots" if direction_complete else "Coverage needed", compliance_block(direction_ready, "shots") or ("Finish and scan story, cast, and world bibles first." if not (story_complete and cast_complete and worlds_complete) else "")),
+        stage("animation", "Motion passes", "animator", animation_complete, direction_complete, "Create current motion previews for every shot.", f"{animated}/{len(shots)} animated" if shots else "No shots", compliance_block(animation_ready, "composite") or ("Approve and scan shot coverage first." if not direction_complete else "")),
+        stage("edit", "Picture edit", "editor", edit_complete, direction_complete, "Assemble pacing, transitions, and continuity.", timeline.status if timeline else "No timeline", compliance_block(edit_ready, "timeline") or ("Approve and scan shot coverage first." if not direction_complete else "")),
+        stage("sound", "Sound and performances", "sound_producer", sound_complete, bool(timeline), "Initialize sound lanes and complete every planned cue.", f"{sum(1 for cue in cues if cue.uri)}/{len(cues)} cues complete" if cues else ("Tracks initialized; add cues" if tracks else "Sound lanes needed"), compliance_block(sound_ready, "audio") or ("Build the picture edit first." if not timeline else ("Add dialogue, music, ambience, or effects cues in Audio Studio." if tracks and not cues else ""))),
+        stage("delivery", "Review master", "editor", delivery_complete, edit_complete and sound_complete and animation_complete, "Render the coordinated picture and sound review master.", "Master ready" if delivery_complete else "Master needed", compliance_block(delivery_ready, "render") or ("Complete and scan picture, sound, and finishing first." if not (edit_complete and sound_complete and animation_complete) else "")),
     ]
 
 
@@ -3293,6 +3353,9 @@ def render_master(timeline_id: int, payload: MasterRenderRequest, db: Session = 
     timeline = db.get(Timeline, timeline_id)
     if not timeline:
         raise HTTPException(404, "Timeline not found")
+    if payload.profile != "preview":
+        try: require_release_clearance(timeline.project_id, db)
+        except PermissionError as exc: raise HTTPException(409, f"Master blocked: {exc}") from exc
     width, height = master_dimensions(timeline, payload.profile)
     fps = payload.fps or timeline.fps
     base_settings = {"kind": "production_master", "profile": payload.profile, "fps": fps, "width": width, "height": height}
@@ -3350,6 +3413,9 @@ def create_segmented_export(timeline_id: int, payload: SegmentedExportRequest, d
     timeline = db.get(Timeline, timeline_id)
     if not timeline:
         raise HTTPException(404, "Timeline not found")
+    if payload.profile != "preview":
+        try: require_release_clearance(timeline.project_id, db)
+        except PermissionError as exc: raise HTTPException(409, f"Master blocked: {exc}") from exc
     timeline_data = timeline_response(timeline, db)
     if not timeline_data["clips"]:
         raise HTTPException(409, "Timeline has no clips")

@@ -816,6 +816,69 @@ class DurableJobEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class CompliancePolicy(Base):
+    __tablename__ = "compliance_policies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), unique=True)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    strict_gates: Mapped[bool] = mapped_column(default=True)
+    external_clearance_required: Mapped[bool] = mapped_column(default=True)
+    terms_version: Mapped[str] = mapped_column(String(32), default="2026-08-09")
+    accepted_by: Mapped[str] = mapped_column(String(160), default="")
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ComplianceScan(Base):
+    __tablename__ = "compliance_scans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    stage: Mapped[str] = mapped_column(String(48))
+    subject_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24), default="blocked")
+    coverage: Mapped[str] = mapped_column(String(32), default="preliminary")
+    risk_score: Mapped[int] = mapped_column(default=0)
+    scanner_version: Mapped[str] = mapped_column(String(32), default="kizuna-local-v1")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    findings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    suggestions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    input_manifest: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ComplianceClearance(Base):
+    __tablename__ = "compliance_clearances"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    scope: Mapped[str] = mapped_column(String(48), default="release")
+    confirmed_by: Mapped[str] = mapped_column(String(160))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    evidence_refs: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AuditLedgerEvent(Base):
+    __tablename__ = "audit_ledger_events"
+    __table_args__ = (UniqueConstraint("project_id", "sequence", name="uq_audit_project_sequence"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    sequence: Mapped[int] = mapped_column()
+    previous_hash: Mapped[str] = mapped_column(String(64), default="")
+    event_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    category: Mapped[str] = mapped_column(String(48))
+    action: Mapped[str] = mapped_column(String(80))
+    actor_type: Mapped[str] = mapped_column(String(32), default="system")
+    subject_type: Mapped[str] = mapped_column(String(80), default="")
+    subject_key: Mapped[str] = mapped_column(String(180), default="")
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class DeliveryLink(Base):
     __tablename__ = "delivery_links"
 

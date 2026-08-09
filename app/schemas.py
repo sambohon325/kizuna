@@ -1004,6 +1004,21 @@ class DurableJobRead(BaseModel):
     updated_at: datetime
 
 
+class ComplianceScanRequest(BaseModel):
+    stage: str = Field(pattern="^(story|style|characters|worlds|shots|timeline|audio|composite|render|all)$")
+
+
+class ComplianceAcknowledgement(BaseModel):
+    accepted: bool
+    accepted_by: str = Field(min_length=2, max_length=160)
+
+
+class ComplianceClearanceInput(BaseModel):
+    confirmed_by: str = Field(min_length=2, max_length=160)
+    notes: str = Field(min_length=10, max_length=2000)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=20)
+
+
 class ProjectBackupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

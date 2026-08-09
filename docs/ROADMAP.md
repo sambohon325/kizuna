@@ -71,6 +71,7 @@ Goal: make Kizuna credible for repeatable professional anime shorts, episodes, a
 - production-wide AI plans with department dependencies, approval gates, budgets, and resumable Autopilot;
 - stronger editing, audio automation, subtitles/captions, credits, color, loudness, and delivery presets;
 - automated continuity, missing-media, frame, audio, caption, and master technical QC; and
+- provider-backed story, trademark, visual, and music originality checks building on the strict Compliance Center, qualified release clearance, and output audit ledger; and
 - timecoded review notes, approval states, and locked production versions.
 
 Exit gate: a creator can take a scoped anime project from brief to reviewable master with repeatable characters/worlds, visible AI decisions, technical QC, and professional delivery files.

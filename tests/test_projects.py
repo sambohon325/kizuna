@@ -206,6 +206,45 @@ def test_story_expands_into_shot_plans_and_generates_storyboard(client):
     assert conflict.status_code == 409
 
 
+def test_director_bot_proposes_and_applies_non_destructive_coverage(client):
+    project_id = client.post("/api/projects", json={"title": "Quiet Orbit", "logline": "A mechanic follows a heartbeat through an abandoned station."}).json()["id"]
+    client.put(f"/api/projects/{project_id}/story", json={"premise": "A mechanic must find the source of an impossible heartbeat.", "format": "short film", "target_duration_minutes": 10, "audience": "general", "genre": "science mystery", "themes": ["grief", "renewal"]})
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Noa", "role": "mechanic"}).json()
+    location = client.post(f"/api/projects/{project_id}/locations", json={"name": "Silent Station", "description": "An abandoned orbital repair station."}).json()
+    legacy_scene = client.post(f"/api/projects/{project_id}/scenes", json={"title": "Legacy scene", "summary": "Hand-built work to preserve.", "position": 99}).json()
+    legacy_shot = client.post(f"/api/scenes/{legacy_scene['id']}/shots", json={"title": "Legacy shot", "position": 1, "duration_seconds": 2}).json()
+    timeline = client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 12, "width": 320, "height": 180}).json()
+    deployed = client.post(f"/api/projects/{project_id}/crew/deploy", json={"roles": ["director"], "autonomy": "propose"})
+    assert deployed.status_code == 200
+
+    proposed = client.post(f"/api/projects/{project_id}/crew/director/propose", json={"objective": "Create restrained coverage with strong geography.", "shots_per_beat": 2, "pacing": "restrained", "provider": "simulation"})
+    assert proposed.status_code == 201
+    action = proposed.json()
+    assert action["status"] == "proposed"
+    assert len(action["payload"]["proposal"]["scenes"]) == 8
+    assert len(action["payload"]["proposal"]["scenes"][0]["shots"]) == 2
+    assert client.get(f"/api/projects/{project_id}").json()["scenes"][0]["title"] == "Legacy scene"
+
+    approved = client.post(f"/api/crew-actions/{action['id']}/approve")
+    assert approved.status_code == 200
+    result = approved.json()["result"]
+    assert approved.json()["status"] == "completed"
+    assert result["non_destructive"] is True
+    assert result["timeline_needs_rebuild"] is True
+    project = client.get(f"/api/projects/{project_id}").json()
+    assert any(scene["id"] == legacy_scene["id"] for scene in project["scenes"])
+    assert any(shot["id"] == legacy_shot["id"] for scene in project["scenes"] for shot in scene["shots"])
+    directed = next(scene for scene in project["scenes"] if scene["position"] == 1)
+    assert directed["shots"][0]["plan"]["location_id"] == location["id"]
+    assert directed["shots"][0]["plan"]["character_ids"] == [character["id"]]
+    assert directed["shots"][0]["plan"]["camera"]["shot_size"] == "wide"
+    assert client.get(f"/api/projects/{project_id}/timeline").json()["status"] == "needs-rebuild"
+    rebuilt = client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 12, "width": 320, "height": 180})
+    assert rebuilt.json()["status"] == "draft"
+    assert len(rebuilt.json()["clips"]) == sum(len(scene["shots"]) for scene in project["scenes"])
+    assert client.get("/api/director/providers").json()["providers"][0]["ready"] is True
+
+
 def test_timeline_edits_reorders_and_renders_proxy(client):
     project_id = client.post("/api/projects", json={"title": "Picture Edit"}).json()["id"]
     scene_id = client.post(f"/api/projects/{project_id}/scenes", json={"title": "Opening", "position": 1}).json()["id"]

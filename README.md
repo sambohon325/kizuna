@@ -34,6 +34,7 @@ pytest
 - Authenticated network workers with capability reporting, heartbeats, leased jobs, retries, and artifact upload
 - Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, and background assets
 - Storyboard and Shot Planner with beat expansion, camera language, cast/location assignment, continuity prompts, and storyboard assets
+- Director bot with local and hosted structured-output engines, pacing and coverage controls, performance direction, continuity-aware camera plans, non-destructive scene/shot application, and automatic timeline invalidation
 - Timeline editor with clip timing, cuts/dissolves/fades, sound cues, reordering, and downloadable H.264 proxy animatics
 - Audio & Voice Studio with versioned character voice bibles, dialogue/music/SFX/ambience lanes, timed cues, timing-slate generation, performance uploads, and animatic mixing
 - AI Crew Control Room with Writer, Director, Character Designer, Background Artist, Animator, Sound Producer, and Editor roles; assist/propose/execute autonomy; standing instructions; workflow briefings; and an auditable approval feed
@@ -47,7 +48,7 @@ pytest
 
 ## Next milestones
 
-1. Connect the Director bot to structured scene, coverage, and shot proposals
+1. Connect Character Designer and Background Artist bots to visual-development proposals and generation queues
 2. Add production object storage, review states, and asset approval
 3. Add Redis-backed crew/render scheduling, concurrency controls, and worker scaling
 4. Add delivery presets for festival, streaming, broadcast, captions, and archival masters

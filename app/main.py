@@ -22,13 +22,14 @@ from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
 from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, Project, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
 from app.world_development import compile_background_brief
 from app.voice import VoiceProviderError, generate_voice
 from app.writer_agent import WriterAgentError, create_writer_proposal
+from app.director_agent import DirectorAgentError, create_director_proposal
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -732,6 +733,7 @@ def build_timeline(project_id: int, payload: TimelineBuildRequest, db: Session =
             if shot.id not in existing:
                 db.add(TimelineClip(timeline_id=timeline.id, shot_id=shot.id, position=next_position, duration_seconds=shot.duration_seconds))
                 next_position += 1
+    timeline.status = "draft"
     db.commit()
     return timeline_response(timeline, db)
 
@@ -985,6 +987,7 @@ def writer_project_context(project: Project, db: Session) -> dict:
         "style": {"era_primary": style.era_primary, "era_secondary": style.era_secondary, "direction": style.direction, "narrative": style.narrative, "archetypes": style.archetypes} if style else {},
         "story_brief": {"premise": brief.premise, "format": brief.format, "target_duration_minutes": brief.target_duration_minutes, "audience": brief.audience, "genre": brief.genre, "themes": brief.themes, "synopsis": brief.synopsis, "beats": brief.beats} if brief else None,
         "characters": [{"name": character.name, "role": character.role, "want": character.want, "need": character.need, "contradiction": character.contradiction} for character in characters],
+        "locations": [{"name": location.name, "narrative_function": location.narrative_function, "description": location.description} for location in db.scalars(select(WorldLocation).where(WorldLocation.project_id == project.id).order_by(WorldLocation.id)).all()],
     }
 
 
@@ -1009,6 +1012,65 @@ def perform_writer_action(action: CrewAction, db: Session) -> CrewAction:
     return action
 
 
+def director_project_context(project: Project, db: Session) -> dict:
+    context = writer_project_context(project, db)
+    scenes = db.scalars(select(Scene).where(Scene.project_id == project.id).order_by(Scene.position)).all()
+    context["existing_scenes"] = [{"position": scene.position, "title": scene.title, "summary": scene.summary, "shots": [{"position": shot.position, "title": shot.title, "description": shot.description, "duration_seconds": shot.duration_seconds} for shot in db.scalars(select(Shot).where(Shot.scene_id == scene.id).order_by(Shot.position)).all()]} for scene in scenes]
+    return context
+
+
+def perform_director_action(action: CrewAction, db: Session) -> CrewAction:
+    proposal = action.payload.get("proposal") or {}
+    if not proposal.get("scenes"):
+        action.status, action.error = "failed", "Director proposal has no scenes"
+        db.commit()
+        return action
+    style = db.scalar(select(StyleProfile).where(StyleProfile.project_id == action.project_id))
+    created_scenes = updated_scenes = created_shots = updated_shots = 0
+    try:
+        for scene_data in proposal["scenes"]:
+            scene = db.scalar(select(Scene).where(Scene.project_id == action.project_id, Scene.position == scene_data["position"]))
+            if scene is None:
+                scene = Scene(project_id=action.project_id, position=scene_data["position"], title=scene_data["title"], summary=scene_data["summary"])
+                db.add(scene); db.flush(); created_scenes += 1
+            else:
+                scene.title, scene.summary = scene_data["title"], scene_data["summary"]
+                updated_scenes += 1
+            for shot_data in scene_data["shots"]:
+                shot = db.scalar(select(Shot).where(Shot.scene_id == scene.id, Shot.position == shot_data["position"]))
+                if shot is None:
+                    shot = Shot(scene_id=scene.id, position=shot_data["position"], title=shot_data["title"], description=shot_data["description"], duration_seconds=shot_data["duration_seconds"], status="draft")
+                    db.add(shot); db.flush(); created_shots += 1
+                else:
+                    shot.title, shot.description, shot.duration_seconds, shot.status = shot_data["title"], shot_data["description"], shot_data["duration_seconds"], "draft"
+                    updated_shots += 1
+                location = db.scalar(select(WorldLocation).where(WorldLocation.project_id == action.project_id, WorldLocation.name == shot_data.get("location_name", ""))) if shot_data.get("location_name") else None
+                names = set(shot_data.get("character_names", []))
+                characters = db.scalars(select(Character).where(Character.project_id == action.project_id, Character.name.in_(names))).all() if names else []
+                camera = {key: shot_data.get(key, "") for key in ("shot_size", "angle", "lens", "movement", "composition", "focus")}
+                payload = ShotPlanInput(location_id=location.id if location else None, character_ids=[character.id for character in characters], action=shot_data.get("action", ""), dialogue=shot_data.get("dialogue", ""), camera=camera, lighting=shot_data.get("lighting", ""), continuity_notes=" · ".join(part for part in [shot_data.get("continuity_notes", ""), f"Performance: {shot_data.get('performance_intent', '')}" if shot_data.get("performance_intent") else ""] if part))
+                plan = db.scalar(select(ShotPlan).where(ShotPlan.shot_id == shot.id))
+                if plan is None:
+                    plan = ShotPlan(shot_id=shot.id)
+                    db.add(plan)
+                else:
+                    plan.version += 1
+                for key, value in payload.model_dump().items():
+                    setattr(plan, key, value)
+                plan.storyboard_prompt = compile_storyboard_prompt(shot, payload, style, location, list(characters))
+        timeline = db.scalar(select(Timeline).where(Timeline.project_id == action.project_id))
+        if timeline:
+            timeline.status = "needs-rebuild"
+        action.status, action.error = "completed", ""
+        action.result = {"provider": action.payload.get("provider", "simulation"), "created_scenes": created_scenes, "updated_scenes": updated_scenes, "created_shots": created_shots, "updated_shots": updated_shots, "timeline_needs_rebuild": bool(timeline), "non_destructive": True}
+    except Exception as exc:
+        db.rollback()
+        action = db.get(CrewAction, action.id)
+        action.status, action.error = "failed", str(exc)
+    db.commit(); db.refresh(action)
+    return action
+
+
 @app.get("/api/crew/roles")
 def crew_roles():
     return [{"id": role, **data} for role, data in CREW_ROLES.items()]
@@ -1027,6 +1089,14 @@ def writer_providers():
     return {"active": settings.writer_provider, "providers": [
         {"id": "simulation", "label": "Local story planner", "ready": True},
         {"id": "openai", "label": "OpenAI Writer", "ready": bool(settings.openai_api_key), "model": settings.openai_writer_model},
+    ]}
+
+
+@app.get("/api/director/providers")
+def director_providers():
+    return {"active": settings.director_provider, "providers": [
+        {"id": "simulation", "label": "Local coverage planner", "ready": True},
+        {"id": "openai", "label": "OpenAI Director", "ready": bool(settings.openai_api_key), "model": settings.openai_director_model},
     ]}
 
 
@@ -1157,6 +1227,29 @@ def ask_writer(project_id: int, payload: WriterProposalRequest, db: Session = De
     return perform_writer_action(action, db) if assignment.autonomy == "execute" else action
 
 
+@app.post("/api/projects/{project_id}/crew/director/propose", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
+def ask_director(project_id: int, payload: DirectorProposalRequest, db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == project_id, CrewAssignment.role == "director", CrewAssignment.enabled.is_(True)))
+    if not assignment:
+        raise HTTPException(409, "Deploy the Director bot first")
+    provider = payload.provider or settings.director_provider
+    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="director", action_type="direct_coverage", title="Direct scene and shot coverage", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "request": payload.model_dump()})
+    db.add(action); db.commit(); db.refresh(action)
+    try:
+        proposal = create_director_proposal(director_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_director_model, instructions=assignment.instructions)
+        action.payload = {**action.payload, "proposal": proposal.model_dump()}
+        action.summary, action.status = proposal.approach, "proposed"
+        db.commit(); db.refresh(action)
+    except DirectorAgentError as exc:
+        action.status, action.error = "failed", str(exc)
+        db.commit(); db.refresh(action)
+        return action
+    return perform_director_action(action, db) if assignment.autonomy == "execute" else action
+
+
 @app.post("/api/crew-actions/{action_id}/approve", response_model=CrewActionRead)
 def approve_crew_action(action_id: int, db: Session = Depends(get_db)):
     action = db.get(CrewAction, action_id)
@@ -1169,6 +1262,8 @@ def approve_crew_action(action_id: int, db: Session = Depends(get_db)):
         return perform_voice_action(action, db)
     if action.action_type == "develop_story":
         return perform_writer_action(action, db)
+    if action.action_type == "direct_coverage":
+        return perform_director_action(action, db)
     return action
 
 

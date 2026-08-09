@@ -107,6 +107,10 @@ button:disabled { cursor: not-allowed; opacity: .42; transform: none !important;
 main { max-width: 1480px; padding: 42px clamp(28px, 5vw, 76px) 80px; }
 #workspace-main.tool-open { max-width: none; padding: 24px clamp(18px, 3vw, 44px) 64px; }
 #dashboard-home[hidden] { display: none !important; }
+.director-agent-intro { grid-template-columns: 1fr; }
+.director-agent-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.director-agent-controls label:nth-child(4) { grid-column: 1 / 3; }
+.director-agent-controls > button { grid-column: 3; }
 dialog.workspace-view[open] {
   position: static;
   inset: auto;

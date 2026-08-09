@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     openai_voice: str = "coral"
     writer_provider: str = "simulation"
     openai_writer_model: str = "gpt-5.6-terra"
+    director_provider: str = "simulation"
+    openai_director_model: str = "gpt-5.6-terra"
 
 
 settings = Settings()

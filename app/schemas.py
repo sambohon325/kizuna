@@ -60,6 +60,50 @@ class WriterProposal(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class DirectorProposalRequest(BaseModel):
+    objective: str = "Create a clear, emotionally specific coverage plan."
+    shots_per_beat: int = Field(default=3, ge=1, le=6)
+    pacing: str = Field(default="balanced", pattern="^(restrained|balanced|kinetic)$")
+    provider: str = Field(default="simulation", pattern="^(simulation|openai)$")
+
+
+class DirectorShotProposal(BaseModel):
+    position: int = Field(ge=1)
+    title: str
+    description: str
+    duration_seconds: float = Field(gt=0, le=3600)
+    shot_size: str
+    angle: str
+    lens: str
+    movement: str
+    composition: str
+    focus: str
+    action: str
+    dialogue: str = ""
+    lighting: str
+    continuity_notes: str
+    performance_intent: str
+    character_names: list[str] = Field(default_factory=list)
+    location_name: str = ""
+
+
+class DirectorSceneProposal(BaseModel):
+    position: int = Field(ge=1)
+    title: str
+    summary: str
+    dramatic_goal: str
+    shots: list[DirectorShotProposal] = Field(min_length=1)
+
+
+class DirectorProposal(BaseModel):
+    approach: str
+    estimated_duration_seconds: float = Field(ge=0)
+    scenes: list[DirectorSceneProposal] = Field(min_length=1)
+    continuity_rules: list[str] = Field(default_factory=list)
+    changes: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CharacterInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     role: str = "protagonist"

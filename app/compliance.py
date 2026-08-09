@@ -221,6 +221,8 @@ def _provider_categories(profile: IntegrationProfile) -> list[str]:
         configured = [item for item in profile.configuration.get("capabilities", []) if str(item).lower() in {"text", "trademark", "visual", "audio"}]
     if configured:
         return [str(item).lower() for item in configured]
+    if profile.key == "kizuna-reference-scanner":
+        return ["text", "trademark", "visual", "audio"]
     suffix = profile.key.removeprefix("compliance-")
     return [suffix] if suffix in {"text", "trademark", "visual", "audio"} else []
 

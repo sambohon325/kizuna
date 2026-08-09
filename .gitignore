@@ -9,5 +9,6 @@ test_anime_studio.db
 data/
 renders/
 storage/
+scanner-corpus/
 node_modules/
 work/

@@ -84,3 +84,4 @@ See [durable production jobs](docs/JOBS.md) for retries, cancellation, worker re
 See [originality, rights, and release compliance](docs/COMPLIANCE.md) for enforced gates and audit limitations, and [professional verification](docs/PROFESSIONAL_VERIFICATION.md) for creator identity and prior-work claims.
 See [picture and audio editing](docs/EDITING.md) for tactile edit controls.
 See [database migrations](docs/DATABASE_MIGRATIONS.md) for local upgrades, existing-database adoption, and Coolify startup behavior.
+See [self-hosted compliance scanners](docs/COMPLIANCE_SCANNERS.md) for lawful corpus ingestion and scanner protocol details, and [production domain and access](docs/DEPLOYMENT_DOMAIN.md) for `kizuna.technology` deployment guidance.

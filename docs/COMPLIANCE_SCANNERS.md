@@ -66,3 +66,19 @@ Optional configuration fields are:
 - `categories` — one or more supported categories.
 
 Secrets are read at request time from the integration's named environment variable and are never returned through the settings API.
+
+## Bundled self-hosted reference scanner
+
+The Docker stack includes `compliance-scanner`, an internal service at `http://compliance-scanner:8090`. In Studio Settings, enable **Kizuna self-hosted reference scanner** and keep all four categories in its configuration. Set the same strong value for `KIZUNA_SELF_HOSTED_SCANNER_API_KEY` on Kizuna; Docker passes it to the scanner as its API key.
+
+The scanner only indexes records listed in `/data/corpus/manifest.jsonl`. Every newline-delimited JSON record must include `id`, `title`, `category`, `rights_basis`, and `evidence_ref`. Text, visual, and audio records also need a relative `path` beneath the corpus directory, or text may use an inline `text` value. Paths cannot escape the corpus directory.
+
+```json
+{"id":"studio:owned-pilot-v1","title":"Owned Pilot","category":"text","path":"owned-pilot.txt","rights_basis":"Studio-owned production","evidence_ref":"contract:2026-014","source_url":"https://rights.example/studio/owned-pilot"}
+{"id":"registry:example-title","title":"Example Title","category":"trademark","text":"Example Title","rights_basis":"Licensed title-clearance dataset","evidence_ref":"license:titles-2026"}
+{"id":"studio:owned-frame","title":"Owned Frame","category":"visual","path":"owned-frame.png","rights_basis":"Studio-owned production","evidence_ref":"asset-ledger:44"}
+```
+
+Records without documented rights metadata are rejected. Mount or copy only material the studio is authorized to use for matching; Kizuna does not ship a scraped catalog of protected works. `GET /health` exposes aggregate counts. `GET /corpus` and `POST /corpus/reload` require the scanner admin bearer key; administration stays disabled until `KIZUNA_SCANNER_ADMIN_KEY` is set.
+
+This service provides reference-match signals, not legal conclusions. The title check is not a trademark registry search; the audio check detects recording similarity rather than composition or melody ownership; and perceptual image hashes are not a substitute for visual-rights review.

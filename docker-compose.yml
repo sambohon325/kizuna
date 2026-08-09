@@ -15,6 +15,7 @@ services:
     environment:
       KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:-kizuna}@postgres:5432/${POSTGRES_DB:-kizuna}
       KIZUNA_ENVIRONMENT: production
+      KIZUNA_PUBLIC_URL: ${KIZUNA_PUBLIC_URL:-https://kizuna.technology}
       KIZUNA_GENERATION_PROVIDER: ${KIZUNA_GENERATION_PROVIDER:-farm}
       KIZUNA_WORKER_ENROLLMENT_SECRET: ${WORKER_ENROLLMENT_SECRET:?Set a strong worker enrollment secret}
       KIZUNA_RENDER_DIRECTORY: /app/renders
@@ -30,6 +31,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       KIZUNA_FFMPEG_PATH: /usr/bin/ffmpeg
+      KIZUNA_SELF_HOSTED_SCANNER_API_KEY: ${KIZUNA_SELF_HOSTED_SCANNER_API_KEY:?Set a strong self-hosted scanner API key}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -40,6 +42,22 @@ services:
     volumes:
       - render_data:/app/renders
       - storage_data:/app/storage
+
+  compliance-scanner:
+    build: .
+    command: uvicorn scanner.main:app --host 0.0.0.0 --port 8090
+    environment:
+      KIZUNA_SCANNER_CORPUS_DIRECTORY: /data/corpus
+      KIZUNA_SCANNER_RENDER_DIRECTORY: /app/renders
+      KIZUNA_SCANNER_STORAGE_DIRECTORY: /app/storage
+      KIZUNA_SCANNER_FFMPEG_PATH: /usr/bin/ffmpeg
+      KIZUNA_SCANNER_API_KEY: ${KIZUNA_SELF_HOSTED_SCANNER_API_KEY:?Set a strong self-hosted scanner API key}
+      KIZUNA_SCANNER_ADMIN_KEY: ${KIZUNA_SCANNER_ADMIN_KEY:?Set a separate scanner administration key}
+    volumes:
+      - scanner_corpus:/data/corpus
+      - render_data:/app/renders:ro
+      - storage_data:/app/storage:ro
+    restart: unless-stopped
 
   job-worker:
     build: .
@@ -117,3 +135,4 @@ volumes:
   redis_data:
   render_data:
   storage_data:
+  scanner_corpus:

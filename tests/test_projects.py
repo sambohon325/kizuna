@@ -178,6 +178,41 @@ def test_background_generation_requires_design(client):
     assert response.status_code == 409
 
 
+def test_visual_development_bots_apply_bibles_then_queue_generation(client):
+    project_id = client.post("/api/projects", json={"title": "Paper Comet", "logline": "A courier crosses a city folded from forgotten letters."}).json()["id"]
+    character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Iri", "role": "courier", "want": "Deliver the final letter", "need": "Accept being remembered", "contradiction": "Carries every story except her own"}).json()
+    location = client.post(f"/api/projects/{project_id}/locations", json={"name": "Folded City", "narrative_function": "A maze that reveals memory", "description": "A dense city made from layered paper architecture.", "geography": "vertical river valley", "time_period": "dreamlike near future"}).json()
+    deployed = client.post(f"/api/projects/{project_id}/crew/deploy", json={"roles": ["character_designer", "background_artist"], "autonomy": "propose"})
+    assert deployed.status_code == 200
+
+    character_action = client.post(f"/api/characters/{character['id']}/crew/design", json={"objective": "Make Iri readable in silhouette.", "provider": "simulation", "queue_generation": True, "generation_provider": "mock"})
+    assert character_action.status_code == 201
+    assert character_action.json()["status"] == "proposed"
+    assert client.get(f"/api/projects/{project_id}").json()["characters"][0]["design"] is None
+    character_applied = client.post(f"/api/crew-actions/{character_action.json()['id']}/approve")
+    assert character_applied.json()["status"] == "completed"
+    assert character_applied.json()["result"]["generation_status"] == "completed"
+    assert character_applied.json()["result"]["generation_queued"] is True
+    character_design = client.get(f"/api/projects/{project_id}").json()["characters"][0]["design"]
+    assert len(character_design["consistency_anchors"]) == 5
+    character_asset = character_applied.json()["result"]["generation_assets"][0]
+    assert character_asset["mime_type"] == "image/svg+xml"
+    assert client.get(character_asset["uri"]).status_code == 200
+    assert "production reference sheet" in character_design["reference_brief"].lower()
+
+    background_action = client.post(f"/api/locations/{location['id']}/crew/design", json={"objective": "Build reusable staging layers.", "provider": "simulation", "queue_generation": True, "generation_provider": "mock"})
+    assert background_action.status_code == 201
+    assert background_action.json()["status"] == "proposed"
+    background_applied = client.post(f"/api/crew-actions/{background_action.json()['id']}/approve")
+    assert background_applied.json()["status"] == "completed"
+    assert background_applied.json()["result"]["generation_status"] == "completed"
+    assert background_applied.json()["result"]["generation_assets"][0]["mime_type"] == "image/svg+xml"
+    world = client.get(f"/api/projects/{project_id}").json()["locations"][0]["design"]
+    assert len(world["layers"]) == 5
+    assert len(world["lighting_variants"]) == 4
+    assert client.get("/api/visual-development/providers").json()["providers"][0]["ready"] is True
+
+
 def test_story_expands_into_shot_plans_and_generates_storyboard(client):
     project_id = client.post("/api/projects", json={"title": "Shot Test", "logline": "A pilot follows a signal beyond the mapped sky."}).json()["id"]
     client.put(f"/api/projects/{project_id}/story", json={"premise": "A pilot follows a forbidden signal.", "format": "short film", "target_duration_minutes": 8, "genre": "orbital mystery", "audience": "general", "themes": ["identity"]})

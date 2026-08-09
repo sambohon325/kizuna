@@ -28,11 +28,11 @@ pytest
 - SQLAlchemy persistence (SQLite locally, PostgreSQL-ready)
 - Structured Creative DNA rather than opaque prompt presets
 - Writer's Room with project briefs, editable outlines, and a deployable Writer bot that produces schema-validated story proposals through approval or automatic execution
-- Character Studio with narrative identity, visual anchors, versioned designs, and style-aware reference briefs
+- Character Studio with narrative identity, visual anchors, versioned designs, style-aware reference briefs, and a Character Designer bot that can propose or apply a complete character bible before optionally queuing reference-sheet generation
 - Provider-neutral image generation jobs with versioned media assets
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
 - Authenticated network workers with capability reporting, heartbeats, leased jobs, retries, and artifact upload
-- Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, and background assets
+- Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, background assets, and a Background Artist bot that can propose or apply a production-ready location bible before optionally queuing background generation
 - Storyboard and Shot Planner with beat expansion, camera language, cast/location assignment, continuity prompts, and storyboard assets
 - Director bot with local and hosted structured-output engines, pacing and coverage controls, performance direction, continuity-aware camera plans, non-destructive scene/shot application, and automatic timeline invalidation
 - Timeline editor with clip timing, cuts/dissolves/fades, sound cues, reordering, and downloadable H.264 proxy animatics
@@ -48,7 +48,7 @@ pytest
 
 ## Next milestones
 
-1. Connect Character Designer and Background Artist bots to visual-development proposals and generation queues
+1. Connect the Animator bot to shot motion plans, preview renders, and render-farm dispatch
 2. Add production object storage, review states, and asset approval
 3. Add Redis-backed crew/render scheduling, concurrency controls, and worker scaling
 4. Add delivery presets for festival, streaming, broadcast, captions, and archival masters

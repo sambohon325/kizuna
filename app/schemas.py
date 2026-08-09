@@ -127,6 +127,19 @@ class CharacterDesignRead(CharacterDesignInput):
     version: int
 
 
+class CharacterDesignerRequest(BaseModel):
+    objective: str = "Create an original, animation-ready identity with strong consistency locks."
+    provider: str = Field(default="simulation", pattern="^(simulation|openai)$")
+    queue_generation: bool = False
+    generation_provider: str = Field(default="mock", pattern="^(mock|farm|comfyui)$")
+
+
+class CharacterDesignProposal(CharacterDesignInput):
+    rationale: str
+    changes: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class GenerationRequest(BaseModel):
     provider: str | None = None
     negative_prompt: str = "copyrighted character, logo, watermark, inconsistent face, extra limbs, text"
@@ -212,6 +225,19 @@ class LocationDesignRead(LocationDesignInput):
     location_id: int
     reference_brief: str
     version: int
+
+
+class BackgroundArtistRequest(BaseModel):
+    objective: str = "Create a reusable, camera-ready environment system with clear staging and continuity."
+    provider: str = Field(default="simulation", pattern="^(simulation|openai)$")
+    queue_generation: bool = False
+    generation_provider: str = Field(default="mock", pattern="^(mock|comfyui)$")
+
+
+class BackgroundDesignProposal(LocationDesignInput):
+    rationale: str
+    changes: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class WorldLocationRead(WorldLocationInput):

@@ -8,7 +8,23 @@ Kizuna supports two equally important ways to create: direct the production manu
 - **Propose for approval** lets the bot prepare work, but a creator must approve it before Kizuna writes the result into the production.
 - **Execute automatically** lets the bot complete supported tasks immediately. Every action and failure is still recorded in the activity feed.
 
-The Writer can read the production logline, Creative DNA, existing story, cast, assignment, and standing direction; produce a schema-validated synopsis and beat proposal; and apply it after approval or automatically. The Director converts an approved outline into scenes, shot coverage, camera language, performance intent, timing, cast/location assignments, and continuity notes. Director changes update matching positions or add missing coverage without deleting extra creator work; an existing timeline is marked for rebuild. The Sound Producer can take a saved dialogue cue, combine its character voice bible, line direction, and pronunciation dictionary, generate a performance, and attach the result to the timeline cue.
+The Writer can read the production logline, Creative DNA, existing story, cast, assignment, and standing direction; produce a schema-validated synopsis and beat proposal; and apply it after approval or automatically. The Director converts an approved outline into scenes, shot coverage, camera language, performance intent, timing, cast/location assignments, and continuity notes. Director changes update matching positions or add missing coverage without deleting extra creator work; an existing timeline is marked for rebuild.
+
+The Character Designer turns a character's narrative role, traits, arc, Creative DNA, and existing design into a versioned production bible: silhouette and appearance rules, palette, wardrobe, consistency anchors, and a reusable reference-sheet brief. The Background Artist does the same for locations, producing architecture and atmosphere direction, palette, parallax layers, lighting variants, continuity locks, and a reusable background brief. Each bot applies the bible first and can then queue generation through the selected provider, so a generation failure never discards approved design work.
+
+The Sound Producer can take a saved dialogue cue, combine its character voice bible, line direction, and pronunciation dictionary, generate a performance, and attach the result to the timeline cue.
+
+## Visual-development providers
+
+The built-in simulation engine creates deterministic, editable proposals without an external account. A hosted OpenAI engine can return the same validated proposal structure when an API key is configured:
+
+```env
+KIZUNA_VISUAL_AGENT_PROVIDER=openai
+KIZUNA_OPENAI_VISUAL_AGENT_MODEL=gpt-5.6-terra
+KIZUNA_OPENAI_API_KEY=your-key
+```
+
+Reference-sheet generation supports the local mock engine, the network render farm, or ComfyUI. Background generation supports the mock engine or ComfyUI. The bot's generation selector is independent of its proposal engine.
 
 ## Voice providers
 

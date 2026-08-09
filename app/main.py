@@ -22,7 +22,7 @@ from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
 from app.models import AnimaticRender, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, Project, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.schemas import AnimaticRenderRead, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DirectorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
@@ -30,6 +30,7 @@ from app.world_development import compile_background_brief
 from app.voice import VoiceProviderError, generate_voice
 from app.writer_agent import WriterAgentError, create_writer_proposal
 from app.director_agent import DirectorAgentError, create_director_proposal
+from app.visual_agents import VisualAgentError, create_background_design_proposal, create_character_design_proposal
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -1071,6 +1072,107 @@ def perform_director_action(action: CrewAction, db: Session) -> CrewAction:
     return action
 
 
+def character_design_context(character: Character, db: Session) -> dict:
+    project = db.get(Project, character.project_id)
+    context = writer_project_context(project, db)
+    context["character"] = {"id": character.id, "name": character.name, "role": character.role, "want": character.want, "need": character.need, "contradiction": character.contradiction, "current_design": {"appearance": character.design.appearance, "palette": character.design.palette, "wardrobe": character.design.wardrobe, "consistency_anchors": character.design.consistency_anchors} if character.design else None}
+    return context
+
+
+def background_design_context(location: WorldLocation, db: Session) -> dict:
+    project = db.get(Project, location.project_id)
+    context = writer_project_context(project, db)
+    context["location"] = {"id": location.id, "name": location.name, "narrative_function": location.narrative_function, "description": location.description, "geography": location.geography, "time_period": location.time_period, "current_design": {"appearance": location.design.appearance, "palette": location.design.palette, "layers": location.design.layers, "lighting_variants": location.design.lighting_variants, "continuity_anchors": location.design.continuity_anchors} if location.design else None}
+    return context
+
+
+def perform_character_design_action(action: CrewAction, db: Session) -> CrewAction:
+    character = db.get(Character, int(action.payload.get("target_id", 0)))
+    proposal = action.payload.get("proposal") or {}
+    if not character or not all(key in proposal for key in ("appearance", "palette", "wardrobe", "consistency_anchors")):
+        action.status, action.error = "failed", "Character design proposal is incomplete"
+        db.commit()
+        return action
+    design_input = CharacterDesignInput(**{key: proposal[key] for key in ("appearance", "palette", "wardrobe", "consistency_anchors")})
+    design = db.scalar(select(CharacterDesign).where(CharacterDesign.character_id == character.id))
+    if design is None:
+        design = CharacterDesign(character_id=character.id)
+        db.add(design)
+    else:
+        design.version += 1
+    for key, value in design_input.model_dump().items():
+        setattr(design, key, value)
+    style = db.scalar(select(StyleProfile).where(StyleProfile.project_id == character.project_id))
+    design.reference_brief = compile_reference_brief(character, design_input, style)
+    action.status, action.error = "completed", ""
+    db.commit(); db.refresh(design)
+    result = {"character_id": character.id, "design_id": design.id, "version": design.version, "generation_queued": False, "changes": proposal.get("changes", [])}
+    request = action.payload.get("request", {})
+    if request.get("queue_generation"):
+        try:
+            generation = generate_character_reference(character.id, GenerationRequest(provider=request.get("generation_provider", "mock")), db)
+            result.update({
+                "generation_queued": True,
+                "generation_job_id": generation["id"],
+                "generation_status": generation["status"],
+                "generation_provider": generation["provider"],
+                "generation_assets": [
+                    {"id": asset.id, "uri": asset.uri, "mime_type": asset.mime_type, "version": asset.version}
+                    for asset in generation.get("assets", [])
+                ],
+            })
+        except Exception as exc:
+            result["generation_error"] = str(getattr(exc, "detail", exc))
+    action = db.get(CrewAction, action.id)
+    action.status, action.result = "completed", result
+    db.commit(); db.refresh(action)
+    return action
+
+
+def perform_background_design_action(action: CrewAction, db: Session) -> CrewAction:
+    location = db.get(WorldLocation, int(action.payload.get("target_id", 0)))
+    proposal = action.payload.get("proposal") or {}
+    keys = ("appearance", "palette", "layers", "lighting_variants", "continuity_anchors")
+    if not location or not all(key in proposal for key in keys):
+        action.status, action.error = "failed", "Background design proposal is incomplete"
+        db.commit()
+        return action
+    design_input = LocationDesignInput(**{key: proposal[key] for key in keys})
+    design = db.scalar(select(LocationDesign).where(LocationDesign.location_id == location.id))
+    if design is None:
+        design = LocationDesign(location_id=location.id)
+        db.add(design)
+    else:
+        design.version += 1
+    for key, value in design_input.model_dump().items():
+        setattr(design, key, value)
+    style = db.scalar(select(StyleProfile).where(StyleProfile.project_id == location.project_id))
+    design.reference_brief = compile_background_brief(location, design_input, style)
+    action.status, action.error = "completed", ""
+    db.commit(); db.refresh(design)
+    result = {"location_id": location.id, "design_id": design.id, "version": design.version, "generation_queued": False, "changes": proposal.get("changes", [])}
+    request = action.payload.get("request", {})
+    if request.get("queue_generation"):
+        try:
+            generation = generate_background(location.id, GenerationRequest(provider=request.get("generation_provider", "mock")), db)
+            result.update({
+                "generation_queued": True,
+                "generation_job_id": generation["id"],
+                "generation_status": generation["status"],
+                "generation_provider": generation["provider"],
+                "generation_assets": [
+                    {"id": asset.id, "uri": asset.uri, "mime_type": asset.mime_type, "version": asset.version}
+                    for asset in generation.get("assets", [])
+                ],
+            })
+        except Exception as exc:
+            result["generation_error"] = str(getattr(exc, "detail", exc))
+    action = db.get(CrewAction, action.id)
+    action.status, action.result = "completed", result
+    db.commit(); db.refresh(action)
+    return action
+
+
 @app.get("/api/crew/roles")
 def crew_roles():
     return [{"id": role, **data} for role, data in CREW_ROLES.items()]
@@ -1097,6 +1199,14 @@ def director_providers():
     return {"active": settings.director_provider, "providers": [
         {"id": "simulation", "label": "Local coverage planner", "ready": True},
         {"id": "openai", "label": "OpenAI Director", "ready": bool(settings.openai_api_key), "model": settings.openai_director_model},
+    ]}
+
+
+@app.get("/api/visual-development/providers")
+def visual_development_providers():
+    return {"active": settings.visual_agent_provider, "providers": [
+        {"id": "simulation", "label": "Local design planner", "ready": True},
+        {"id": "openai", "label": "OpenAI visual development", "ready": bool(settings.openai_api_key), "model": settings.openai_visual_agent_model},
     ]}
 
 
@@ -1250,6 +1360,52 @@ def ask_director(project_id: int, payload: DirectorProposalRequest, db: Session 
     return perform_director_action(action, db) if assignment.autonomy == "execute" else action
 
 
+@app.post("/api/characters/{character_id}/crew/design", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
+def ask_character_designer(character_id: int, payload: CharacterDesignerRequest, db: Session = Depends(get_db)):
+    character = db.scalars(select(Character).options(selectinload(Character.design)).where(Character.id == character_id)).one_or_none()
+    if not character:
+        raise HTTPException(404, "Character not found")
+    assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == character.project_id, CrewAssignment.role == "character_designer", CrewAssignment.enabled.is_(True)))
+    if not assignment:
+        raise HTTPException(409, "Deploy the Character Designer bot first")
+    provider = payload.provider or settings.visual_agent_provider
+    action = CrewAction(project_id=character.project_id, assignment_id=assignment.id, role="character_designer", action_type="design_character", title=f"Design {character.name}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "target_id": character.id, "request": payload.model_dump()})
+    db.add(action); db.commit(); db.refresh(action)
+    try:
+        proposal = create_character_design_proposal(character_design_context(character, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_visual_agent_model, instructions=assignment.instructions)
+        action.payload = {**action.payload, "proposal": proposal.model_dump()}
+        action.summary, action.status = proposal.rationale, "proposed"
+        db.commit(); db.refresh(action)
+    except VisualAgentError as exc:
+        action.status, action.error = "failed", str(exc)
+        db.commit(); db.refresh(action)
+        return action
+    return perform_character_design_action(action, db) if assignment.autonomy == "execute" else action
+
+
+@app.post("/api/locations/{location_id}/crew/design", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
+def ask_background_artist(location_id: int, payload: BackgroundArtistRequest, db: Session = Depends(get_db)):
+    location = db.scalars(select(WorldLocation).options(selectinload(WorldLocation.design)).where(WorldLocation.id == location_id)).one_or_none()
+    if not location:
+        raise HTTPException(404, "Location not found")
+    assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == location.project_id, CrewAssignment.role == "background_artist", CrewAssignment.enabled.is_(True)))
+    if not assignment:
+        raise HTTPException(409, "Deploy the Background Artist bot first")
+    provider = payload.provider or settings.visual_agent_provider
+    action = CrewAction(project_id=location.project_id, assignment_id=assignment.id, role="background_artist", action_type="design_background", title=f"Design {location.name}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "target_id": location.id, "request": payload.model_dump()})
+    db.add(action); db.commit(); db.refresh(action)
+    try:
+        proposal = create_background_design_proposal(background_design_context(location, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_visual_agent_model, instructions=assignment.instructions)
+        action.payload = {**action.payload, "proposal": proposal.model_dump()}
+        action.summary, action.status = proposal.rationale, "proposed"
+        db.commit(); db.refresh(action)
+    except VisualAgentError as exc:
+        action.status, action.error = "failed", str(exc)
+        db.commit(); db.refresh(action)
+        return action
+    return perform_background_design_action(action, db) if assignment.autonomy == "execute" else action
+
+
 @app.post("/api/crew-actions/{action_id}/approve", response_model=CrewActionRead)
 def approve_crew_action(action_id: int, db: Session = Depends(get_db)):
     action = db.get(CrewAction, action_id)
@@ -1264,6 +1420,10 @@ def approve_crew_action(action_id: int, db: Session = Depends(get_db)):
         return perform_writer_action(action, db)
     if action.action_type == "direct_coverage":
         return perform_director_action(action, db)
+    if action.action_type == "design_character":
+        return perform_character_design_action(action, db)
+    if action.action_type == "design_background":
+        return perform_background_design_action(action, db)
     return action
 
 

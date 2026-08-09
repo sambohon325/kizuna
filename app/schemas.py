@@ -585,6 +585,14 @@ class AudioCueRead(AudioCueInput):
     mime_type: str
 
 
+class AudioCueSplitRequest(BaseModel):
+    split_seconds: float = Field(gt=0, le=3600)
+
+
+class AudioCueDuplicateRequest(BaseModel):
+    offset_seconds: float = Field(default=.25, ge=0, le=3600)
+
+
 class AudioTrackRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

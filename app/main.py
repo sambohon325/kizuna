@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
 from app.animatic import render_animatic
-from app.audio import generate_timing_slate
+from app.audio import generate_timing_slate, split_audio_file
 from app.compositor import render_composite
 from app.motion import render_motion_video
 from app.mastering import render_timeline_master
@@ -22,7 +22,7 @@ from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
 from app.models import AnimaticRender, AssetReview, AudioCue, AudioTrack, BackgroundAsset, BackgroundJob, Character, CharacterDesign, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, GenerationJob, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, ProductionWorkflow, Project, ProjectBackup, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StyleProfile, Timeline, TimelineClip, VoiceConsent, VoiceProfile, WorkerAssignment, WorldLocation
-from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueInput, AudioCueRead, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.schemas import AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MotionRenderRequest, ProducerWorkflowRead, ProducerWorkflowRequest, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.storage import LocalProductionStorage
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
@@ -2090,6 +2090,12 @@ def validate_audio_cue(track: AudioTrack, payload: AudioCueInput, db: Session):
             raise HTTPException(422, "Character does not belong to this production")
 
 
+def mark_audio_edit_dirty(track: AudioTrack, db: Session) -> None:
+    timeline = db.get(Timeline, track.timeline_id)
+    if timeline:
+        timeline.status = "draft"
+
+
 @app.post("/api/audio-tracks/{track_id}/cues", response_model=AudioCueRead, status_code=status.HTTP_201_CREATED)
 def create_audio_cue(track_id: int, payload: AudioCueInput, db: Session = Depends(get_db)):
     track = db.get(AudioTrack, track_id)
@@ -2097,7 +2103,7 @@ def create_audio_cue(track_id: int, payload: AudioCueInput, db: Session = Depend
         raise HTTPException(404, "Audio track not found")
     validate_audio_cue(track, payload, db)
     cue = AudioCue(track_id=track_id, **payload.model_dump())
-    db.add(cue); db.commit(); db.refresh(cue)
+    db.add(cue); mark_audio_edit_dirty(track, db); db.commit(); db.refresh(cue)
     return cue
 
 
@@ -2109,8 +2115,53 @@ def update_audio_cue(cue_id: int, payload: AudioCueInput, db: Session = Depends(
     validate_audio_cue(db.get(AudioTrack, cue.track_id), payload, db)
     for key, value in payload.model_dump().items():
         setattr(cue, key, value)
-    db.commit(); db.refresh(cue)
+    mark_audio_edit_dirty(db.get(AudioTrack, cue.track_id), db); db.commit(); db.refresh(cue)
     return cue
+
+
+@app.post("/api/audio-cues/{cue_id}/split", response_model=list[AudioCueRead])
+def split_audio_cue(cue_id: int, payload: AudioCueSplitRequest, db: Session = Depends(get_db)):
+    cue = db.get(AudioCue, cue_id)
+    if not cue:
+        raise HTTPException(404, "Audio cue not found")
+    split_at = payload.split_seconds
+    if split_at < .05 or split_at > cue.duration_seconds - .05:
+        raise HTTPException(422, "Split point must leave at least 0.05 seconds on each side")
+    second = AudioCue(track_id=cue.track_id, clip_id=cue.clip_id, character_id=cue.character_id, start_seconds=cue.start_seconds + split_at, duration_seconds=cue.duration_seconds - split_at, text=cue.text, direction=cue.direction, status=cue.status, filename=cue.filename, uri=cue.uri, mime_type=cue.mime_type)
+    if cue.uri:
+        source = local_render_path(cue.uri)
+        if not source:
+            raise HTTPException(422, "Only locally available audio can be split")
+        first_name, second_name = f"audio-region-{cue.id}-{uuid4().hex[:8]}-a.wav", f"audio-region-{cue.id}-{uuid4().hex[:8]}-b.wav"
+        try:
+            split_audio_file(source, render_dir / first_name, render_dir / second_name, split_at, cue.duration_seconds)
+        except Exception as exc:
+            raise HTTPException(500, f"Audio split failed: {exc}")
+        cue.filename, cue.uri, cue.mime_type = first_name, f"/renders/{first_name}", "audio/wav"
+        second.filename, second.uri, second.mime_type = second_name, f"/renders/{second_name}", "audio/wav"
+    cue.duration_seconds = split_at
+    db.add(second); mark_audio_edit_dirty(db.get(AudioTrack, cue.track_id), db); db.commit(); db.refresh(cue); db.refresh(second)
+    return [cue, second]
+
+
+@app.post("/api/audio-cues/{cue_id}/duplicate", response_model=AudioCueRead, status_code=status.HTTP_201_CREATED)
+def duplicate_audio_cue(cue_id: int, payload: AudioCueDuplicateRequest, db: Session = Depends(get_db)):
+    cue = db.get(AudioCue, cue_id)
+    if not cue:
+        raise HTTPException(404, "Audio cue not found")
+    duplicate = AudioCue(track_id=cue.track_id, clip_id=cue.clip_id, character_id=cue.character_id, start_seconds=cue.start_seconds + payload.offset_seconds, duration_seconds=cue.duration_seconds, text=cue.text, direction=cue.direction, status=cue.status, filename=cue.filename, uri=cue.uri, mime_type=cue.mime_type)
+    db.add(duplicate); mark_audio_edit_dirty(db.get(AudioTrack, cue.track_id), db); db.commit(); db.refresh(duplicate)
+    return duplicate
+
+
+@app.delete("/api/audio-cues/{cue_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_audio_cue(cue_id: int, db: Session = Depends(get_db)):
+    cue = db.get(AudioCue, cue_id)
+    if not cue:
+        raise HTTPException(404, "Audio cue not found")
+    track = db.get(AudioTrack, cue.track_id)
+    db.delete(cue); mark_audio_edit_dirty(track, db); db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.post("/api/audio-cues/{cue_id}/generate-scratch", response_model=AudioCueRead)

@@ -37,8 +37,8 @@ pytest
 - Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, background assets, and a Background Artist bot that can propose or apply a production-ready location bible before optionally queuing background generation
 - Storyboard and Shot Planner with beat expansion, camera language, cast/location assignment, continuity prompts, and storyboard assets
 - Director bot with local and hosted structured-output engines, pacing and coverage controls, performance direction, continuity-aware camera plans, non-destructive scene/shot application, and automatic timeline invalidation
-- Timeline editor with clip timing, cuts/dissolves/fades, sound cues, reordering, downloadable H.264 proxy animatics, and an Editor bot that can assemble raw shots, propose reversible pacing changes, flag missing picture/motion, and optionally render a review master
-- Audio & Voice Studio with versioned character voice bibles, dialogue/music/SFX/ambience lanes, timed cues, timing-slate generation, performance uploads, and animatic mixing
+- Timeline editor with draggable magnetic clip ordering, zoom, clip timing, cuts/dissolves/fades, sound cues, downloadable H.264 proxy animatics, and an Editor bot that can assemble raw shots, propose reversible pacing changes, flag missing picture/motion, and optionally render a review master
+- Audio & Voice Studio with a zoomable multitrack arrangement, snapping, playhead placement, draggable and resizable regions, non-destructive duplication, source-preserving audio splits, dialogue/music/SFX/ambience lanes, performance uploads, and animatic mixing
 - AI Crew Control Room with Writer, Director, Character Designer, Background Artist, Animator, Sound Producer, and Editor roles; assist/propose/execute autonomy; standing instructions; workflow briefings; an auditable approval feed; and a persistent Producer assistant that coordinates deployed bots one safe stage at a time from story through review master
 - Provider-neutral dialogue generation with a safe local timing-slate mode, optional OpenAI speech adapter, voice-rights records, required AI disclosure metadata, and per-character pronunciation entries
 - Scene Compositor with shot-specific layer stacks, asset-library reuse, transforms, visibility, opacity, blend modes, virtual camera/grade plans, and flattened preview renders
@@ -59,3 +59,4 @@ pytest
 See [AI Crew and voice setup](docs/AI_CREW.md) for autonomy behavior and optional hosted speech configuration.
 See [asset review and rollback](docs/ASSET_REVIEW.md) for the production-version workflow.
 See [production storage and delivery](docs/STORAGE.md) for backup and retention settings.
+See [picture and audio editing](docs/EDITING.md) for tactile edit controls.

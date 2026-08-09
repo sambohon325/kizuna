@@ -330,6 +330,34 @@ def test_audio_studio_builds_voice_cues_and_mixes_animatic(client):
     assert rendered.json()["render_settings"]["audio_cues"] == 1
 
 
+def test_audio_regions_split_duplicate_and_delete_non_destructively(client):
+    project_id = client.post("/api/projects", json={"title": "Audio Cutting Room"}).json()["id"]
+    scene_id = client.post(f"/api/projects/{project_id}/scenes", json={"title": "Pulse", "position": 1}).json()["id"]
+    client.post(f"/api/scenes/{scene_id}/shots", json={"title": "Signal pulse", "position": 1, "duration_seconds": 1})
+    timeline = client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 12, "width": 320, "height": 180}).json()
+    track = client.post(f"/api/timelines/{timeline['id']}/audio/build").json()["tracks"][2]
+    cue = client.post(f"/api/audio-tracks/{track['id']}/cues", json={"start_seconds": .1, "duration_seconds": .6, "text": "Radio pulse"}).json()
+    source = client.post(f"/api/audio-cues/{cue['id']}/generate-scratch").json()
+
+    split = client.post(f"/api/audio-cues/{cue['id']}/split", json={"split_seconds": .25})
+    assert split.status_code == 200
+    first, second = split.json()
+    assert first["duration_seconds"] == .25
+    assert second["start_seconds"] == .35
+    assert second["duration_seconds"] == .35
+    assert first["uri"] != second["uri"] != source["uri"]
+    assert client.get(first["uri"]).headers["content-type"] == "audio/wav"
+    assert client.get(second["uri"]).headers["content-type"] == "audio/wav"
+
+    duplicate = client.post(f"/api/audio-cues/{second['id']}/duplicate", json={"offset_seconds": .2})
+    assert duplicate.status_code == 201
+    assert duplicate.json()["start_seconds"] == .55
+    assert duplicate.json()["uri"] == second["uri"]
+    assert client.delete(f"/api/audio-cues/{duplicate.json()['id']}").status_code == 204
+    cues = client.get(f"/api/projects/{project_id}/audio-studio").json()["tracks"][2]["cues"]
+    assert [item["id"] for item in cues] == [first["id"], second["id"]]
+
+
 def test_ai_crew_delegates_and_approves_sound_producer_work(client):
     project_id = client.post("/api/projects", json={"title": "Delegated Signal"}).json()["id"]
     character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Mika", "role": "radio operator"}).json()

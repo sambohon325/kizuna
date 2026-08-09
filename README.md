@@ -43,6 +43,7 @@ pytest
 - Progressive-disclosure workspaces that keep everyday creative actions visible and tuck technical export, voice-rights, and provider settings into clearly labeled setup panels
 - A server-backed production milestone tracker where green means a saved completion requirement was actually met; ready, in-progress, and blocked work remain visually distinct without duplicating sidebar navigation
 - A focused Story Map view that connects each outline beat to its scene, shot coverage, assigned cast, and world; production gaps are surfaced inline and linked resources open directly in their craft workspace
+- A character-arc focus inside the Story Map that follows planned appearances, suggests beginning/turn/ending placements, and surfaces relationship intersections without marking unfinished work complete
 - A three-view Character Studio for narrative identity, versioned history and emotional arcs, character relationships, and visual model development without combining every craft into one form
 - Full-canvas craft dashboards with glass surfaces instead of modal-style outer boxes, plus dedicated multi-monitor windows that retain the selected production
 - Provider-neutral dialogue generation with a safe local timing-slate mode, optional OpenAI speech adapter, voice-rights records, required AI disclosure metadata, and per-character pronunciation entries

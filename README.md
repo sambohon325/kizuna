@@ -39,14 +39,14 @@ pytest
 - Scene Compositor with shot-specific layer stacks, asset-library reuse, transforms, visibility, opacity, blend modes, virtual camera/grade plans, and flattened preview renders
 - Keyframed layer motion with linear/eased interpolation, animated opacity and transforms, virtual-camera motion, and versioned H.264 shot previews
 - Continuous master export that combines current motion clips, safe still-frame fallbacks, Timeline transitions, and the Audio Studio mix at Preview, 1080p, or 4K UHD
-- Resumable segmented exports with safe cut boundaries, progress, retries, SHA-256 verification, local execution, authenticated farm leases, and final lossless segment assembly
+- One-click distributed master exports with safe cut boundaries, authenticated worker dispatch, live progress, retries, SHA-256 verification, automatic final assembly, and local recovery controls
 - Pillow frame normalization and bundled FFmpeg locally; system FFmpeg in the production container
 - Docker Compose foundation for eventual Coolify deployment
 
 ## Next milestones
 
-1. Worker-side segment renderer and automatic lease renewal for long 4K jobs
-2. AI voice-provider adapters with consent metadata and pronunciation controls
-3. Production object storage, review states, and asset approval
-4. Redis-backed scheduling, concurrency controls, and worker scaling
-5. Delivery presets for festival, streaming, broadcast, captions, and archival masters
+1. AI voice-provider adapters with consent metadata and pronunciation controls
+2. Production object storage, review states, and asset approval
+3. Redis-backed scheduling, concurrency controls, and worker scaling
+4. Delivery presets for festival, streaming, broadcast, captions, and archival masters
+5. Team review links, timecoded notes, and approval gates

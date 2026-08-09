@@ -29,6 +29,7 @@ function setActiveNavigation(navId = 'productions-nav') {
 }
 
 function openWorkspace(dialog) {
+  if (dialog !== timelineDialog) stopMasterExportPolling();
   workspaceDialogs.forEach(item => {
     if (item !== dialog) {
       item.removeAttribute('open');
@@ -54,6 +55,7 @@ function openWorkspace(dialog) {
 }
 
 function showDashboard() {
+  stopMasterExportPolling();
   workspaceDialogs.forEach(dialog => {
     dialog.removeAttribute('open');
     dialog.classList.remove('workspace-view');
@@ -67,7 +69,7 @@ document.querySelector('#render-composition').insertAdjacentHTML('afterend','<bu
 document.querySelector('#layer-form > .primary').insertAdjacentHTML('beforebegin','<section class="motion-controls"><p class="eyebrow">END KEYFRAME</p><div class="motion-grid"><label>Easing<select name="motion_easing"><option value="linear">Linear</option><option value="ease-in">Ease in</option><option value="ease-out">Ease out</option><option value="ease-in-out">Ease in/out</option></select></label><label>End X<input name="motion_end_x" type="number" min="-1" max="2" step="0.01"></label><label>End Y<input name="motion_end_y" type="number" min="-1" max="2" step="0.01"></label><label>End scale<input name="motion_end_scale" type="number" min="0.05" max="5" step="0.05"></label><label>End rotation<input name="motion_end_rotation" type="number" min="-360" max="360" step="1"></label><label>End opacity<input name="motion_end_opacity" type="number" min="0" max="1" step="0.05"></label></div></section>');
 document.querySelector('#render-animatic').insertAdjacentHTML('beforebegin','<select id="master-profile" aria-label="Master profile"><option value="preview">Preview · source up to 720p</option><option value="1080p">Master · 1080p</option><option value="4k">Master · 4K UHD</option></select>');
 document.querySelector('#render-animatic').insertAdjacentHTML('afterend','<button id="render-master" type="button">Export continuous master</button>');
-document.querySelector('#render-master').insertAdjacentHTML('afterend','<select id="segment-size" aria-label="Segment size"><option value="4">4 clips / segment</option><option value="2">2 clips / segment</option><option value="8">8 clips / segment</option></select><button id="plan-segmented-export" type="button">Plan resumable export</button>');
+document.querySelector('#render-master').insertAdjacentHTML('afterend','<select id="segment-size" aria-label="Segment size"><option value="4">4 clips / segment</option><option value="2">2 clips / segment</option><option value="8">8 clips / segment</option></select><button id="plan-segmented-export" type="button">Start farm export</button>');
 document.querySelector('#timeline-summary').insertAdjacentHTML('afterend','<div id="segmented-export-result"></div>');
 let projects = [];
 let catalog = null;
@@ -84,6 +86,7 @@ let activeComposition = null;
 let activeCompositorShotId = null;
 let activeCompositionLayerId = null;
 let activeMasterExport = null;
+let masterExportPollTimer = null;
 let generationProviders = [];
 
 async function api(path, options = {}) {
@@ -481,6 +484,7 @@ async function openTimeline(projectId) {
 }
 
 async function loadTimeline(projectId) {
+  stopMasterExportPolling();
   activeClipId = null;
   activeMasterExport = null; document.querySelector('#segmented-export-result').innerHTML='';
   try { activeTimeline = await api(`/api/projects/${projectId}/timeline`); renderTimeline(); try { renderSegmentedExport(await api(`/api/timelines/${activeTimeline.id}/master-exports/latest`)); } catch {} }
@@ -515,14 +519,51 @@ async function moveClip(delta) {
   activeTimeline = await api(`/api/timelines/${activeTimeline.id}/clips/order`,{method:'PUT',body:JSON.stringify({clip_ids:clips.map(clip=>clip.id)})}); renderTimeline();
 }
 
+function stopMasterExportPolling() {
+  if (masterExportPollTimer) clearInterval(masterExportPollTimer);
+  masterExportPollTimer = null;
+}
+
+function startMasterExportPolling() {
+  stopMasterExportPolling();
+  if (!activeMasterExport || !['farm-queued','farm-rendering','assembling'].includes(activeMasterExport.status)) return;
+  masterExportPollTimer = setInterval(async () => {
+    if (!timelineDialog.hasAttribute('open') || !activeMasterExport) return;
+    try { renderSegmentedExport(await api(`/api/master-exports/${activeMasterExport.id}`)); } catch {}
+  }, 2500);
+}
+
 function renderSegmentedExport(job) {
-  activeMasterExport=job;const ready=job.completed_segments===job.total_segments&&job.total_segments>0;
-  document.querySelector('#segmented-export-result').innerHTML=`<section class="segment-export"><header><div><p class="eyebrow">RESUMABLE MASTER · JOB ${job.id}</p><b>${safe(job.profile.toUpperCase())} · ${job.width} × ${job.height} · ${job.fps} fps</b></div><span>${job.completed_segments}/${job.total_segments} segments · ${job.progress_percent}%</span></header><div class="segment-progress"><i style="width:${job.progress_percent}%"></i></div><div class="segment-list">${job.segments.map(segment=>`<span class="segment-chip ${safe(segment.status)}"><b>${segment.position}</b> clips ${segment.manifest.clip_start}–${segment.manifest.clip_end}<small>${safe(segment.status)}${segment.checksum_sha256?' · '+safe(segment.checksum_sha256.slice(0,8)):''}</small></span>`).join('')}</div><div class="segment-actions"><button type="button" data-export-action="run-next">Run next locally</button><button type="button" data-export-action="run-all">Run all locally</button><button type="button" data-export-action="resume">Verify & resume</button><button type="button" data-export-action="assemble" ${ready?'':'disabled'}>Assemble master</button></div>${job.final_uri?`<div class="master-manifest"><b>ASSEMBLED MASTER READY</b><a href="${safe(job.final_uri)}" download>Download resumable master</a></div>`:''}${job.error?`<div class="job-error">${safe(job.error)}</div>`:''}</section>`;
+  activeMasterExport = job;
+  const ready = job.completed_segments === job.total_segments && job.total_segments > 0;
+  const distributed = ['farm-queued','farm-rendering','assembling'].includes(job.status);
+  const stateText = {
+    'farm-queued':'Waiting for an available render worker',
+    'farm-rendering':'Render farm processing segments automatically',
+    'assembling':'All segments verified · assembling the final master',
+    'segments-ready':'All segments ready for assembly',
+    'needs-attention':'Export needs attention before it can continue',
+    'completed':'Final master completed',
+    'planned':'Export plan ready',
+  }[job.status] || job.status;
+  let actions = '';
+  if (distributed) actions = '<button type="button" data-export-action="refresh">Refresh status</button>';
+  else if (job.status !== 'completed') actions = `<button type="button" data-export-action="dispatch">Send to render farm</button><button type="button" data-export-action="run-next">Run next locally</button><button type="button" data-export-action="run-all">Run all locally</button><button type="button" data-export-action="resume">Verify & resume</button>${ready?'<button type="button" data-export-action="assemble">Assemble master</button>':''}`;
+  document.querySelector('#segmented-export-result').innerHTML=`<section class="segment-export"><header><div><p class="eyebrow">DISTRIBUTED MASTER · JOB ${job.id}</p><b>${safe(job.profile.toUpperCase())} · ${job.width} × ${job.height} · ${job.fps} fps</b></div><span>${job.completed_segments}/${job.total_segments} segments · ${job.progress_percent}%</span></header><div class="export-state ${safe(job.status)}"><i></i><span>${safe(stateText)}</span></div><div class="segment-progress"><i style="width:${job.progress_percent}%"></i></div><div class="segment-list">${job.segments.map(segment=>`<span class="segment-chip ${safe(segment.status)}"><b>${segment.position}</b> clips ${segment.manifest.clip_start}–${segment.manifest.clip_end}<small>${safe(segment.status)}${segment.checksum_sha256?' · '+safe(segment.checksum_sha256.slice(0,8)):''}</small></span>`).join('')}</div>${actions?`<div class="segment-actions">${actions}</div>`:''}${job.final_uri?`<div class="master-manifest"><b>FINAL MASTER READY</b><span>All segments passed integrity checks and were assembled automatically.</span><a href="${safe(job.final_uri)}" download>Download final master</a></div>`:''}${job.error?`<div class="job-error">${safe(job.error)}</div>`:''}</section>`;
   document.querySelectorAll('[data-export-action]').forEach(button=>button.onclick=()=>runExportAction(button.dataset.exportAction));
+  if (distributed) startMasterExportPolling(); else stopMasterExportPolling();
 }
 
 async function runExportAction(action) {
-  if(!activeMasterExport)return;const panel=document.querySelector('#segmented-export-result');panel.querySelectorAll('button').forEach(button=>button.disabled=true);const labels={'run-next':'Rendering next segment…','run-all':'Rendering remaining segments…','resume':'Verifying checksums…','assemble':'Assembling master…'};panel.insertAdjacentHTML('beforeend',`<div class="render-progress">${labels[action]}</div>`);try{const job=await api(`/api/master-exports/${activeMasterExport.id}/${action}`,{method:'POST'});renderSegmentedExport(job);}catch(error){panel.insertAdjacentHTML('beforeend',`<div class="job-error">${safe(error.message)}</div>`);}
+  if (!activeMasterExport) return;
+  const panel = document.querySelector('#segmented-export-result');
+  panel.querySelectorAll('button').forEach(button=>button.disabled=true);
+  const labels = {'run-next':'Rendering next segment…','run-all':'Rendering remaining segments…','resume':'Verifying checksums…','assemble':'Assembling master…','dispatch':'Sending segments to the render farm…','refresh':'Refreshing farm progress…'};
+  panel.insertAdjacentHTML('beforeend',`<div class="render-progress">${labels[action]}</div>`);
+  try {
+    const job = action === 'refresh' ? await api(`/api/master-exports/${activeMasterExport.id}`) : await api(`/api/master-exports/${activeMasterExport.id}/${action}`,{method:'POST'});
+    renderSegmentedExport(job);
+  } catch(error) { panel.insertAdjacentHTML('beforeend',`<div class="job-error">${safe(error.message)}</div>`); }
 }
 
 async function openAudioStudio(projectId) {
@@ -656,7 +697,7 @@ document.querySelector('#clip-earlier').onclick = () => moveClip(-1);
 document.querySelector('#clip-later').onclick = () => moveClip(1);
 document.querySelector('#render-animatic').onclick = async () => { if(!activeTimeline)return; const button=document.querySelector('#render-animatic'); button.disabled=true; button.textContent='Rendering proxy…'; document.querySelector('#animatic-result').innerHTML='<div class="render-progress">Preparing frames and encoding the edit…</div>'; try { const result=await api(`/api/timelines/${activeTimeline.id}/render`,{method:'POST'}); document.querySelector('#animatic-result').innerHTML=result.status==='completed'?`<video controls src="${safe(result.uri)}"></video><p><a href="${safe(result.uri)}" download>Download proxy MP4</a></p>`:`<div class="job-error">${safe(result.error)}</div>`; await loadTimeline(activeTimeline.project_id); } catch(error) { document.querySelector('#animatic-result').innerHTML=`<div class="job-error">${safe(error.message)}</div>`; } finally { button.disabled=false; button.textContent='Render proxy animatic'; } };
 document.querySelector('#render-master').onclick = async () => { if(!activeTimeline)return;const button=document.querySelector('#render-master'),profile=document.querySelector('#master-profile').value;button.disabled=true;button.textContent='Exporting master…';document.querySelector('#animatic-result').innerHTML=`<div class="render-progress">Assembling motion clips, transitions, fallback frames, and the audio mix at ${safe(profile)}…</div>`;try{const result=await api(`/api/timelines/${activeTimeline.id}/render-master`,{method:'POST',body:JSON.stringify({profile})});if(result.status==='completed'){const settings=result.render_settings;document.querySelector('#animatic-result').innerHTML=`<video controls src="${safe(result.uri)}"></video><div class="master-manifest"><b>${safe(settings.profile.toUpperCase())} MASTER</b><span>${settings.width} × ${settings.height} · ${settings.fps} fps</span><span>${settings.motion_clips} motion clip${settings.motion_clips===1?'':'s'} · ${settings.fallback_clips} fallback clip${settings.fallback_clips===1?'':'s'} · ${settings.audio_cues} audio cue${settings.audio_cues===1?'':'s'}</span><a href="${safe(result.uri)}" download>Download continuous master</a></div>`;}else document.querySelector('#animatic-result').innerHTML=`<div class="job-error">${safe(result.error)}</div>`;await loadTimeline(activeTimeline.project_id);}catch(error){document.querySelector('#animatic-result').innerHTML=`<div class="job-error">${safe(error.message)}</div>`;}finally{button.disabled=false;button.textContent='Export continuous master';} };
-document.querySelector('#plan-segmented-export').onclick = async () => { if(!activeTimeline)return;const button=document.querySelector('#plan-segmented-export');button.disabled=true;button.textContent='Planning…';try{renderSegmentedExport(await api(`/api/timelines/${activeTimeline.id}/master-exports`,{method:'POST',body:JSON.stringify({profile:document.querySelector('#master-profile').value,segment_size:Number(document.querySelector('#segment-size').value)})}));}catch(error){document.querySelector('#segmented-export-result').innerHTML=`<div class="job-error">${safe(error.message)}</div>`;}finally{button.disabled=false;button.textContent='Plan resumable export';} };
+document.querySelector('#plan-segmented-export').onclick = async () => { if(!activeTimeline)return;const button=document.querySelector('#plan-segmented-export');button.disabled=true;button.textContent='Starting farm…';try{renderSegmentedExport(await api(`/api/timelines/${activeTimeline.id}/master-exports/distributed`,{method:'POST',body:JSON.stringify({profile:document.querySelector('#master-profile').value,segment_size:Number(document.querySelector('#segment-size').value)})}));}catch(error){document.querySelector('#segmented-export-result').innerHTML=`<div class="job-error">${safe(error.message)}</div>`;}finally{button.disabled=false;button.textContent='Start farm export';} };
 document.querySelector('#expand-story').onclick = async () => { const projectId = Number(document.querySelector('#shot-project').value); try { await api(`/api/projects/${projectId}/expand-story`, {method:'POST',body:JSON.stringify({shots_per_beat:Number(document.querySelector('#shots-per-beat').value)})}); await loadProjects(); renderShotTree(projectId); } catch(error) { document.querySelector('#shot-tree').innerHTML = `<div class="job-error">${safe(error.message)}</div>`; } };
 document.querySelector('#refresh-farm').onclick = () => refreshRenderFarm();
 document.querySelector('#project-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); await api('/api/projects', {method:'POST', body:JSON.stringify(data)}); event.target.reset(); projectDialog.close(); await loadProjects(); showDashboard(); };

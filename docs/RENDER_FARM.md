@@ -42,6 +42,8 @@ Workers may opt into the `master_segment` capability. The authenticated contract
 - `POST /api/workers/{worker_id}/master-segments/{segment_id}/heartbeat` renews the lease while FFmpeg is rendering.
 - `POST /api/workers/{worker_id}/master-segments/{segment_id}/fail` reports a retryable or terminal failure.
 - The worker downloads the manifest assets, renders with matching FPS and dimensions, then uploads an MP4 to `PUT /api/workers/{worker_id}/master-segments/{segment_id}/artifact`.
-- The server stores a SHA-256 checksum and marks the segment complete. Missing or altered files are detected by the resume audit and queued again.
+- The server stores a SHA-256 checksum and marks the segment complete. When the final dispatched segment arrives, Kizuna verifies the set and assembles the final master automatically.
+- Only exports explicitly started or dispatched to the farm can be claimed. Draft plans remain available for local rendering and recovery without racing a worker.
+- Missing or altered files are detected by the resume audit and queued again.
 
 The bundled agent supports both ComfyUI character jobs and FFmpeg master segments. Tasks are selected per machine, and concurrency is bounded with `KIZUNA_WORKER_CONCURRENCY` or `--concurrency`.

@@ -1123,8 +1123,7 @@ def master_dimensions(timeline: Timeline, profile: str):
     return max(2, int(timeline.width * scale) // 2 * 2), max(2, int(timeline.height * scale) // 2 * 2)
 
 
-@app.post("/api/timelines/{timeline_id}/master-exports", response_model=MasterExportRead, status_code=status.HTTP_201_CREATED)
-def plan_segmented_export(timeline_id: int, payload: SegmentedExportRequest, db: Session = Depends(get_db)):
+def create_segmented_export(timeline_id: int, payload: SegmentedExportRequest, db: Session, job_status: str = "planned") -> MasterExportJob:
     timeline = db.get(Timeline, timeline_id)
     if not timeline:
         raise HTTPException(404, "Timeline not found")
@@ -1133,7 +1132,7 @@ def plan_segmented_export(timeline_id: int, payload: SegmentedExportRequest, db:
         raise HTTPException(409, "Timeline has no clips")
     width, height = master_dimensions(timeline, payload.profile)
     fps = payload.fps or timeline.fps
-    job = MasterExportJob(timeline_id=timeline.id, profile=payload.profile, fps=fps, width=width, height=height)
+    job = MasterExportJob(timeline_id=timeline.id, profile=payload.profile, fps=fps, width=width, height=height, status=job_status)
     db.add(job); db.flush()
     starts = clip_start_times(timeline_data["clips"], fps)
     tracks = db.scalars(select(AudioTrack).options(selectinload(AudioTrack.cues)).where(AudioTrack.timeline_id == timeline.id, AudioTrack.muted.is_(False))).unique().all()
@@ -1146,6 +1145,19 @@ def plan_segmented_export(timeline_id: int, payload: SegmentedExportRequest, db:
         segment_audio = [{**cue, "start": max(0, cue["start"] - segment_start)} for cue in audio if cue["start"] < segment_end and cue["start"] + cue["duration"] > segment_start]
         db.add(MasterSegment(export_id=job.id, position=position, manifest={"clip_start": start + 1, "clip_end": end, "start_seconds": segment_start, "end_seconds": segment_end, "clips": clips, "audio": segment_audio}))
     db.commit()
+    db.refresh(job)
+    return job
+
+
+@app.post("/api/timelines/{timeline_id}/master-exports", response_model=MasterExportRead, status_code=status.HTTP_201_CREATED)
+def plan_segmented_export(timeline_id: int, payload: SegmentedExportRequest, db: Session = Depends(get_db)):
+    job = create_segmented_export(timeline_id, payload, db)
+    return export_job_response(job, db)
+
+
+@app.post("/api/timelines/{timeline_id}/master-exports/distributed", response_model=MasterExportRead, status_code=status.HTTP_201_CREATED)
+def start_distributed_export(timeline_id: int, payload: SegmentedExportRequest, db: Session = Depends(get_db)):
+    job = create_segmented_export(timeline_id, payload, db, "farm-queued")
     return export_job_response(job, db)
 
 
@@ -1230,27 +1242,68 @@ def resume_master_export(export_id: int, db: Session = Depends(get_db)):
     return export_job_response(job, db)
 
 
-@app.post("/api/master-exports/{export_id}/assemble", response_model=MasterExportRead)
-def assemble_master_export(export_id: int, db: Session = Depends(get_db)):
+@app.post("/api/master-exports/{export_id}/dispatch", response_model=MasterExportRead)
+def dispatch_master_export(export_id: int, db: Session = Depends(get_db)):
     job = db.get(MasterExportJob, export_id)
     if not job:
         raise HTTPException(404, "Master export not found")
-    segments = db.scalars(select(MasterSegment).where(MasterSegment.export_id == export_id).order_by(MasterSegment.position)).all()
+    if job.status == "completed":
+        return export_job_response(job, db)
+    segments = db.scalars(select(MasterSegment).where(MasterSegment.export_id == export_id)).all()
+    if not segments:
+        raise HTTPException(409, "Export has no segments")
+    if all(segment.status == "completed" for segment in segments):
+        assemble_master_export_job(job, db)
+        return export_job_response(job, db)
+    for segment in segments:
+        if segment.status == "failed":
+            segment.status, segment.error = "queued", ""
+    job.status = "farm-rendering" if any(segment.status in {"leased", "rendering"} for segment in segments) else "farm-queued"
+    job.error = ""
+    db.commit()
+    return export_job_response(job, db)
+
+
+def assemble_master_export_job(job: MasterExportJob, db: Session, strict: bool = True) -> None:
+    segments = db.scalars(select(MasterSegment).where(MasterSegment.export_id == job.id).order_by(MasterSegment.position)).all()
     if not segments or any(segment.status != "completed" for segment in segments):
-        raise HTTPException(409, "All segments must complete before assembly")
+        message = "All segments must complete before assembly"
+        if strict:
+            raise HTTPException(409, message)
+        job.status, job.error = "needs-attention", message
+        db.commit()
+        return
     files = [render_dir / segment.filename for segment in segments]
     if any(not path.exists() for path in files):
-        raise HTTPException(409, "One or more segment files are missing; resume the export")
+        message = "One or more segment files are missing; verify and resume the export"
+        if strict:
+            raise HTTPException(409, message)
+        job.status, job.error = "needs-attention", message
+        db.commit()
+        return
     work_dir = render_dir / f"assembly-work-{job.id}"
+    job.status, job.error = "assembling", ""
+    db.commit()
     try:
         job.final_filename = f"master-export-{job.id}-{job.profile}.mp4"
         assemble_segments(files, render_dir / job.final_filename, work_dir)
         job.final_uri, job.status = f"/renders/{job.final_filename}", "completed"
+        timeline = db.get(Timeline, job.timeline_id)
+        if timeline:
+            timeline.status = "master-ready"
     except Exception as exc:
         job.status, job.error = "needs-attention", str(exc)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
     db.commit()
+
+
+@app.post("/api/master-exports/{export_id}/assemble", response_model=MasterExportRead)
+def assemble_master_export(export_id: int, db: Session = Depends(get_db)):
+    job = db.get(MasterExportJob, export_id)
+    if not job:
+        raise HTTPException(404, "Master export not found")
+    assemble_master_export_job(job, db)
     return export_job_response(job, db)
 
 
@@ -1261,15 +1314,19 @@ def claim_master_segment(worker_id: int, authorization: str | None = Header(defa
         raise HTTPException(409, "Worker is not configured for master segments")
     for expired in db.scalars(select(MasterSegment).where(MasterSegment.status == "leased", MasterSegment.leased_until < utcnow())).all():
         expired.status, expired.worker_id, expired.leased_until = "queued", None, None
+        expired_job = db.get(MasterExportJob, expired.export_id)
+        if expired_job and expired_job.status.startswith("farm-"):
+            expired_job.status = "farm-queued"
     db.commit()
-    segment = next((item for item in db.scalars(select(MasterSegment).where(MasterSegment.status == "queued").order_by(MasterSegment.id)).all()), None)
+    segment = db.scalar(select(MasterSegment).join(MasterExportJob).where(MasterSegment.status == "queued", MasterExportJob.status.in_(["farm-queued", "farm-rendering"])).order_by(MasterSegment.id))
     if not segment:
         return Response(status_code=204)
+    job = db.get(MasterExportJob, segment.export_id)
     segment.status, segment.worker_id, segment.attempts = "leased", worker.id, segment.attempts + 1
     segment.leased_until = utcnow() + timedelta(seconds=settings.worker_lease_seconds)
     worker.status, worker.last_seen = "busy", utcnow()
+    job.status = "farm-rendering"
     db.commit()
-    job = db.get(MasterExportJob, segment.export_id)
     return {"segment": MasterSegmentRead.model_validate(segment).model_dump(), "export": {"id": job.id, "fps": job.fps, "width": job.width, "height": job.height, "profile": job.profile}}
 
 
@@ -1298,7 +1355,7 @@ def fail_master_segment(worker_id: int, segment_id: int, payload: JobFailure, au
     segment.error, segment.worker_id, segment.leased_until = payload.error[:4000], None, None
     worker.status, worker.last_seen = "online", utcnow()
     job = db.get(MasterExportJob, segment.export_id)
-    job.status = "planned" if payload.retryable else "needs-attention"
+    job.status = "farm-queued" if payload.retryable else "needs-attention"
     job.error = "" if payload.retryable else segment.error
     db.commit(); db.refresh(segment)
     return segment
@@ -1331,8 +1388,13 @@ async def upload_master_segment(worker_id: int, segment_id: int, request: Reques
     segment.uri, segment.status, segment.checksum_sha256 = f"/renders/{segment.filename}", "completed", checksum.hexdigest()
     worker.status, worker.last_seen = "online", utcnow()
     job = db.get(MasterExportJob, segment.export_id)
+    distributed = job.status.startswith("farm-")
+    db.flush()
     if not db.scalar(select(MasterSegment).where(MasterSegment.export_id == segment.export_id, MasterSegment.status != "completed")):
-        job.status = "segments-ready"
+        if distributed:
+            assemble_master_export_job(job, db, strict=False)
+        else:
+            job.status = "segments-ready"
     db.commit(); db.refresh(segment)
     return segment
 

@@ -299,9 +299,14 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):
     assert assembled.json()["status"] == "completed", assembled.json().get("error")
     assert client.get(assembled.json()["final_uri"]).headers["content-type"] == "video/mp4"
 
-    farm_plan = client.post(f"/api/timelines/{rebuilt_timeline['id']}/master-exports", json={"profile": "preview", "fps": 8, "segment_size": 2}).json()
+    held_plan = client.post(f"/api/timelines/{rebuilt_timeline['id']}/master-exports", json={"profile": "preview", "fps": 8, "segment_size": 2}).json()
     worker = client.post("/api/workers/register", headers={"X-Enrollment-Secret": "local-dev-enrollment"}, json={"name": "Master Worker", "hostname": "render-02", "supported_tasks": ["master_segment"]}).json()
     headers = {"Authorization": f"Bearer {worker['token']}"}
+    assert client.post(f"/api/workers/{worker['id']}/master-segments/claim", headers=headers).status_code == 204
+    farm_response = client.post(f"/api/timelines/{rebuilt_timeline['id']}/master-exports/distributed", json={"profile": "preview", "fps": 8, "segment_size": 2})
+    assert farm_response.status_code == 201
+    farm_plan = farm_response.json()
+    assert farm_plan["status"] == "farm-queued"
     claimed = client.post(f"/api/workers/{worker['id']}/master-segments/claim", headers=headers)
     assert claimed.status_code == 200
     segment_id = claimed.json()["segment"]["id"]
@@ -316,5 +321,10 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):
     uploaded = client.put(f"/api/workers/{worker['id']}/master-segments/{segment_id}/artifact", headers={**headers, "Content-Type": "video/mp4"}, content=artifact)
     assert uploaded.json()["status"] == "completed"
     assert len(uploaded.json()["checksum_sha256"]) == 64
+    completed_farm = client.get(f"/api/master-exports/{farm_plan['id']}").json()
+    assert completed_farm["status"] == "completed", completed_farm.get("error")
+    assert client.get(completed_farm["final_uri"]).headers["content-type"] == "video/mp4"
+    dispatched = client.post(f"/api/master-exports/{held_plan['id']}/dispatch").json()
+    assert dispatched["status"] == "farm-queued"
     farm = client.get("/api/render-farm/status").json()
     assert any(segment["id"] == segment_id and segment["status"] == "completed" for segment in farm["master_segments"])

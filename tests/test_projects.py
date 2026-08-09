@@ -119,3 +119,31 @@ def test_render_worker_claims_uploads_and_completes_farm_job(client):
 def test_worker_api_rejects_invalid_token(client):
     response = client.post("/api/workers/999/claim", headers={"Authorization": "Bearer wrong"})
     assert response.status_code == 401
+
+
+def test_world_studio_versions_design_and_generates_background_asset(client):
+    project_id = client.post("/api/projects", json={"title": "Cloud Archive"}).json()["id"]
+    location = client.post(f"/api/projects/{project_id}/locations", json={"name": "The Listening Hall", "narrative_function": "A sanctuary that gradually becomes a trap", "description": "A suspended archive built around a silent radio telescope.", "geography": "high orbit above a storm planet", "time_period": "retro-future"})
+    assert location.status_code == 201
+    location_id = location.json()["id"]
+    design_payload = {"appearance": {"architecture": "brutalist rings and delicate antennae", "materials": "oxidized steel and amber glass", "atmosphere": "thin mist and drifting dust", "scale": "monumental"}, "palette": ["charcoal", "amber", "storm blue"], "layers": ["foreground cables", "performance deck", "telescope ring", "storm planet"], "lighting_variants": ["quiet dawn", "emergency red", "eclipse"], "continuity_anchors": ["broken west antenna", "three amber windows", "central circular hatch"]}
+    design = client.put(f"/api/locations/{location_id}/design", json=design_payload)
+    assert design.status_code == 200
+    assert "1990s blended with 2020s" in design.json()["reference_brief"]
+    versioned = client.put(f"/api/locations/{location_id}/design", json=design_payload)
+    assert versioned.json()["version"] == 2
+    generation = client.post(f"/api/locations/{location_id}/generate", json={"provider": "mock", "seed": 99})
+    assert generation.status_code == 201
+    assert generation.json()["status"] == "completed"
+    assert generation.json()["assets"][0]["version"] == 1
+    preview = client.get(generation.json()["assets"][0]["uri"])
+    assert "BACKGROUND CONCEPT SIMULATION" in preview.text
+    project = client.get(f"/api/projects/{project_id}").json()
+    assert project["locations"][0]["design"]["layers"][2] == "telescope ring"
+
+
+def test_background_generation_requires_design(client):
+    project_id = client.post("/api/projects", json={"title": "Empty World"}).json()["id"]
+    location_id = client.post(f"/api/projects/{project_id}/locations", json={"name": "Blank Room"}).json()["id"]
+    response = client.post(f"/api/locations/{location_id}/generate", json={"provider": "mock"})
+    assert response.status_code == 409

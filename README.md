@@ -32,13 +32,14 @@ pytest
 - Provider-neutral image generation jobs with versioned media assets
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
 - Authenticated network workers with capability reporting, heartbeats, leased jobs, retries, and artifact upload
+- Worlds Studio with reusable locations, parallax layers, lighting variants, continuity locks, and background assets
 - Provider and render-worker interfaces to be added behind stable job APIs
 - Docker Compose foundation for eventual Coolify deployment
 
 ## Next milestones
 
 1. AI provider adapters for screenplay and outline development
-2. Character image generation and location asset libraries
+2. Background render-farm scheduling and production object storage
 3. Storyboard generation jobs and review workflow
 4. Redis-backed render queue and authenticated remote workers
 5. Timeline, audio, compositing, and FFmpeg export

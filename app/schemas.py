@@ -127,6 +127,63 @@ class RenderWorkerRead(BaseModel):
     last_seen: datetime | None
 
 
+class WorldLocationInput(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    narrative_function: str = ""
+    description: str = ""
+    geography: str = ""
+    time_period: str = ""
+
+
+class LocationDesignInput(BaseModel):
+    appearance: dict[str, Any] = Field(default_factory=dict)
+    palette: list[str] = Field(default_factory=list)
+    layers: list[str] = Field(default_factory=list)
+    lighting_variants: list[str] = Field(default_factory=list)
+    continuity_anchors: list[str] = Field(default_factory=list)
+
+
+class LocationDesignRead(LocationDesignInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    location_id: int
+    reference_brief: str
+    version: int
+
+
+class WorldLocationRead(WorldLocationInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    design: LocationDesignRead | None = None
+
+
+class BackgroundAssetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    location_id: int
+    background_job_id: int
+    filename: str
+    uri: str
+    mime_type: str
+    asset_metadata: dict[str, Any]
+    version: int
+
+
+class BackgroundJobRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    location_id: int
+    provider: str
+    status: str
+    prompt: str
+    negative_prompt: str
+    external_id: str
+    error: str
+    result_data: dict[str, Any]
+    assets: list[BackgroundAssetRead] = Field(default_factory=list)
+
+
 class JobCompletion(BaseModel):
     result_data: dict[str, Any] = Field(default_factory=dict)
 
@@ -183,4 +240,5 @@ class ProjectRead(ProjectCreate):
     style_profile: StyleProfileRead | None = None
     story_brief: StoryBriefRead | None = None
     characters: list[CharacterRead] = Field(default_factory=list)
+    locations: list[WorldLocationRead] = Field(default_factory=list)
     scenes: list[SceneRead] = Field(default_factory=list)

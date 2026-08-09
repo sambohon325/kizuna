@@ -30,13 +30,15 @@ class MockProvider:
     def __init__(self, render_directory: Path):
         self.render_directory = render_directory
 
-    def submit(self, job_id: int, character_name: str, prompt: str, **_: Any) -> ProviderResult:
+    def submit(self, job_id: int, character_name: str, prompt: str, asset_kind: str = "character-reference", **_: Any) -> ProviderResult:
         self.render_directory.mkdir(parents=True, exist_ok=True)
-        filename = f"character-reference-{job_id}.svg"
+        safe_kind = "".join(character for character in asset_kind if character.isalnum() or character == "-") or "asset"
+        filename = f"{safe_kind}-{job_id}.svg"
         destination = self.render_directory / filename
         short_prompt = html.escape(prompt[:460])
         name = html.escape(character_name)
-        svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720"><defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#191521"/><stop offset="1" stop-color="#5d3d68"/></linearGradient></defs><rect width="1280" height="720" fill="#f4f1ea"/><rect x="40" y="40" width="1200" height="640" rx="28" fill="url(#g)"/><circle cx="260" cy="330" r="140" fill="#e98b76" opacity=".75"/><circle cx="260" cy="265" r="60" fill="#f5d1c8"/><path d="M145 530 Q260 350 375 530" fill="#30253c"/><text x="460" y="160" fill="#f39c87" font-family="Arial" font-size="22" letter-spacing="4">REFERENCE SHEET SIMULATION</text><text x="460" y="225" fill="white" font-family="Arial" font-weight="bold" font-size="52">{name}</text><foreignObject x="460" y="270" width="690" height="280"><div xmlns="http://www.w3.org/1999/xhtml" style="font:22px/1.5 Arial;color:#ddd2ea">{short_prompt}</div></foreignObject><text x="460" y="620" fill="#b8adc3" font-family="Arial" font-size="18">Mock provider · connect ComfyUI for rendered artwork</text></svg>'''
+        label = "BACKGROUND CONCEPT SIMULATION" if "background" in safe_kind else "REFERENCE SHEET SIMULATION"
+        svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720"><defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#191521"/><stop offset="1" stop-color="#5d3d68"/></linearGradient></defs><rect width="1280" height="720" fill="#f4f1ea"/><rect x="40" y="40" width="1200" height="640" rx="28" fill="url(#g)"/><circle cx="250" cy="245" r="90" fill="#e98b76" opacity=".75"/><path d="M70 570 L240 320 L360 470 L490 290 L620 570 Z" fill="#30253c"/><path d="M70 600 Q300 500 650 590" fill="none" stroke="#f5d1c8" stroke-width="22"/><text x="650" y="140" fill="#f39c87" font-family="Arial" font-size="20" letter-spacing="3">{label}</text><text x="650" y="205" fill="white" font-family="Arial" font-weight="bold" font-size="46">{name}</text><foreignObject x="650" y="250" width="500" height="300"><div xmlns="http://www.w3.org/1999/xhtml" style="font:19px/1.5 Arial;color:#ddd2ea">{short_prompt}</div></foreignObject><text x="650" y="620" fill="#b8adc3" font-family="Arial" font-size="17">Mock provider · connect ComfyUI for rendered artwork</text></svg>'''
         destination.write_text(svg, encoding="utf-8")
         return ProviderResult(status="completed", external_id=f"mock-{uuid4()}", outputs=[{"filename": filename, "mime_type": "image/svg+xml", "path": str(destination)}], metadata={"simulation": True})
 
@@ -63,7 +65,7 @@ class ComfyUIProvider:
             raise ProviderError(f"Configured ComfyUI node is missing: {exc}") from exc
         return workflow
 
-    def submit(self, job_id: int, character_name: str, prompt: str, negative_prompt: str, seed: int | None = None) -> ProviderResult:
+    def submit(self, job_id: int, character_name: str, prompt: str, negative_prompt: str, seed: int | None = None, **_: Any) -> ProviderResult:
         workflow = self._workflow(prompt, negative_prompt, seed)
         try:
             response = httpx.post(f"{self.base_url}/prompt", json={"prompt": workflow, "client_id": f"kizuna-{job_id}"}, timeout=30)

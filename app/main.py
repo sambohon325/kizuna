@@ -14,10 +14,11 @@ from app.config import settings
 from app.database import Base, engine, get_db
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import Character, CharacterDesign, GenerationJob, MediaAsset, Project, RenderWorker, Scene, Shot, StoryBrief, StyleProfile, WorkerAssignment
-from app.schemas import CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCreate, ShotRead, StoryBriefInput, StoryBriefRead, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult
+from app.models import BackgroundAsset, BackgroundJob, Character, CharacterDesign, GenerationJob, LocationDesign, MediaAsset, Project, RenderWorker, Scene, Shot, StoryBrief, StyleProfile, WorkerAssignment, WorldLocation
+from app.schemas import BackgroundJobRead, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, GenerationJobRead, GenerationRequest, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, ProjectCreate, ProjectRead, RenderWorkerRead, SceneCreate, SceneRead, ShotCreate, ShotRead, StoryBriefInput, StoryBriefRead, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorldLocationInput, WorldLocationRead
 from app.style_catalog import STYLE_CATALOG
 from app.story_development import develop_story
+from app.world_development import compile_background_brief
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -29,7 +30,7 @@ app.mount("/renders", StaticFiles(directory=render_dir), name="renders")
 
 
 def project_query():
-    return select(Project).options(selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters).selectinload(Character.design), selectinload(Project.scenes).selectinload(Scene.shots))
+    return select(Project).options(selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters).selectinload(Character.design), selectinload(Project.locations).selectinload(WorldLocation.design), selectinload(Project.scenes).selectinload(Scene.shots))
 
 
 @app.get("/api/health")
@@ -163,6 +164,112 @@ def update_character_design(character_id: int, payload: CharacterDesignInput, db
     db.commit()
     db.refresh(design)
     return design
+
+
+@app.post("/api/projects/{project_id}/locations", response_model=WorldLocationRead, status_code=status.HTTP_201_CREATED)
+def create_location(project_id: int, payload: WorldLocationInput, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    location = WorldLocation(project_id=project_id, **payload.model_dump())
+    db.add(location)
+    db.commit()
+    db.refresh(location)
+    return location
+
+
+@app.put("/api/locations/{location_id}", response_model=WorldLocationRead)
+def update_location(location_id: int, payload: WorldLocationInput, db: Session = Depends(get_db)):
+    location = db.get(WorldLocation, location_id)
+    if not location:
+        raise HTTPException(404, "Location not found")
+    for key, value in payload.model_dump().items():
+        setattr(location, key, value)
+    db.commit()
+    return db.scalars(select(WorldLocation).options(selectinload(WorldLocation.design)).where(WorldLocation.id == location_id)).one()
+
+
+@app.put("/api/locations/{location_id}/design", response_model=LocationDesignRead)
+def update_location_design(location_id: int, payload: LocationDesignInput, db: Session = Depends(get_db)):
+    location = db.get(WorldLocation, location_id)
+    if not location:
+        raise HTTPException(404, "Location not found")
+    style = db.scalar(select(StyleProfile).where(StyleProfile.project_id == location.project_id))
+    design = db.scalar(select(LocationDesign).where(LocationDesign.location_id == location_id))
+    if design is None:
+        design = LocationDesign(location_id=location_id)
+        db.add(design)
+    else:
+        design.version += 1
+    for key, value in payload.model_dump().items():
+        setattr(design, key, value)
+    design.reference_brief = compile_background_brief(location, payload, style)
+    db.commit()
+    db.refresh(design)
+    return design
+
+
+def background_job_response(job: BackgroundJob, db: Session):
+    assets = db.scalars(select(BackgroundAsset).where(BackgroundAsset.background_job_id == job.id)).all()
+    return {"id": job.id, "location_id": job.location_id, "provider": job.provider, "status": job.status, "prompt": job.prompt, "negative_prompt": job.negative_prompt, "external_id": job.external_id, "error": job.error, "result_data": job.result_data, "assets": assets}
+
+
+def record_background_assets(job: BackgroundJob, outputs: list[dict], db: Session):
+    existing = db.scalars(select(BackgroundAsset).where(BackgroundAsset.location_id == job.location_id)).all()
+    version = len(existing) + 1
+    for output in outputs:
+        filename = output["filename"]
+        uri = f"/renders/{filename}" if output.get("path") else output.get("url", "")
+        db.add(BackgroundAsset(location_id=job.location_id, background_job_id=job.id, filename=filename, uri=uri, mime_type=output.get("mime_type", "image/png"), asset_metadata={key: value for key, value in output.items() if key != "path"}, version=version))
+
+
+@app.post("/api/locations/{location_id}/generate", response_model=BackgroundJobRead, status_code=status.HTTP_201_CREATED)
+def generate_background(location_id: int, payload: GenerationRequest, db: Session = Depends(get_db)):
+    location = db.scalars(select(WorldLocation).options(selectinload(WorldLocation.design)).where(WorldLocation.id == location_id)).one_or_none()
+    if not location:
+        raise HTTPException(404, "Location not found")
+    if not location.design or not location.design.reference_brief:
+        raise HTTPException(409, "Create the background reference brief before generating artwork")
+    provider_name = payload.provider or settings.generation_provider
+    if provider_name == "farm":
+        raise HTTPException(409, "Background farm scheduling is not enabled yet; choose Simulation or Local ComfyUI")
+    job = BackgroundJob(location_id=location.id, provider=provider_name, prompt=location.design.reference_brief, negative_prompt=payload.negative_prompt)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    try:
+        result = provider_for(provider_name).submit(job.id, location.name, job.prompt, negative_prompt=job.negative_prompt, seed=payload.seed, asset_kind="background-concept")
+        job.status = result.status
+        job.external_id = result.external_id
+        job.result_data = result.metadata
+        if result.outputs:
+            record_background_assets(job, result.outputs, db)
+    except ProviderError as exc:
+        job.status = "failed"
+        job.error = str(exc)
+    db.commit()
+    return background_job_response(job, db)
+
+
+@app.post("/api/background-jobs/{job_id}/sync", response_model=BackgroundJobRead)
+def sync_background_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(BackgroundJob, job_id)
+    if not job:
+        raise HTTPException(404, "Background job not found")
+    if job.provider != "comfyui" or job.status in {"completed", "failed"}:
+        return background_job_response(job, db)
+    try:
+        provider = provider_for(job.provider)
+        result = provider.poll(job.external_id)
+        job.status = result.status
+        job.result_data = result.metadata
+        if result.outputs:
+            local_outputs = provider.materialize(result.outputs, render_dir, job.id)
+            record_background_assets(job, local_outputs, db)
+    except ProviderError as exc:
+        job.status = "failed"
+        job.error = str(exc)
+    db.commit()
+    return background_job_response(job, db)
 
 
 def provider_for(name: str):

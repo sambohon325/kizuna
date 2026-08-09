@@ -22,6 +22,7 @@ class Project(Base):
     style_profile: Mapped[StyleProfile | None] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
     story_brief: Mapped[StoryBrief | None] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
     characters: Mapped[list[Character]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="Character.id")
+    locations: Mapped[list[WorldLocation]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="WorldLocation.id")
     scenes: Mapped[list[Scene]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="Scene.position")
 
 
@@ -145,6 +146,66 @@ class WorkerAssignment(Base):
     leased_until: Mapped[datetime] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class WorldLocation(Base):
+    __tablename__ = "world_locations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    name: Mapped[str] = mapped_column(String(160))
+    narrative_function: Mapped[str] = mapped_column(String(160), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    geography: Mapped[str] = mapped_column(String(160), default="")
+    time_period: Mapped[str] = mapped_column(String(120), default="")
+
+    project: Mapped[Project] = relationship(back_populates="locations")
+    design: Mapped[LocationDesign | None] = relationship(back_populates="location", cascade="all, delete-orphan", uselist=False)
+
+
+class LocationDesign(Base):
+    __tablename__ = "location_designs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    location_id: Mapped[int] = mapped_column(ForeignKey("world_locations.id"), unique=True)
+    appearance: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    palette: Mapped[list[str]] = mapped_column(JSON, default=list)
+    layers: Mapped[list[str]] = mapped_column(JSON, default=list)
+    lighting_variants: Mapped[list[str]] = mapped_column(JSON, default=list)
+    continuity_anchors: Mapped[list[str]] = mapped_column(JSON, default=list)
+    reference_brief: Mapped[str] = mapped_column(Text, default="")
+    version: Mapped[int] = mapped_column(default=1)
+
+    location: Mapped[WorldLocation] = relationship(back_populates="design")
+
+
+class BackgroundJob(Base):
+    __tablename__ = "background_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    location_id: Mapped[int] = mapped_column(ForeignKey("world_locations.id"))
+    provider: Mapped[str] = mapped_column(String(40), default="mock")
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    prompt: Mapped[str] = mapped_column(Text)
+    negative_prompt: Mapped[str] = mapped_column(Text, default="")
+    external_id: Mapped[str] = mapped_column(String(160), default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    result_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class BackgroundAsset(Base):
+    __tablename__ = "background_assets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    location_id: Mapped[int] = mapped_column(ForeignKey("world_locations.id"))
+    background_job_id: Mapped[int] = mapped_column(ForeignKey("background_jobs.id"))
+    filename: Mapped[str] = mapped_column(String(255))
+    uri: Mapped[str] = mapped_column(Text)
+    mime_type: Mapped[str] = mapped_column(String(80), default="image/png")
+    asset_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    version: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class Scene(Base):

@@ -5,9 +5,11 @@ const styleDialog = document.querySelector('#style-dialog');
 const writerDialog = document.querySelector('#writer-dialog');
 const characterDialog = document.querySelector('#character-dialog');
 const renderDialog = document.querySelector('#render-dialog');
+const worldDialog = document.querySelector('#world-dialog');
 let projects = [];
 let catalog = null;
 let activeCharacterId = null;
+let activeLocationId = null;
 let generationProviders = [];
 
 async function api(path, options = {}) {
@@ -215,6 +217,79 @@ function renderGenerationJob(job) {
   if (sync) sync.onclick = async () => renderGenerationJob(await api(`/api/generation-jobs/${job.id}/sync`, {method:'POST'}));
 }
 
+async function openWorldStudio(projectId) {
+  if (!projects.length) await loadProjects();
+  if (!projects.length) { projectDialog.showModal(); return; }
+  if (!generationProviders.length) generationProviders = (await api('/api/generation/providers')).providers;
+  const projectSelect = document.querySelector('#world-project');
+  projectSelect.innerHTML = options(projects.map(p => ({id:String(p.id), label:p.title})), String(projectId || projects[0].id));
+  projectSelect.onchange = () => { activeLocationId = null; clearWorldForm(); renderWorldRoster(Number(projectSelect.value)); };
+  renderWorldRoster(Number(projectSelect.value));
+  document.querySelector('#world-result').innerHTML = '';
+  worldDialog.showModal();
+}
+
+function renderWorldRoster(projectId) {
+  const locations = projects.find(project => project.id === projectId)?.locations || [];
+  document.querySelector('#world-roster').innerHTML = `<button type="button" class="world-pill ${activeLocationId === null ? 'active' : ''}" data-new-world>＋ New</button>${locations.map(location => `<button type="button" class="world-pill ${activeLocationId === location.id ? 'active' : ''}" data-location-id="${location.id}"><b>${safe(location.name)}</b>${location.design ? ` · bible v${location.design.version}` : ''}</button>`).join('')}`;
+  document.querySelector('[data-new-world]').onclick = () => { activeLocationId = null; clearWorldForm(); renderWorldRoster(projectId); };
+  document.querySelectorAll('[data-location-id]').forEach(button => button.onclick = () => selectWorld(projectId, Number(button.dataset.locationId)));
+}
+
+function clearWorldForm() {
+  const form = document.querySelector('#world-form');
+  ['name','narrative_function','geography','time_period','description','architecture','materials','atmosphere','scale','staging_zones','perspective','world_palette','layers','lighting_variants','continuity_anchors'].forEach(name => form.elements[name].value = '');
+  document.querySelector('#world-result').innerHTML = '';
+}
+
+function selectWorld(projectId, locationId) {
+  const location = projects.find(project => project.id === projectId)?.locations.find(item => item.id === locationId);
+  if (!location) return;
+  activeLocationId = locationId;
+  const form = document.querySelector('#world-form');
+  ['name','narrative_function','geography','time_period','description'].forEach(name => form.elements[name].value = location[name] || '');
+  const appearance = location.design?.appearance || {};
+  ['architecture','materials','atmosphere','scale','staging_zones','perspective'].forEach(name => form.elements[name].value = appearance[name] || '');
+  form.elements.world_palette.value = (location.design?.palette || []).join(', ');
+  form.elements.layers.value = (location.design?.layers || []).join(', ');
+  form.elements.lighting_variants.value = (location.design?.lighting_variants || []).join(', ');
+  form.elements.continuity_anchors.value = (location.design?.continuity_anchors || []).join(', ');
+  renderWorldRoster(projectId);
+  if (location.design) renderWorldDesign(location, location.design); else document.querySelector('#world-result').innerHTML = '';
+}
+
+function collectWorld(form) {
+  return {name:form.elements.name.value, narrative_function:form.elements.narrative_function.value, description:form.elements.description.value, geography:form.elements.geography.value, time_period:form.elements.time_period.value};
+}
+
+function collectWorldDesign(form) {
+  return {appearance:{architecture:form.elements.architecture.value, materials:form.elements.materials.value, atmosphere:form.elements.atmosphere.value, scale:form.elements.scale.value, staging_zones:form.elements.staging_zones.value, perspective:form.elements.perspective.value}, palette:listValue(form,'world_palette'), layers:listValue(form,'layers'), lighting_variants:listValue(form,'lighting_variants'), continuity_anchors:listValue(form,'continuity_anchors')};
+}
+
+function renderWorldDesign(location, design) {
+  const providerOptions = generationProviders.filter(provider => provider.id !== 'farm').map(provider => `<option value="${safe(provider.id)}" ${provider.id === 'mock' ? 'selected' : ''}>${safe(provider.label)}${provider.ready ? '' : ' · setup required'}</option>`).join('');
+  document.querySelector('#world-result').innerHTML = `<div class="reference-brief"><b>BACKGROUND PRODUCTION BRIEF · V${design.version}</b>${safe(design.reference_brief)}</div><div class="layer-plan">${design.layers.map((layer,index) => `<span>LAYER ${index+1} · ${safe(layer)}</span>`).join('')}</div><div class="lighting-plan">${design.lighting_variants.map(light => `<span>LIGHT · ${safe(light)}</span>`).join('')}</div><div class="anchor-list">${design.continuity_anchors.map(anchor => `<span>LOCK · ${safe(anchor)}</span>`).join('')}</div><div class="world-generation"><select id="background-provider" aria-label="Background provider">${providerOptions}</select><button type="button" id="generate-background">Generate background concept</button></div><div id="background-result"></div>`;
+  document.querySelector('#generate-background').onclick = generateBackground;
+}
+
+async function generateBackground() {
+  if (!activeLocationId) return;
+  const button = document.querySelector('#generate-background');
+  button.disabled = true; button.textContent = 'Queuing generation…';
+  try { renderBackgroundJob(await api(`/api/locations/${activeLocationId}/generate`, {method:'POST', body:JSON.stringify({provider:document.querySelector('#background-provider').value})})); }
+  catch (error) { document.querySelector('#background-result').innerHTML = `<div class="job-error">${safe(error.message)}</div>`; }
+  finally { button.disabled = false; button.textContent = 'Generate background concept'; }
+}
+
+function renderBackgroundJob(job) {
+  const result = document.querySelector('#background-result');
+  if (job.status === 'failed') { result.innerHTML = `<div class="job-error">${safe(job.error)}</div>`; return; }
+  if (job.assets.length) { const asset = job.assets[0]; result.innerHTML = `<div class="background-preview"><img src="${safe(asset.uri)}" alt="Generated background concept for the selected location"></div><div class="generation-actions"><small>${safe(job.provider)} · background v${asset.version} · job ${job.id}</small></div>`; return; }
+  result.innerHTML = `<div class="world-generation"><small>${safe(job.provider)} job ${job.external_id || job.id} is ${safe(job.status)}.</small>${job.provider === 'comfyui' ? `<button type="button" data-sync-background="${job.id}">Check result</button>` : ''}</div>`;
+  const sync = document.querySelector('[data-sync-background]');
+  if (sync) sync.onclick = async () => renderBackgroundJob(await api(`/api/background-jobs/${job.id}/sync`, {method:'POST'}));
+}
+
 async function openRenderFarm() {
   renderDialog.showModal();
   await refreshRenderFarm();
@@ -239,14 +314,17 @@ document.querySelector('#style-lab-nav').onclick = () => openStyleLab();
 document.querySelector('#writer-nav').onclick = () => openWriterRoom();
 document.querySelector('#characters-nav').onclick = () => openCharacterStudio();
 document.querySelector('#render-nav').onclick = () => openRenderFarm();
+document.querySelector('#worlds-nav').onclick = () => openWorldStudio();
 document.querySelector('.close').onclick = () => projectDialog.close();
 document.querySelector('#style-close').onclick = () => styleDialog.close();
 document.querySelector('#writer-close').onclick = () => writerDialog.close();
 document.querySelector('#character-close').onclick = () => characterDialog.close();
 document.querySelector('#render-close').onclick = () => renderDialog.close();
+document.querySelector('#world-close').onclick = () => worldDialog.close();
 document.querySelector('#refresh-farm').onclick = () => refreshRenderFarm();
 document.querySelector('#project-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); await api('/api/projects', {method:'POST', body:JSON.stringify(data)}); event.target.reset(); projectDialog.close(); await loadProjects(); };
 document.querySelector('#style-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#style-project').value); await api(`/api/projects/${projectId}/style`, {method:'PUT', body:JSON.stringify(collectStyle(event.target))}); styleDialog.close(); await loadProjects(); openProject(projectId); };
 document.querySelector('#writer-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#writer-project').value); const brief = await api(`/api/projects/${projectId}/story`, {method:'PUT', body:JSON.stringify(collectStory(event.target))}); await loadProjects(); renderStory(brief); };
 document.querySelector('#character-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#character-project').value); const character = activeCharacterId ? await api(`/api/characters/${activeCharacterId}`, {method:'PUT', body:JSON.stringify(collectCharacter(event.target))}) : await api(`/api/projects/${projectId}/characters`, {method:'POST', body:JSON.stringify(collectCharacter(event.target))}); activeCharacterId = character.id; const design = await api(`/api/characters/${character.id}/design`, {method:'PUT', body:JSON.stringify(collectCharacterDesign(event.target))}); await loadProjects(); renderCharacterRoster(projectId); renderCharacterDesign(character, design); };
+document.querySelector('#world-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#world-project').value); const location = activeLocationId ? await api(`/api/locations/${activeLocationId}`, {method:'PUT', body:JSON.stringify(collectWorld(event.target))}) : await api(`/api/projects/${projectId}/locations`, {method:'POST', body:JSON.stringify(collectWorld(event.target))}); activeLocationId = location.id; const design = await api(`/api/locations/${location.id}/design`, {method:'PUT', body:JSON.stringify(collectWorldDesign(event.target))}); await loadProjects(); renderWorldRoster(projectId); renderWorldDesign(location, design); };
 loadProjects().catch(error => projectsEl.innerHTML = `<div class="empty">Could not load the studio: ${safe(error.message)}</div>`);

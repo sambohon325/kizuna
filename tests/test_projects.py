@@ -545,6 +545,34 @@ def test_generation_requires_character_design(client):
     assert response.status_code == 409
 
 
+def test_creator_can_upload_character_reference_to_asset_library(client):
+    import base64
+
+    project = client.post("/api/projects", json={"title": "Reference Upload", "logline": "An original courier follows a signal home."}).json()
+    character = client.post(f"/api/projects/{project['id']}/characters", json={"name": "Ren", "role": "courier"}).json()
+    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+    uploaded = client.post(
+        f"/api/characters/{character['id']}/assets/upload?filename=ren-reference.png",
+        headers={"Content-Type": "image/png"},
+        content=png,
+    )
+    assert uploaded.status_code == 201
+    assert uploaded.json()["character_id"] == character["id"]
+    assert uploaded.json()["asset_metadata"]["source"] == "creator_upload"
+    assert uploaded.json()["asset_metadata"]["coverage"] == ["source_reference"]
+    library = client.get(f"/api/projects/{project['id']}/asset-reviews").json()["assets"]
+    assert any(item["asset_type"] == "character" and item["id"] == uploaded.json()["id"] for item in library)
+    audit = client.get(f"/api/projects/{project['id']}/audit-ledger").json()["events"]
+    assert any(event["action"] == "character_reference_uploaded" and event["details"]["character_id"] == character["id"] for event in audit)
+
+
+def test_character_reference_upload_rejects_non_images(client):
+    project = client.post("/api/projects", json={"title": "Invalid Reference", "logline": "A maker protects an original archive."}).json()
+    character = client.post(f"/api/projects/{project['id']}/characters", json={"name": "Mika"}).json()
+    response = client.post(f"/api/characters/{character['id']}/assets/upload?filename=notes.png", content=b"not-an-image")
+    assert response.status_code == 422
+
+
 def test_render_worker_claims_uploads_and_completes_farm_job(client):
     project_id = client.post("/api/projects", json={"title": "Farm Test"}).json()["id"]
     character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Iona", "role": "navigator"}).json()

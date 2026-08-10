@@ -686,9 +686,14 @@ class ProducerWorkflowRead(BaseModel):
 
 
 class CrewAssignmentUpdate(BaseModel):
+    name: str = Field(default="", max_length=120)
     enabled: bool = True
     autonomy: str = Field(default="propose", pattern="^(assist|propose|execute)$")
     instructions: str = ""
+    traits: list[str] = Field(default_factory=list, max_length=12)
+    provider_key: str = Field(default="auto", min_length=1, max_length=120)
+    model_override: str = Field(default="", max_length=255)
+    capabilities: list[str] = Field(default_factory=list, max_length=24)
 
 
 class CrewAssignmentRead(CrewAssignmentUpdate):
@@ -696,8 +701,6 @@ class CrewAssignmentRead(CrewAssignmentUpdate):
     id: int
     project_id: int
     role: str
-    name: str
-    capabilities: list[str] = Field(default_factory=list)
 
 
 class CrewActionRead(BaseModel):

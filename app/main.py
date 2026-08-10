@@ -3423,6 +3423,33 @@ def crew_roles():
     return [{"id": role, **data} for role, data in CREW_ROLES.items()]
 
 
+def crew_agent_profile(assignment: CrewAssignment) -> dict:
+    return {"name": assignment.name, "traits": assignment.traits or [], "provider_key": assignment.provider_key, "model_override": assignment.model_override, "capabilities": assignment.capabilities or []}
+
+
+def crew_agent_instructions(assignment: CrewAssignment) -> str:
+    parts = []
+    if assignment.traits:
+        parts.append("Working personality: " + ", ".join(assignment.traits) + ".")
+    if assignment.capabilities:
+        parts.append("Enabled tools and responsibilities: " + ", ".join(assignment.capabilities) + ".")
+    if assignment.instructions.strip():
+        parts.append("Standing direction: " + assignment.instructions.strip())
+    return "\n".join(parts)
+
+
+def crew_agent_provider(assignment: CrewAssignment, requested: str, fallback: str) -> str:
+    if assignment.provider_key == "local":
+        return "simulation"
+    if assignment.provider_key == "openai":
+        return "openai"
+    return requested or fallback
+
+
+def crew_agent_model(assignment: CrewAssignment, fallback: str) -> str:
+    return assignment.model_override.strip() or fallback
+
+
 @app.get("/api/animation/providers")
 def animation_providers():
     return {"active": settings.animator_provider, "providers": [{"id": "simulation", "label": "Local motion planner", "ready": True}, {"id": "openai", "label": "OpenAI Animator", "ready": bool(settings.openai_api_key)}]}
@@ -3499,7 +3526,36 @@ def update_crew_assignment(assignment_id: int, payload: CrewAssignmentUpdate, db
     assignment = db.get(CrewAssignment, assignment_id)
     if not assignment:
         raise HTTPException(404, "Crew assignment not found")
-    for key, value in payload.model_dump().items():
+    values = payload.model_dump(include=payload.model_fields_set)
+    if "name" in values and not values["name"].strip():
+        values["name"] = CREW_ROLES.get(assignment.role, {}).get("name", assignment.name)
+    if "traits" in values:
+        values["traits"] = list(dict.fromkeys(item.strip() for item in values["traits"] if item.strip()))
+    if "capabilities" in values:
+        values["capabilities"] = list(dict.fromkeys(item.strip() for item in values["capabilities"] if item.strip()))
+    for key, value in values.items():
+        setattr(assignment, key, value)
+    db.commit(); db.refresh(assignment)
+    return assignment
+
+
+@app.put("/api/projects/{project_id}/crew/assignments/{role}", response_model=CrewAssignmentRead)
+def configure_crew_assignment(project_id: int, role: str, payload: CrewAssignmentUpdate, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    if role not in CREW_ROLES:
+        raise HTTPException(422, "Unknown crew role")
+    assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == project_id, CrewAssignment.role == role))
+    if not assignment:
+        defaults = CREW_ROLES[role]
+        assignment = CrewAssignment(project_id=project_id, role=role, name=defaults["name"], capabilities=defaults["capabilities"])
+        db.add(assignment)
+        db.flush()
+    values = payload.model_dump()
+    values["name"] = values["name"].strip() or CREW_ROLES[role]["name"]
+    values["traits"] = list(dict.fromkeys(item.strip() for item in values["traits"] if item.strip()))
+    values["capabilities"] = list(dict.fromkeys(item.strip() for item in values["capabilities"] if item.strip()))
+    for key, value in values.items():
         setattr(assignment, key, value)
     db.commit(); db.refresh(assignment)
     return assignment
@@ -3728,11 +3784,11 @@ def ask_writer(project_id: int, payload: WriterProposalRequest, db: Session = De
     assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == project_id, CrewAssignment.role == "writer", CrewAssignment.enabled.is_(True)))
     if not assignment:
         raise HTTPException(409, "Deploy the Writer bot first")
-    provider = payload.provider or settings.writer_provider
-    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="writer", action_type="develop_story", title="Develop story package", summary=f"{payload.objective[:180]}", status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "request": payload.model_dump()})
+    provider = crew_agent_provider(assignment, payload.provider, settings.writer_provider)
+    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="writer", action_type="develop_story", title="Develop story package", summary=f"{payload.objective[:180]}", status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "request": payload.model_dump()})
     db.add(action); db.commit(); db.refresh(action)
     try:
-        proposal = create_writer_proposal(writer_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_writer_model, instructions=assignment.instructions)
+        proposal = create_writer_proposal(writer_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_writer_model), instructions=crew_agent_instructions(assignment))
         action.payload = {**action.payload, "proposal": proposal.model_dump()}
         action.summary = proposal.rationale
         action.status = "proposed"
@@ -3752,11 +3808,11 @@ def ask_director(project_id: int, payload: DirectorProposalRequest, db: Session 
     assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == project_id, CrewAssignment.role == "director", CrewAssignment.enabled.is_(True)))
     if not assignment:
         raise HTTPException(409, "Deploy the Director bot first")
-    provider = payload.provider or settings.director_provider
-    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="director", action_type="direct_coverage", title="Direct scene and shot coverage", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "request": payload.model_dump()})
+    provider = crew_agent_provider(assignment, payload.provider, settings.director_provider)
+    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="director", action_type="direct_coverage", title="Direct scene and shot coverage", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "request": payload.model_dump()})
     db.add(action); db.commit(); db.refresh(action)
     try:
-        proposal = create_director_proposal(director_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_director_model, instructions=assignment.instructions)
+        proposal = create_director_proposal(director_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_director_model), instructions=crew_agent_instructions(assignment))
         action.payload = {**action.payload, "proposal": proposal.model_dump()}
         action.summary, action.status = proposal.approach, "proposed"
         db.commit(); db.refresh(action)
@@ -3778,11 +3834,11 @@ def ask_animator(shot_id: int, payload: AnimatorProposalRequest, db: Session = D
     assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == scene.project_id, CrewAssignment.role == "animator", CrewAssignment.enabled.is_(True)))
     if not assignment:
         raise HTTPException(409, "Deploy the Animator bot first")
-    provider = payload.provider or settings.animator_provider
-    action = CrewAction(project_id=scene.project_id, assignment_id=assignment.id, role="animator", action_type="animate_shot", title=f"Animate {shot.title}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "target_id": shot.id, "request": payload.model_dump()})
+    provider = crew_agent_provider(assignment, payload.provider, settings.animator_provider)
+    action = CrewAction(project_id=scene.project_id, assignment_id=assignment.id, role="animator", action_type="animate_shot", title=f"Animate {shot.title}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "target_id": shot.id, "request": payload.model_dump()})
     db.add(action); db.commit(); db.refresh(action)
     try:
-        proposal = create_animator_proposal(animator_shot_context(shot, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_animator_model, instructions=assignment.instructions)
+        proposal = create_animator_proposal(animator_shot_context(shot, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_animator_model), instructions=crew_agent_instructions(assignment))
         action.payload = {**action.payload, "proposal": proposal.model_dump()}
         action.summary, action.status = proposal.approach, "proposed"
         db.commit(); db.refresh(action)
@@ -3803,11 +3859,11 @@ def ask_editor(project_id: int, payload: EditorProposalRequest, db: Session = De
     assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == project_id, CrewAssignment.role == "editor", CrewAssignment.enabled.is_(True)))
     if not assignment:
         raise HTTPException(409, "Deploy the Editor bot first")
-    provider = payload.provider or settings.editor_provider
-    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="editor", action_type="edit_timeline", title="Shape the picture edit", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "request": payload.model_dump()})
+    provider = crew_agent_provider(assignment, payload.provider, settings.editor_provider)
+    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="editor", action_type="edit_timeline", title="Shape the picture edit", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "request": payload.model_dump()})
     db.add(action); db.commit(); db.refresh(action)
     try:
-        proposal = create_editor_proposal(editor_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_editor_model, instructions=assignment.instructions)
+        proposal = create_editor_proposal(editor_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_editor_model), instructions=crew_agent_instructions(assignment))
         action.payload = {**action.payload, "proposal": proposal.model_dump()}
         action.summary, action.status = proposal.approach, "proposed"
         db.commit(); db.refresh(action)
@@ -3826,11 +3882,11 @@ def ask_character_designer(character_id: int, payload: CharacterDesignerRequest,
     assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == character.project_id, CrewAssignment.role == "character_designer", CrewAssignment.enabled.is_(True)))
     if not assignment:
         raise HTTPException(409, "Deploy the Character Designer bot first")
-    provider = payload.provider or settings.visual_agent_provider
-    action = CrewAction(project_id=character.project_id, assignment_id=assignment.id, role="character_designer", action_type="design_character", title=f"Design {character.name}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "target_id": character.id, "request": payload.model_dump()})
+    provider = crew_agent_provider(assignment, payload.provider, settings.visual_agent_provider)
+    action = CrewAction(project_id=character.project_id, assignment_id=assignment.id, role="character_designer", action_type="design_character", title=f"Design {character.name}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "target_id": character.id, "request": payload.model_dump()})
     db.add(action); db.commit(); db.refresh(action)
     try:
-        proposal = create_character_design_proposal(character_design_context(character, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_visual_agent_model, instructions=assignment.instructions)
+        proposal = create_character_design_proposal(character_design_context(character, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_visual_agent_model), instructions=crew_agent_instructions(assignment))
         action.payload = {**action.payload, "proposal": proposal.model_dump()}
         action.summary, action.status = proposal.rationale, "proposed"
         db.commit(); db.refresh(action)
@@ -3849,11 +3905,11 @@ def ask_background_artist(location_id: int, payload: BackgroundArtistRequest, db
     assignment = db.scalar(select(CrewAssignment).where(CrewAssignment.project_id == location.project_id, CrewAssignment.role == "background_artist", CrewAssignment.enabled.is_(True)))
     if not assignment:
         raise HTTPException(409, "Deploy the Background Artist bot first")
-    provider = payload.provider or settings.visual_agent_provider
-    action = CrewAction(project_id=location.project_id, assignment_id=assignment.id, role="background_artist", action_type="design_background", title=f"Design {location.name}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "target_id": location.id, "request": payload.model_dump()})
+    provider = crew_agent_provider(assignment, payload.provider, settings.visual_agent_provider)
+    action = CrewAction(project_id=location.project_id, assignment_id=assignment.id, role="background_artist", action_type="design_background", title=f"Design {location.name}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "target_id": location.id, "request": payload.model_dump()})
     db.add(action); db.commit(); db.refresh(action)
     try:
-        proposal = create_background_design_proposal(background_design_context(location, db), payload, provider=provider, api_key=settings.openai_api_key, model=settings.openai_visual_agent_model, instructions=assignment.instructions)
+        proposal = create_background_design_proposal(background_design_context(location, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_visual_agent_model), instructions=crew_agent_instructions(assignment))
         action.payload = {**action.payload, "proposal": proposal.model_dump()}
         action.summary, action.status = proposal.rationale, "proposed"
         db.commit(); db.refresh(action)

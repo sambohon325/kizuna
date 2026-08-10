@@ -468,6 +468,47 @@ def test_crew_modes_replace_active_departments_and_allow_manual_mode(client):
     assert all(item["autonomy"] == "execute" for item in enabled)
 
 
+def test_crew_agent_builder_persists_identity_personality_and_routing(client):
+    project_id = client.post("/api/projects", json={"title": "Agent House"}).json()["id"]
+    configured = client.put(
+        f"/api/projects/{project_id}/crew/assignments/writer",
+        json={
+            "name": "Mika",
+            "enabled": True,
+            "autonomy": "propose",
+            "instructions": "Protect visual causality and quiet emotional turns.",
+            "traits": ["Imaginative", "Patient", "Patient"],
+            "provider_key": "local",
+            "model_override": "",
+            "capabilities": ["story outline", "dialogue pass"],
+        },
+    )
+    assert configured.status_code == 200
+    agent = configured.json()
+    assert agent["name"] == "Mika"
+    assert agent["traits"] == ["Imaginative", "Patient"]
+    assert agent["provider_key"] == "local"
+    assert agent["capabilities"] == ["story outline", "dialogue pass"]
+
+    action = client.post(
+        f"/api/projects/{project_id}/crew/writer/propose",
+        json={
+            "premise": "A lighthouse keeper hears tomorrow's final broadcast.",
+            "format": "short film",
+            "target_duration_minutes": 8,
+            "audience": "general",
+            "genre": "science fantasy",
+            "themes": ["memory"],
+            "objective": "Develop the story.",
+            "provider": "openai",
+        },
+    )
+    assert action.status_code == 201
+    assert action.json()["payload"]["provider"] == "simulation"
+    assert action.json()["payload"]["agent_profile"]["name"] == "Mika"
+    assert action.json()["payload"]["agent_profile"]["traits"] == ["Imaginative", "Patient"]
+
+
 def test_character_design_compiles_style_aware_reference_brief(client):
     project_id = client.post("/api/projects", json={"title": "Red Current"}).json()["id"]
     character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "quiet protector", "want": "Keep the crew alive", "need": "Trust their judgment", "contradiction": "Protects everyone while refusing care"}).json()

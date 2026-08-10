@@ -918,7 +918,8 @@ def test_audio_regions_split_duplicate_and_delete_non_destructively(client):
     assert [item["id"] for item in cues] == [first["id"], second["id"]]
 
 
-def test_ai_crew_delegates_and_approves_sound_producer_work(client):
+def test_ai_crew_delegates_and_approves_sound_producer_work(client, monkeypatch):
+    import app.main as main_module
     project_id = client.post("/api/projects", json={"title": "Delegated Signal"}).json()["id"]
     character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Mika", "role": "radio operator"}).json()
     client.put(f"/api/characters/{character['id']}/voice", json={"provider": "simulation", "provider_voice_id": "coral", "direction_notes": "Quiet confidence."})
@@ -943,11 +944,30 @@ def test_ai_crew_delegates_and_approves_sound_producer_work(client):
     approved = client.post(f"/api/crew-actions/{proposed.json()['id']}/approve")
     assert approved.status_code == 200
     assert approved.json()["status"] == "completed"
+    assert approved.json()["durable_job_id"] is not None
     assert approved.json()["result"]["provider"] == "simulation"
     assert client.get(approved.json()["result"]["uri"]).headers["content-type"] == "audio/wav"
+    completed_job = client.get(f"/api/jobs/{approved.json()['durable_job_id']}").json()["job"]
+    assert completed_job["kind"] == "crew.voice" and completed_job["status"] == "completed"
     crew = client.get(f"/api/projects/{project_id}/crew").json()
     assert crew["actions"][0]["status"] == "completed"
     assert client.get("/api/voice/providers").json()["providers"][0]["ready"] is True
+
+    second_cue = client.post(f"/api/audio-tracks/{studio['tracks'][0]['id']}/cues", json={"character_id": character["id"], "start_seconds": 0.7, "duration_seconds": 0.5, "text": "Signal received.", "direction": "Relieved."}).json()
+    monkeypatch.setattr(main_module.settings, "job_inline_fallback", False)
+    second_proposal = client.post(f"/api/audio-cues/{second_cue['id']}/crew/generate-voice", json={"provider": "simulation"}).json()
+    queued = client.post(f"/api/crew-actions/{second_proposal['id']}/approve").json()
+    assert queued["status"] == "queued" and queued["durable_job_id"] is not None
+    assert client.post(f"/api/jobs/{queued['durable_job_id']}/cancel").json()["status"] == "cancelled"
+    cancelled_action = next(action for action in client.get(f"/api/projects/{project_id}/crew").json()["actions"] if action["id"] == queued["id"])
+    assert cancelled_action["status"] == "cancelled"
+    assert client.post(f"/api/jobs/{queued['durable_job_id']}/retry").json()["status"] == "queued"
+    from app.job_worker import run_job_once
+    assert run_job_once("test:voice-worker") is True
+    finished_job = client.get(f"/api/jobs/{queued['durable_job_id']}").json()["job"]
+    finished_action = next(action for action in client.get(f"/api/projects/{project_id}/crew").json()["actions"] if action["id"] == queued["id"])
+    assert finished_job["status"] == "completed" and finished_action["status"] == "completed"
+    assert client.get(finished_action["result"]["uri"]).headers["content-type"] == "audio/wav"
 
 
 def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):

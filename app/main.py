@@ -2792,7 +2792,7 @@ def cancel_durable_job(job_id: int, db: Session = Depends(get_db)):
         if backup and job.status == "cancelled": backup.status = "cancelled"
         schedule_id = int(job.payload.get("schedule_id") or 0)
         if schedule_id and job.status == "cancelled" and (schedule := db.get(BackupSchedule, schedule_id)): schedule.last_status = "cancelled"
-    elif job.kind == "crew.proposal":
+    elif job.kind in {"crew.proposal", "crew.voice"}:
         action = db.scalar(select(CrewAction).where(CrewAction.durable_job_id == job.id))
         if action and job.status == "cancelled": action.status = "cancelled"
     db.commit(); db.refresh(job)
@@ -2813,7 +2813,7 @@ def retry_durable_job(job_id: int, db: Session = Depends(get_db)):
         if backup: backup.status = "queued"
         schedule_id = int(job.payload.get("schedule_id") or 0)
         if schedule_id and (schedule := db.get(BackupSchedule, schedule_id)): schedule.last_status, schedule.last_error = "queued", ""
-    elif job.kind == "crew.proposal":
+    elif job.kind in {"crew.proposal", "crew.voice"}:
         action = db.scalar(select(CrewAction).where(CrewAction.durable_job_id == job.id))
         if action: action.status, action.error = "queued", ""
     db.commit(); db.refresh(job)
@@ -3826,7 +3826,7 @@ def execute_crew_proposal_job(db: Session, job: DurableJob) -> dict:
     return {"crew_action_id": action.id, "role": action.role, "crew_status": action.status, "requires_approval": action.requires_approval}
 
 
-def mark_crew_proposal_job_failed(db: Session, job: DurableJob, error: str) -> None:
+def mark_crew_job_failed(db: Session, job: DurableJob, error: str) -> None:
     action = db.get(CrewAction, int(job.payload.get("crew_action_id") or 0))
     if action:
         action.status = "queued" if job.status == "queued" else "cancelled" if job.status == "cancelled" else "failed"
@@ -3844,7 +3844,37 @@ def queue_crew_proposal(action: CrewAction, db: Session) -> CrewAction:
             complete_job(db, job, execute_crew_proposal_job(db, job))
         except Exception as exc:
             fail_job(db, job, str(exc))
-            mark_crew_proposal_job_failed(db, job, str(exc))
+            mark_crew_job_failed(db, job, str(exc))
+    db.commit(); db.refresh(action)
+    return action
+
+
+def execute_crew_voice_job(db: Session, job: DurableJob) -> dict:
+    action = db.get(CrewAction, int(job.payload["crew_action_id"]))
+    if action is None: raise RuntimeError("The queued Sound Producer assignment no longer exists")
+    if action.status == "completed" and action.result.get("uri"):
+        return {"crew_action_id": action.id, "cue_id": action.result.get("cue_id"), "crew_status": action.status, "uri": action.result.get("uri"), "provider": action.result.get("provider")}
+    assignment = db.get(CrewAssignment, action.assignment_id) if action.assignment_id else None
+    if assignment is None or not assignment.enabled: raise RuntimeError("The assigned Sound Producer is no longer active")
+    update_progress(db, job, 20, "Preparing the voice bible and performance direction")
+    action = perform_voice_action(action, db)
+    if action.status == "failed": raise RuntimeError(action.error or "The Sound Producer could not generate the performance")
+    update_progress(db, job, 90, "Placing the finished performance on the audio track")
+    return {"crew_action_id": action.id, "cue_id": action.result.get("cue_id"), "crew_status": action.status, "uri": action.result.get("uri"), "provider": action.result.get("provider")}
+
+
+def queue_crew_voice(action: CrewAction, db: Session) -> CrewAction:
+    db.add(action); db.flush()
+    job = enqueue_job(db, "crew.voice", {"crew_action_id": action.id, "role": action.role, "action_type": action.action_type, "cue_id": action.payload.get("cue_id")}, project_id=action.project_id, queue="audio", priority=70, max_attempts=3, idempotency_key=f"crew-voice:{action.id}")
+    action.durable_job_id, action.status, action.error = job.id, "queued", ""
+    if settings.job_inline_fallback and job.status == "queued":
+        try:
+            start_job(db, job, "web:inline")
+            update_progress(db, job, 5, "Preparing Sound Producer assignment")
+            complete_job(db, job, execute_crew_voice_job(db, job))
+        except Exception as exc:
+            fail_job(db, job, str(exc))
+            mark_crew_job_failed(db, job, str(exc))
     db.commit(); db.refresh(action)
     return action
 
@@ -4171,8 +4201,9 @@ def ask_sound_producer(cue_id: int, payload: CrewVoiceRequest, db: Session = Dep
     if not assignment:
         raise HTTPException(409, "Deploy the Sound Producer bot first")
     action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="sound_producer", action_type="generate_voice", title="Produce dialogue performance", summary=f"Generate and place: {cue.text[:120]}", status="proposed", requires_approval=assignment.autonomy != "execute", payload={"cue_id": cue.id, "provider": payload.provider, "voice": payload.voice})
+    if assignment.autonomy == "execute": return queue_crew_voice(action, db)
     db.add(action); db.commit(); db.refresh(action)
-    return perform_voice_action(action, db) if assignment.autonomy == "execute" else action
+    return action
 
 
 @app.post("/api/projects/{project_id}/crew/writer/propose", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
@@ -4267,7 +4298,7 @@ def approve_crew_action(action_id: int, db: Session = Depends(get_db)):
         raise HTTPException(409, "Only proposed work can be approved")
     action.reviewed_at = datetime.now(timezone.utc)
     if action.action_type == "generate_voice":
-        return perform_voice_action(action, db)
+        return queue_crew_voice(action, db)
     if action.action_type == "develop_story":
         return perform_writer_action(action, db)
     if action.action_type == "direct_coverage":

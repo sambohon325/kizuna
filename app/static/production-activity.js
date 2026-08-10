@@ -5,6 +5,7 @@ const activityLabels={
   'maintenance.storage-audit':{name:'Verify storage safety',department:'Maintenance',icon:'◌'},
   'maintenance.backup':{name:'Back up production',department:'Storage & backup',icon:'⬡'},
   'crew.proposal':{name:'Prepare AI Crew proposal',department:'AI Crew',icon:'✧'},
+  'crew.voice':{name:'Generate voice performance',department:'Audio & voice',icon:'♫'},
 };
 let activityJobs=[],activeActivityJobId=0,activityStatus='all';
 

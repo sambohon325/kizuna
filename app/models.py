@@ -825,6 +825,7 @@ class ProjectBackup(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    durable_job_id: Mapped[int | None] = mapped_column(ForeignKey("durable_jobs.id"), nullable=True, unique=True)
     filename: Mapped[str] = mapped_column(String(255))
     storage_key: Mapped[str] = mapped_column(Text)
     checksum_sha256: Mapped[str] = mapped_column(String(64))

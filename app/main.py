@@ -1517,7 +1517,7 @@ def storage_for_backend(backend: str):
 
 def backup_response(backup: ProjectBackup) -> dict:
     backend, _ = split_storage_key(backup.storage_key)
-    return {"id": backup.id, "project_id": backup.project_id, "filename": backup.filename, "checksum_sha256": backup.checksum_sha256, "size_bytes": backup.size_bytes, "asset_count": backup.asset_count, "status": backup.status, "backend": backend, "download_url": f"/api/backups/{backup.id}/download", "created_at": backup.created_at}
+    return {"id": backup.id, "project_id": backup.project_id, "durable_job_id": backup.durable_job_id, "filename": backup.filename, "checksum_sha256": backup.checksum_sha256, "size_bytes": backup.size_bytes, "asset_count": backup.asset_count, "status": backup.status, "backend": backend, "download_url": f"/api/backups/{backup.id}/download" if backup.status == "completed" else "", "created_at": backup.created_at}
 
 
 def backup_schedule_for(project_id: int, db: Session) -> BackupSchedule:
@@ -1583,19 +1583,44 @@ def list_project_backups(project_id: int, db: Session = Depends(get_db)):
     return [backup_response(item) for item in db.scalars(select(ProjectBackup).where(ProjectBackup.project_id == project_id).order_by(ProjectBackup.id.desc())).all()]
 
 
-def create_project_backup_record(project_id: int, db: Session) -> dict:
+def queue_project_backup(project_id: int, db: Session, *, schedule_id: int | None = None, idempotency_key: str = "") -> tuple[ProjectBackup, DurableJob]:
     project = db.scalars(project_query().where(Project.id == project_id)).one_or_none()
     if not project:
         raise HTTPException(404, "Project not found")
     policy = storage_policy_for(project_id, db)
+    storage_for_backend(policy.backend)
+    filename = f"kizuna-project-{project_id}-{utcnow().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}.zip"
+    backup = ProjectBackup(project_id=project_id, filename=filename, storage_key=f"{policy.backend}:", checksum_sha256="", status="queued")
+    db.add(backup); db.flush()
+    job = enqueue_job(db, "maintenance.backup", {"project_id": project_id, "backup_id": backup.id, "schedule_id": schedule_id, "backend": policy.backend}, project_id=project_id, queue="maintenance", priority=70, max_attempts=3, idempotency_key=idempotency_key or f"backup:{backup.id}")
+    backup.durable_job_id = job.id
+    if settings.job_inline_fallback and job.status == "queued":
+        try:
+            start_job(db, job, "web:inline")
+            update_progress(db, job, 5, "Collecting production records")
+            complete_job(db, job, execute_project_backup_job(db, job))
+        except Exception as exc:
+            fail_job(db, job, str(exc))
+            mark_project_backup_failed(db, job, str(exc))
+    return backup, job
+
+
+def execute_project_backup_job(db: Session, job: DurableJob) -> dict:
+    backup = db.get(ProjectBackup, int(job.payload["backup_id"]))
+    if backup is None: raise RuntimeError("The queued backup record no longer exists")
+    project_id = backup.project_id
+    project = db.scalars(project_query().where(Project.id == project_id)).one_or_none()
+    if project is None: raise RuntimeError("The production no longer exists")
+    policy = storage_policy_for(project_id, db)
+    backend = str(job.payload.get("backend") or policy.backend)
     manifest = {"format": "kizuna-project-backup", "version": 1, "created_at": utcnow().isoformat() + "Z", "project": ProjectRead.model_validate(project).model_dump(mode="json"), "assets": project_asset_library(project_id, db), "storage": {"backend": policy.backend, "include_media": policy.include_media}}
     assets = [path for uri in project_owned_uris(project_id, db) if (path := local_render_path(uri))] if policy.include_media else []
-    filename = f"kizuna-project-{project_id}-{utcnow().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}.zip"
-    store = storage_for_backend(policy.backend)
-    key, size, checksum, asset_count = store.create_backup(project_id, filename, manifest, assets)
-    backup = ProjectBackup(project_id=project_id, filename=filename, storage_key=f"{policy.backend}:{key}", checksum_sha256=checksum, size_bytes=size, asset_count=asset_count)
-    db.add(backup); db.flush()
-    backups = db.scalars(select(ProjectBackup).where(ProjectBackup.project_id == project_id).order_by(ProjectBackup.created_at.desc(), ProjectBackup.id.desc())).all()
+    update_progress(db, job, 30, f"Packaging production with {len(assets)} media file(s)")
+    key, size, checksum, asset_count = storage_for_backend(backend).create_backup(project_id, backup.filename, manifest, assets)
+    backup.storage_key, backup.checksum_sha256, backup.size_bytes, backup.asset_count, backup.status = f"{backend}:{key}", checksum, size, asset_count, "completed"
+    db.flush()
+    update_progress(db, job, 90, "Applying backup retention policy")
+    backups = db.scalars(select(ProjectBackup).where(ProjectBackup.project_id == project_id, ProjectBackup.status == "completed").order_by(ProjectBackup.created_at.desc(), ProjectBackup.id.desc())).all()
     cutoff = utcnow() - timedelta(days=policy.retention_days)
     for index, old in enumerate(backups):
         if old.id == backup.id:
@@ -1605,13 +1630,27 @@ def create_project_backup_record(project_id: int, db: Session) -> dict:
             try: storage_for_backend(old_backend).delete(old_key)
             except Exception: continue
             db.delete(old)
-    db.commit(); db.refresh(backup)
-    return backup_response(backup)
+    schedule_id = job.payload.get("schedule_id")
+    if schedule_id and (schedule := db.get(BackupSchedule, int(schedule_id))):
+        schedule.last_status, schedule.last_error = "completed", ""
+    append_audit_event(db, project_id, "storage", "backup_completed", subject_type="backup", subject_key=str(backup.id), details={"backend": backend, "checksum_sha256": checksum, "size_bytes": size, "asset_count": asset_count})
+    return {"backup_id": backup.id, "filename": backup.filename, "backend": backend, "checksum_sha256": checksum, "size_bytes": size, "asset_count": asset_count, "download_url": f"/api/backups/{backup.id}/download"}
+
+
+def mark_project_backup_failed(db: Session, job: DurableJob, error: str) -> None:
+    status_value = job.status if job.status in {"queued", "failed", "cancelled"} else "failed"
+    backup_id = int(job.payload.get("backup_id") or 0)
+    if backup := db.get(ProjectBackup, backup_id): backup.status = status_value
+    schedule_id = int(job.payload.get("schedule_id") or 0)
+    if schedule := db.get(BackupSchedule, schedule_id): schedule.last_status, schedule.last_error = status_value, error[:1000]
 
 
 @app.post("/api/projects/{project_id}/backups", response_model=ProjectBackupRead, status_code=status.HTTP_201_CREATED)
 def create_project_backup(project_id: int, db: Session = Depends(get_db)):
-    try: return create_project_backup_record(project_id, db)
+    try:
+        backup, _ = queue_project_backup(project_id, db)
+        db.commit(); db.refresh(backup)
+        return backup_response(backup)
     except RuntimeError as exc: raise HTTPException(409, str(exc)) from exc
 
 
@@ -1620,6 +1659,7 @@ def download_project_backup(backup_id: int, db: Session = Depends(get_db)):
     backup = db.get(ProjectBackup, backup_id)
     if not backup:
         raise HTTPException(404, "Backup not found")
+    if backup.status != "completed": raise HTTPException(409, "Backup is not ready to download")
     backend, key = split_storage_key(backup.storage_key)
     if backend == "s3":
         try: return RedirectResponse(s3_production_storage.presigned_download(key, backup.filename, settings.s3_presign_seconds), status_code=307)
@@ -2110,19 +2150,22 @@ def utcnow() -> datetime:
 
 
 def run_due_backups(db: Session) -> dict:
-    now = utcnow(); completed, failed = 0, 0
+    now = utcnow(); queued, completed, failed = 0, 0, 0
     schedules = db.scalars(select(BackupSchedule).where(BackupSchedule.enabled.is_(True), BackupSchedule.next_run_at.is_not(None), BackupSchedule.next_run_at <= now).order_by(BackupSchedule.next_run_at)).all()
     for schedule in schedules:
         project_id = schedule.project_id
         try:
-            create_project_backup_record(project_id, db)
-            schedule.last_status, schedule.last_error, completed = "completed", "", completed + 1
+            backup, job = queue_project_backup(project_id, db, schedule_id=schedule.id, idempotency_key=f"scheduled:{schedule.id}:{schedule.next_run_at.isoformat()}")
+            if job.status == "completed": completed += 1
+            elif job.status == "failed": failed += 1
+            else: queued += 1
+            schedule.last_status, schedule.last_error = job.status, job.error
         except Exception as exc:
             db.rollback(); schedule = db.scalar(select(BackupSchedule).where(BackupSchedule.project_id == project_id))
             schedule.last_status, schedule.last_error, failed = "failed", str(exc)[:1000], failed + 1
         schedule.last_run_at = now; schedule.next_run_at = now + timedelta(hours=schedule.interval_hours)
         db.commit()
-    return {"due": len(schedules), "completed": completed, "failed": failed}
+    return {"due": len(schedules), "queued": queued, "completed": completed, "failed": failed}
 
 
 def authenticate_worker(worker_id: int, authorization: str | None, db: Session) -> RenderWorker:
@@ -2744,6 +2787,11 @@ def cancel_durable_job(job_id: int, db: Session = Depends(get_db)):
     if job.kind == "media.replication":
         transfer = db.scalar(select(MediaTransferJob).where(MediaTransferJob.durable_job_id == job.id))
         if transfer and job.status == "cancelled": transfer.status, transfer.leased_until = "cancelled", None
+    elif job.kind == "maintenance.backup":
+        backup = db.scalar(select(ProjectBackup).where(ProjectBackup.durable_job_id == job.id))
+        if backup and job.status == "cancelled": backup.status = "cancelled"
+        schedule_id = int(job.payload.get("schedule_id") or 0)
+        if schedule_id and job.status == "cancelled" and (schedule := db.get(BackupSchedule, schedule_id)): schedule.last_status = "cancelled"
     db.commit(); db.refresh(job)
     return job
 
@@ -2757,6 +2805,11 @@ def retry_durable_job(job_id: int, db: Session = Depends(get_db)):
     if job.kind == "media.replication":
         transfer = db.scalar(select(MediaTransferJob).where(MediaTransferJob.durable_job_id == job.id))
         if transfer: transfer.status, transfer.attempts, transfer.error, transfer.leased_until, transfer.completed_at = "queued", 0, "", None, None
+    elif job.kind == "maintenance.backup":
+        backup = db.scalar(select(ProjectBackup).where(ProjectBackup.durable_job_id == job.id))
+        if backup: backup.status = "queued"
+        schedule_id = int(job.payload.get("schedule_id") or 0)
+        if schedule_id and (schedule := db.get(BackupSchedule, schedule_id)): schedule.last_status, schedule.last_error = "queued", ""
     db.commit(); db.refresh(job)
     return job
 

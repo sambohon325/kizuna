@@ -124,6 +124,7 @@ services:
     command: python -m app.backup_scheduler
     environment:
       KIZUNA_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kizuna}:${POSTGRES_PASSWORD:?Set a strong Postgres password}@postgres:5432/${POSTGRES_DB:-kizuna}
+      KIZUNA_REDIS_URL: redis://redis:6379/0
       KIZUNA_STORAGE_DIRECTORY: /app/storage
       KIZUNA_S3_BUCKET: ${KIZUNA_S3_BUCKET:-}
       KIZUNA_S3_ENDPOINT_URL: ${KIZUNA_S3_ENDPOINT_URL:-}
@@ -136,6 +137,8 @@ services:
       migrate:
         condition: service_completed_successfully
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - render_data:/app/renders

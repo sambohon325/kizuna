@@ -3,6 +3,7 @@ const activityLabels={
   'media.proxy':{name:'Build editing preview',department:'Media preparation',icon:'▣'},
   'media.replication':{name:'Copy original to Hive',department:'Storage & backup',icon:'⇄'},
   'maintenance.storage-audit':{name:'Verify storage safety',department:'Maintenance',icon:'◌'},
+  'maintenance.backup':{name:'Back up production',department:'Storage & backup',icon:'⬡'},
 };
 let activityJobs=[],activeActivityJobId=0,activityStatus='all';
 

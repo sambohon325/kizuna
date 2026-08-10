@@ -1216,6 +1216,7 @@ def test_project_backups_retention_and_expiring_delivery_links(client, monkeypat
     second = client.post(f"/api/projects/{project_id}/backups").json()
     backups = client.get(f"/api/projects/{project_id}/backups").json()
     assert [item["id"] for item in backups] == [second["id"]]
+    assert second["durable_job_id"] is not None
     assert backups[0]["backend"] == "local"
     assert second["asset_count"] == 1
     assert len(second["checksum_sha256"]) == 64
@@ -1232,8 +1233,23 @@ def test_project_backups_retention_and_expiring_delivery_links(client, monkeypat
         schedule = db.scalar(select(BackupSchedule).where(BackupSchedule.project_id == project_id))
         schedule.next_run_at = main_module.utcnow() - timedelta(minutes=1); db.commit()
         result = main_module.run_due_backups(db)
-    assert result == {"due": 1, "completed": 1, "failed": 0}
+    assert result == {"due": 1, "queued": 0, "completed": 1, "failed": 0}
     assert client.get(f"/api/projects/{project_id}/backup-schedule").json()["last_status"] == "completed"
+    backup_jobs = [job for job in client.get(f"/api/jobs?project_id={project_id}").json() if job["kind"] == "maintenance.backup"]
+    assert len(backup_jobs) == 3 and all(job["status"] == "completed" for job in backup_jobs)
+
+    monkeypatch.setattr(main_module.settings, "job_inline_fallback", False)
+    pending = client.post(f"/api/projects/{project_id}/backups").json()
+    assert pending["status"] == "queued" and pending["download_url"] == ""
+    assert client.get(f"/api/backups/{pending['id']}/download").status_code == 409
+    assert client.post(f"/api/jobs/{pending['durable_job_id']}/cancel").json()["status"] == "cancelled"
+    assert next(item for item in client.get(f"/api/projects/{project_id}/backups").json() if item["id"] == pending["id"])["status"] == "cancelled"
+    assert client.post(f"/api/jobs/{pending['durable_job_id']}/retry").json()["status"] == "queued"
+    assert next(item for item in client.get(f"/api/projects/{project_id}/backups").json() if item["id"] == pending["id"])["status"] == "queued"
+    from app.job_worker import run_job_once
+    assert run_job_once("test:backup-worker") is True
+    completed_pending = next(item for item in client.get(f"/api/projects/{project_id}/backups").json() if item["id"] == pending["id"])
+    assert completed_pending["status"] == "completed" and completed_pending["download_url"]
 
     delivery_payload = {"asset_uri": asset["uri"], "label": "Studio review", "expires_hours": 24, "max_downloads": 1}
     assert client.post(f"/api/projects/{project_id}/delivery-links", json=delivery_payload).status_code == 409

@@ -1118,6 +1118,7 @@ class ProjectBackupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     project_id: int
+    durable_job_id: int | None = None
     filename: str
     checksum_sha256: str
     size_bytes: int

@@ -375,7 +375,7 @@ class BackgroundAssetRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     location_id: int
-    background_job_id: int
+    background_job_id: int | None
     filename: str
     uri: str
     mime_type: str

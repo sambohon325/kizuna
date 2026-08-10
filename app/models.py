@@ -400,7 +400,7 @@ class BackgroundAsset(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     location_id: Mapped[int] = mapped_column(ForeignKey("world_locations.id"))
-    background_job_id: Mapped[int] = mapped_column(ForeignKey("background_jobs.id"))
+    background_job_id: Mapped[int | None] = mapped_column(ForeignKey("background_jobs.id"), nullable=True)
     filename: Mapped[str] = mapped_column(String(255))
     uri: Mapped[str] = mapped_column(Text)
     mime_type: Mapped[str] = mapped_column(String(80), default="image/png")

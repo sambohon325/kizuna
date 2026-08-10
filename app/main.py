@@ -27,7 +27,7 @@ from app.schema_migrations import database_revision, migrate_database
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
 from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecurityEvent, AccountToken, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, BillingEvent, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, SignupAttempt, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, UserSubscription, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaAssetRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SceneUpdate, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundAssetRead, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaAssetRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SceneUpdate, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
 from app.compliance import COMPLIANCE_STAGES, append_audit_event, compliance_overview, fan_fiction_violation, latest_current_scan, policy_for as compliance_policy_for, require_release_clearance, resolve_finding, run_stage_scan, save_asset_rights, scan_passes
@@ -1891,6 +1891,53 @@ def record_background_assets(job: BackgroundJob, outputs: list[dict], db: Sessio
         filename = output["filename"]
         uri = f"/renders/{filename}" if output.get("path") else output.get("url", "")
         db.add(BackgroundAsset(location_id=job.location_id, background_job_id=job.id, filename=filename, uri=uri, mime_type=output.get("mime_type", "image/png"), asset_metadata={key: value for key, value in output.items() if key != "path"}, version=version))
+
+
+@app.post("/api/locations/{location_id}/assets/upload", response_model=BackgroundAssetRead, status_code=status.HTTP_201_CREATED)
+async def upload_background_reference(location_id: int, request: Request, filename: str, db: Session = Depends(get_db)):
+    location = db.get(WorldLocation, location_id)
+    if not location:
+        raise HTTPException(404, "Location not found")
+    content = await request.body()
+    if not content or len(content) > settings.max_artifact_bytes:
+        raise HTTPException(413, "Background reference is empty or too large")
+    suffix = Path(filename).suffix.lower()
+    allowed = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+    if suffix not in allowed:
+        raise HTTPException(422, "Upload a PNG, JPG, or WEBP background reference")
+    try:
+        with Image.open(BytesIO(content)) as source:
+            source.verify()
+        with Image.open(BytesIO(content)) as source:
+            width, height = source.size
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(422, "The uploaded background reference is not a valid image")
+    existing = db.scalars(select(BackgroundAsset).where(BackgroundAsset.location_id == location.id)).all()
+    stored_name = f"location-{location.id}-reference-{uuid4().hex[:10]}{suffix}"
+    (render_dir / stored_name).write_bytes(content)
+    asset = BackgroundAsset(
+        location_id=location.id,
+        background_job_id=None,
+        filename=stored_name,
+        uri=f"/renders/{stored_name}",
+        mime_type=allowed[suffix],
+        asset_metadata={"source": "creator_upload", "original_filename": Path(filename).name, "width": width, "height": height, "coverage": ["source_reference"]},
+        version=len(existing) + 1,
+    )
+    db.add(asset); db.flush()
+    append_audit_event(
+        db,
+        location.project_id,
+        "asset",
+        "background_reference_uploaded",
+        actor_type="creator",
+        subject_type="background_asset",
+        subject_key=str(asset.id),
+        details={"location_id": location.id, "filename": Path(filename).name, "mime_type": allowed[suffix], "width": width, "height": height, "checksum_sha256": hashlib.sha256(content).hexdigest()},
+    )
+    db.commit(); db.refresh(asset)
+    refresh_media_lifecycle(location.project_id, db)
+    return asset
 
 
 @app.post("/api/locations/{location_id}/generate", response_model=BackgroundJobRead, status_code=status.HTTP_201_CREATED)

@@ -573,6 +573,27 @@ def test_character_reference_upload_rejects_non_images(client):
     assert response.status_code == 422
 
 
+def test_creator_can_upload_background_reference_to_world_library(client):
+    import base64
+
+    project = client.post("/api/projects", json={"title": "World Reference", "logline": "An original city moves each night."}).json()
+    location = client.post(f"/api/projects/{project['id']}/locations", json={"name": "Moving Quarter", "narrative_function": "A refuge that never stays safe"}).json()
+    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+    uploaded = client.post(
+        f"/api/locations/{location['id']}/assets/upload?filename=moving-quarter.png",
+        headers={"Content-Type": "image/png"},
+        content=png,
+    )
+    assert uploaded.status_code == 201
+    assert uploaded.json()["location_id"] == location["id"]
+    assert uploaded.json()["background_job_id"] is None
+    assert uploaded.json()["asset_metadata"]["source"] == "creator_upload"
+    library = client.get(f"/api/projects/{project['id']}/asset-reviews").json()["assets"]
+    assert any(item["asset_type"] == "background" and item["id"] == uploaded.json()["id"] for item in library)
+    audit = client.get(f"/api/projects/{project['id']}/audit-ledger").json()["events"]
+    assert any(event["action"] == "background_reference_uploaded" and event["details"]["location_id"] == location["id"] for event in audit)
+
+
 def test_render_worker_claims_uploads_and_completes_farm_job(client):
     project_id = client.post("/api/projects", json={"title": "Farm Test"}).json()["id"]
     character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Iona", "role": "navigator"}).json()

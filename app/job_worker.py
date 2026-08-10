@@ -10,11 +10,11 @@ from app.database import SessionLocal
 from app.job_queue import claim_job, complete_job, fail_job, redis_client, update_progress, wait_for_notification
 from app.media_proxy import execute_media_proxy_job
 from app.storage_maintenance import execute_storage_audit_job
-from app.main import execute_project_backup_job, mark_project_backup_failed
+from app.main import execute_crew_proposal_job, execute_project_backup_job, mark_crew_proposal_job_failed, mark_project_backup_failed
 from app.schema_migrations import migrate_database
 
 
-HANDLERS = {"media.proxy": execute_media_proxy_job, "maintenance.storage-audit": execute_storage_audit_job, "maintenance.backup": execute_project_backup_job}
+HANDLERS = {"media.proxy": execute_media_proxy_job, "maintenance.storage-audit": execute_storage_audit_job, "maintenance.backup": execute_project_backup_job, "crew.proposal": execute_crew_proposal_job}
 
 
 def worker_identity() -> str:
@@ -40,6 +40,7 @@ def run_job_once(worker_id: str) -> bool:
             job = db.get(type(job), job_id)
             fail_job(db, job, str(exc))
             if job.kind == "maintenance.backup": mark_project_backup_failed(db, job, str(exc))
+            elif job.kind == "crew.proposal": mark_crew_proposal_job_failed(db, job, str(exc))
             db.commit()
         return True
 

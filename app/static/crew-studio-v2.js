@@ -18,14 +18,14 @@ function setupCrewStudioV2(){
 function crewV2Assignment(role){return activeCrew?.assignments.find(item=>item.role===role);}
 
 function renderCrewV2(briefing){
-  const mode=crewMode(),pending=activeCrew.actions.filter(action=>action.status==='proposed'),history=activeCrew.actions.filter(action=>action.status!=='proposed');
+  const mode=crewMode(),pending=activeCrew.actions.filter(action=>action.status==='proposed'),working=activeCrew.actions.filter(action=>['queued','running'].includes(action.status)),history=activeCrew.actions.filter(action=>!['queued','running','proposed'].includes(action.status));
   document.querySelectorAll('[data-crew-preset]').forEach(button=>button.classList.toggle('active',button.dataset.crewPreset===mode));
   document.querySelector('#crew-mode-status').textContent=mode;
   document.querySelector('#crew-briefing').innerHTML=`<i>${briefing.suggestions.length?'!':'&#10003;'}</i><div><b>${safe(briefing.headline)}</b><small>${safe(briefing.suggestions[0]?.reason||'The crew is ready for the next creative pass.')}</small></div>`;
   const list=document.querySelector('#crew-roles');list.innerHTML=crewRoles.map(role=>{const assignment=crewV2Assignment(role.id);return `<button type="button" class="crew-v2-agent ${assignment?.enabled?'enabled':''} ${role.id===crewV2Role?'active':''}" data-agent-role="${safe(role.id)}"><i>${crewV2Icons[role.id]||'AI'}</i><span><b>${safe(assignment?.name||role.name)}</b><small>${safe(role.name)}</small></span><em>${assignment?.enabled?'On':'Off'}</em></button>`;}).join('');
   list.querySelectorAll('[data-agent-role]').forEach(button=>button.onclick=()=>{crewV2Role=button.dataset.agentRole;renderCrewV2(briefing);});renderCrewV2Editor();
   const actionCard=action=>`<article class="crew-action"><div><b>${safe(action.title)}</b><small>${safe(action.summary)}</small>${action.error?`<div class="job-error">${safe(action.error)}</div>`:''}${action.status==='proposed'?`<div class="crew-action-buttons"><button data-crew-action="approve" data-action-id="${action.id}" class="primary">Approve</button><button data-crew-action="reject" data-action-id="${action.id}">Reject</button></div>`:''}</div><span class="status">${safe(action.status)}</span></article>`;
-  document.querySelector('#crew-actions').innerHTML=`${pending.length?`<div class="approval-summary"><b>${pending.length} decision${pending.length===1?'':'s'} waiting</b><small>Approve only the work you want to keep.</small></div>${pending.map(actionCard).join('')}`:'<div class="crew-empty">Nothing needs your attention right now.</div>'}${history.length?`<details class="advanced-settings crew-history"><summary>Recent activity · ${history.length}</summary><div>${history.map(actionCard).join('')}</div></details>`:''}`;document.querySelectorAll('[data-crew-action]').forEach(button=>button.onclick=()=>reviewCrewAction(button.dataset.crewAction,Number(button.dataset.actionId)));
+  document.querySelector('#crew-actions').innerHTML=`${working.length?`<div class="approval-summary"><b>${working.length} crew assignment${working.length===1?' is':'s are'} working</b><small>Progress and recovery controls are available in Production Activity.</small></div>${working.map(actionCard).join('')}`:''}${pending.length?`<div class="approval-summary"><b>${pending.length} decision${pending.length===1?'':'s'} waiting</b><small>Approve only the work you want to keep.</small></div>${pending.map(actionCard).join('')}`:working.length?'':'<div class="crew-empty">Nothing needs your attention right now.</div>'}${history.length?`<details class="advanced-settings crew-history"><summary>Recent activity · ${history.length}</summary><div>${history.map(actionCard).join('')}</div></details>`:''}`;document.querySelectorAll('[data-crew-action]').forEach(button=>button.onclick=()=>reviewCrewAction(button.dataset.crewAction,Number(button.dataset.actionId)));
 }
 
 function renderCrewV2Editor(){
@@ -52,3 +52,4 @@ async function saveCrewV2Agent(){
 const crewV2BaseRender=renderCrew;
 renderCrew=function(briefing){renderCrewV2(briefing);};
 setupCrewStudioV2();
+setInterval(()=>{if(crewDialog.hasAttribute('open')&&activeCrew?.actions?.some(action=>['queued','running'].includes(action.status)))loadCrew(activeCrew.project_id).catch(()=>{});},5000);

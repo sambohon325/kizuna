@@ -730,6 +730,7 @@ class CrewActionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     project_id: int
+    durable_job_id: int | None = None
     assignment_id: int | None
     role: str
     action_type: str

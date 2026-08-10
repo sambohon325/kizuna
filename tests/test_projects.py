@@ -423,6 +423,9 @@ def test_writer_bot_proposes_auditable_story_before_applying_it(client):
     assert proposed.status_code == 201
     action = proposed.json()
     assert action["status"] == "proposed"
+    assert action["durable_job_id"] is not None
+    proposal_job = client.get(f"/api/jobs/{action['durable_job_id']}").json()
+    assert proposal_job["job"]["kind"] == "crew.proposal" and proposal_job["job"]["status"] == "completed"
     assert action["payload"]["proposal"]["target_duration_minutes"] == 96
     assert len(action["payload"]["proposal"]["beats"]) == 12
     assert client.get(f"/api/projects/{project_id}").json()["story_brief"] is None
@@ -441,6 +444,29 @@ def test_writer_bot_proposes_auditable_story_before_applying_it(client):
     automatic = client.post(f"/api/projects/{project_id}/crew/writer/propose", json=payload)
     assert automatic.json()["status"] == "completed"
     assert client.get(f"/api/projects/{project_id}").json()["story_brief"]["target_duration_minutes"] == 97
+
+
+def test_crew_proposal_jobs_cancel_retry_and_resume_on_worker(client, monkeypatch):
+    import app.main as main_module
+
+    project_id = client.post("/api/projects", json={"title": "Durable Writers Room", "logline": "A cartographer redraws a city that changes overnight."}).json()["id"]
+    client.post(f"/api/projects/{project_id}/crew/deploy", json={"roles": ["writer"], "autonomy": "propose"})
+    monkeypatch.setattr(main_module.settings, "job_inline_fallback", False)
+    payload = {"premise": "A cartographer must map a changing city before her family disappears from it.", "format": "short film", "target_duration_minutes": 12, "audience": "general", "genre": "fantasy mystery", "themes": ["memory"], "objective": "Build a visual short-film outline.", "provider": "simulation"}
+    queued = client.post(f"/api/projects/{project_id}/crew/writer/propose", json=payload).json()
+    assert queued["status"] == "queued" and queued["durable_job_id"] is not None
+    job_id = queued["durable_job_id"]
+    assert client.post(f"/api/jobs/{job_id}/cancel").json()["status"] == "cancelled"
+    action = next(item for item in client.get(f"/api/projects/{project_id}/crew").json()["actions"] if item["id"] == queued["id"])
+    assert action["status"] == "cancelled"
+    assert client.post(f"/api/jobs/{job_id}/retry").json()["status"] == "queued"
+    from app.job_worker import run_job_once
+    assert run_job_once("test:crew-worker") is True
+    completed_job = client.get(f"/api/jobs/{job_id}").json()["job"]
+    assert completed_job["status"] == "completed" and completed_job["result"]["crew_status"] == "proposed"
+    proposed = next(item for item in client.get(f"/api/projects/{project_id}/crew").json()["actions"] if item["id"] == queued["id"])
+    assert proposed["status"] == "proposed" and len(proposed["payload"]["proposal"]["beats"]) == 8
+    assert client.post(f"/api/crew-actions/{queued['id']}/approve").json()["status"] == "completed"
 
 
 def test_crew_modes_replace_active_departments_and_allow_manual_mode(client):

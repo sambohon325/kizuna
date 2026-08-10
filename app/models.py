@@ -633,6 +633,7 @@ class CrewAction(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    durable_job_id: Mapped[int | None] = mapped_column(ForeignKey("durable_jobs.id"), nullable=True, unique=True)
     assignment_id: Mapped[int | None] = mapped_column(ForeignKey("crew_assignments.id"), nullable=True)
     role: Mapped[str] = mapped_column(String(48))
     action_type: Mapped[str] = mapped_column(String(80))

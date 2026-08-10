@@ -2792,6 +2792,9 @@ def cancel_durable_job(job_id: int, db: Session = Depends(get_db)):
         if backup and job.status == "cancelled": backup.status = "cancelled"
         schedule_id = int(job.payload.get("schedule_id") or 0)
         if schedule_id and job.status == "cancelled" and (schedule := db.get(BackupSchedule, schedule_id)): schedule.last_status = "cancelled"
+    elif job.kind == "crew.proposal":
+        action = db.scalar(select(CrewAction).where(CrewAction.durable_job_id == job.id))
+        if action and job.status == "cancelled": action.status = "cancelled"
     db.commit(); db.refresh(job)
     return job
 
@@ -2810,6 +2813,9 @@ def retry_durable_job(job_id: int, db: Session = Depends(get_db)):
         if backup: backup.status = "queued"
         schedule_id = int(job.payload.get("schedule_id") or 0)
         if schedule_id and (schedule := db.get(BackupSchedule, schedule_id)): schedule.last_status, schedule.last_error = "queued", ""
+    elif job.kind == "crew.proposal":
+        action = db.scalar(select(CrewAction).where(CrewAction.durable_job_id == job.id))
+        if action: action.status, action.error = "queued", ""
     db.commit(); db.refresh(job)
     return job
 
@@ -3756,6 +3762,93 @@ def crew_agent_model(assignment: CrewAssignment, fallback: str) -> str:
     return assignment.model_override.strip() or fallback
 
 
+def execute_crew_proposal_job(db: Session, job: DurableJob) -> dict:
+    action = db.get(CrewAction, int(job.payload["crew_action_id"]))
+    if action is None: raise RuntimeError("The queued crew assignment no longer exists")
+    assignment = db.get(CrewAssignment, action.assignment_id) if action.assignment_id else None
+    if assignment is None or not assignment.enabled: raise RuntimeError("The assigned AI Crew member is no longer active")
+    provider = str(action.payload.get("provider") or "simulation")
+    request_data = action.payload.get("request") or {}
+    action.status, action.error = "running", ""
+    update_progress(db, job, 20, f"{assignment.name} is reviewing the production context")
+
+    if action.action_type == "develop_story":
+        request = WriterProposalRequest.model_validate(request_data)
+        project = db.get(Project, action.project_id)
+        proposal = create_writer_proposal(writer_project_context(project, db), request, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_writer_model), instructions=crew_agent_instructions(assignment))
+        action.payload, action.summary = {**action.payload, "proposal": proposal.model_dump()}, proposal.rationale
+    elif action.action_type == "direct_coverage":
+        request = DirectorProposalRequest.model_validate(request_data)
+        project = db.get(Project, action.project_id)
+        proposal = create_director_proposal(director_project_context(project, db), request, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_director_model), instructions=crew_agent_instructions(assignment))
+        action.payload, action.summary = {**action.payload, "proposal": proposal.model_dump()}, proposal.approach
+    elif action.action_type == "animate_shot":
+        request = AnimatorProposalRequest.model_validate(request_data)
+        shot = db.scalars(select(Shot).options(selectinload(Shot.plan)).where(Shot.id == int(action.payload.get("target_id", 0)))).one_or_none()
+        if shot is None: raise RuntimeError("The requested shot no longer exists")
+        proposal = create_animator_proposal(animator_shot_context(shot, db), request, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_animator_model), instructions=crew_agent_instructions(assignment))
+        action.payload, action.summary = {**action.payload, "proposal": proposal.model_dump()}, proposal.approach
+    elif action.action_type == "edit_timeline":
+        request = EditorProposalRequest.model_validate(request_data)
+        project = db.scalars(project_query().where(Project.id == action.project_id)).one_or_none()
+        if project is None: raise RuntimeError("The production no longer exists")
+        proposal = create_editor_proposal(editor_project_context(project, db), request, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_editor_model), instructions=crew_agent_instructions(assignment))
+        action.payload, action.summary = {**action.payload, "proposal": proposal.model_dump()}, proposal.approach
+    elif action.action_type == "design_character":
+        request = CharacterDesignerRequest.model_validate(request_data)
+        character = db.scalars(select(Character).options(selectinload(Character.design)).where(Character.id == int(action.payload.get("target_id", 0)))).one_or_none()
+        if character is None: raise RuntimeError("The requested character no longer exists")
+        proposal = create_character_design_proposal(character_design_context(character, db), request, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_visual_agent_model), instructions=crew_agent_instructions(assignment))
+        action.payload, action.summary = {**action.payload, "proposal": proposal.model_dump()}, proposal.rationale
+    elif action.action_type == "design_background":
+        request = BackgroundArtistRequest.model_validate(request_data)
+        location = db.scalars(select(WorldLocation).options(selectinload(WorldLocation.design)).where(WorldLocation.id == int(action.payload.get("target_id", 0)))).one_or_none()
+        if location is None: raise RuntimeError("The requested location no longer exists")
+        proposal = create_background_design_proposal(background_design_context(location, db), request, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_visual_agent_model), instructions=crew_agent_instructions(assignment))
+        action.payload, action.summary = {**action.payload, "proposal": proposal.model_dump()}, proposal.rationale
+    else:
+        raise RuntimeError(f"Unsupported durable crew action: {action.action_type}")
+
+    action.status = "proposed"
+    update_progress(db, job, 75, "Creative proposal is ready")
+    db.flush()
+    if not action.requires_approval:
+        update_progress(db, job, 85, "Applying the approved automatic crew action")
+        action = {
+            "develop_story": perform_writer_action,
+            "direct_coverage": perform_director_action,
+            "animate_shot": perform_animator_action,
+            "edit_timeline": perform_editor_action,
+            "design_character": perform_character_design_action,
+            "design_background": perform_background_design_action,
+        }[action.action_type](action, db)
+        if action.status == "failed": raise RuntimeError(action.error or f"{assignment.name} could not apply the proposal")
+    return {"crew_action_id": action.id, "role": action.role, "crew_status": action.status, "requires_approval": action.requires_approval}
+
+
+def mark_crew_proposal_job_failed(db: Session, job: DurableJob, error: str) -> None:
+    action = db.get(CrewAction, int(job.payload.get("crew_action_id") or 0))
+    if action:
+        action.status = "queued" if job.status == "queued" else "cancelled" if job.status == "cancelled" else "failed"
+        action.error = error[:4000]
+
+
+def queue_crew_proposal(action: CrewAction, db: Session) -> CrewAction:
+    db.add(action); db.flush()
+    job = enqueue_job(db, "crew.proposal", {"crew_action_id": action.id, "role": action.role, "action_type": action.action_type}, project_id=action.project_id, queue="crew", priority=60, max_attempts=3, idempotency_key=f"crew-action:{action.id}")
+    action.durable_job_id, action.status = job.id, "queued"
+    if settings.job_inline_fallback and job.status == "queued":
+        try:
+            start_job(db, job, "web:inline")
+            update_progress(db, job, 5, "Preparing AI Crew assignment")
+            complete_job(db, job, execute_crew_proposal_job(db, job))
+        except Exception as exc:
+            fail_job(db, job, str(exc))
+            mark_crew_proposal_job_failed(db, job, str(exc))
+    db.commit(); db.refresh(action)
+    return action
+
+
 @app.get("/api/animation/providers")
 def animation_providers():
     return {"active": settings.animator_provider, "providers": [{"id": "simulation", "label": "Local motion planner", "ready": True}, {"id": "openai", "label": "OpenAI Animator", "ready": bool(settings.openai_api_key)}]}
@@ -3890,7 +3983,7 @@ def crew_briefing(project_id: int, db: Session = Depends(get_db)):
 
 
 def pending_crew_action(project_id: int, role: str, db: Session) -> CrewAction | None:
-    return db.scalar(select(CrewAction).where(CrewAction.project_id == project_id, CrewAction.role == role, CrewAction.status.in_(["running", "proposed"])).order_by(CrewAction.id.desc()))
+    return db.scalar(select(CrewAction).where(CrewAction.project_id == project_id, CrewAction.role == role, CrewAction.status.in_(["queued", "running", "proposed"])).order_by(CrewAction.id.desc()))
 
 
 def shot_has_current_motion(shot: Shot, db: Session) -> bool:
@@ -3918,7 +4011,7 @@ def workflow_stages(project: Project, db: Session) -> list[dict]:
         if complete:
             state = "complete"
         elif pending:
-            state, reason = "awaiting_approval", f"{pending.title} is {pending.status}."
+            state, reason = ("awaiting_approval" if pending.status == "proposed" else "working"), f"{pending.title} is {pending.status}."
         elif blocked:
             state, reason = "blocked", blocked
         elif role and role not in assignments:
@@ -4091,19 +4184,8 @@ def ask_writer(project_id: int, payload: WriterProposalRequest, db: Session = De
     if not assignment:
         raise HTTPException(409, "Deploy the Writer bot first")
     provider = crew_agent_provider(assignment, payload.provider, settings.writer_provider)
-    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="writer", action_type="develop_story", title="Develop story package", summary=f"{payload.objective[:180]}", status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "request": payload.model_dump()})
-    db.add(action); db.commit(); db.refresh(action)
-    try:
-        proposal = create_writer_proposal(writer_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_writer_model), instructions=crew_agent_instructions(assignment))
-        action.payload = {**action.payload, "proposal": proposal.model_dump()}
-        action.summary = proposal.rationale
-        action.status = "proposed"
-        db.commit(); db.refresh(action)
-    except WriterAgentError as exc:
-        action.status, action.error = "failed", str(exc)
-        db.commit(); db.refresh(action)
-        return action
-    return perform_writer_action(action, db) if assignment.autonomy == "execute" else action
+    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="writer", action_type="develop_story", title="Develop story package", summary=f"{payload.objective[:180]}", status="queued", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "request": payload.model_dump()})
+    return queue_crew_proposal(action, db)
 
 
 @app.post("/api/projects/{project_id}/crew/director/propose", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
@@ -4115,18 +4197,8 @@ def ask_director(project_id: int, payload: DirectorProposalRequest, db: Session 
     if not assignment:
         raise HTTPException(409, "Deploy the Director bot first")
     provider = crew_agent_provider(assignment, payload.provider, settings.director_provider)
-    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="director", action_type="direct_coverage", title="Direct scene and shot coverage", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "request": payload.model_dump()})
-    db.add(action); db.commit(); db.refresh(action)
-    try:
-        proposal = create_director_proposal(director_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_director_model), instructions=crew_agent_instructions(assignment))
-        action.payload = {**action.payload, "proposal": proposal.model_dump()}
-        action.summary, action.status = proposal.approach, "proposed"
-        db.commit(); db.refresh(action)
-    except DirectorAgentError as exc:
-        action.status, action.error = "failed", str(exc)
-        db.commit(); db.refresh(action)
-        return action
-    return perform_director_action(action, db) if assignment.autonomy == "execute" else action
+    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="director", action_type="direct_coverage", title="Direct scene and shot coverage", summary=payload.objective[:180], status="queued", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "request": payload.model_dump()})
+    return queue_crew_proposal(action, db)
 
 
 @app.post("/api/shots/{shot_id}/crew/animate", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
@@ -4141,18 +4213,8 @@ def ask_animator(shot_id: int, payload: AnimatorProposalRequest, db: Session = D
     if not assignment:
         raise HTTPException(409, "Deploy the Animator bot first")
     provider = crew_agent_provider(assignment, payload.provider, settings.animator_provider)
-    action = CrewAction(project_id=scene.project_id, assignment_id=assignment.id, role="animator", action_type="animate_shot", title=f"Animate {shot.title}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "target_id": shot.id, "request": payload.model_dump()})
-    db.add(action); db.commit(); db.refresh(action)
-    try:
-        proposal = create_animator_proposal(animator_shot_context(shot, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_animator_model), instructions=crew_agent_instructions(assignment))
-        action.payload = {**action.payload, "proposal": proposal.model_dump()}
-        action.summary, action.status = proposal.approach, "proposed"
-        db.commit(); db.refresh(action)
-    except AnimatorAgentError as exc:
-        action.status, action.error = "failed", str(exc)
-        db.commit(); db.refresh(action)
-        return action
-    return perform_animator_action(action, db) if assignment.autonomy == "execute" else action
+    action = CrewAction(project_id=scene.project_id, assignment_id=assignment.id, role="animator", action_type="animate_shot", title=f"Animate {shot.title}", summary=payload.objective[:180], status="queued", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "target_id": shot.id, "request": payload.model_dump()})
+    return queue_crew_proposal(action, db)
 
 
 @app.post("/api/projects/{project_id}/crew/editor/propose", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
@@ -4166,18 +4228,8 @@ def ask_editor(project_id: int, payload: EditorProposalRequest, db: Session = De
     if not assignment:
         raise HTTPException(409, "Deploy the Editor bot first")
     provider = crew_agent_provider(assignment, payload.provider, settings.editor_provider)
-    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="editor", action_type="edit_timeline", title="Shape the picture edit", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "request": payload.model_dump()})
-    db.add(action); db.commit(); db.refresh(action)
-    try:
-        proposal = create_editor_proposal(editor_project_context(project, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_editor_model), instructions=crew_agent_instructions(assignment))
-        action.payload = {**action.payload, "proposal": proposal.model_dump()}
-        action.summary, action.status = proposal.approach, "proposed"
-        db.commit(); db.refresh(action)
-    except EditorAgentError as exc:
-        action.status, action.error = "failed", str(exc)
-        db.commit(); db.refresh(action)
-        return action
-    return perform_editor_action(action, db) if assignment.autonomy == "execute" else action
+    action = CrewAction(project_id=project_id, assignment_id=assignment.id, role="editor", action_type="edit_timeline", title="Shape the picture edit", summary=payload.objective[:180], status="queued", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "request": payload.model_dump()})
+    return queue_crew_proposal(action, db)
 
 
 @app.post("/api/characters/{character_id}/crew/design", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
@@ -4189,18 +4241,8 @@ def ask_character_designer(character_id: int, payload: CharacterDesignerRequest,
     if not assignment:
         raise HTTPException(409, "Deploy the Character Designer bot first")
     provider = crew_agent_provider(assignment, payload.provider, settings.visual_agent_provider)
-    action = CrewAction(project_id=character.project_id, assignment_id=assignment.id, role="character_designer", action_type="design_character", title=f"Design {character.name}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "target_id": character.id, "request": payload.model_dump()})
-    db.add(action); db.commit(); db.refresh(action)
-    try:
-        proposal = create_character_design_proposal(character_design_context(character, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_visual_agent_model), instructions=crew_agent_instructions(assignment))
-        action.payload = {**action.payload, "proposal": proposal.model_dump()}
-        action.summary, action.status = proposal.rationale, "proposed"
-        db.commit(); db.refresh(action)
-    except VisualAgentError as exc:
-        action.status, action.error = "failed", str(exc)
-        db.commit(); db.refresh(action)
-        return action
-    return perform_character_design_action(action, db) if assignment.autonomy == "execute" else action
+    action = CrewAction(project_id=character.project_id, assignment_id=assignment.id, role="character_designer", action_type="design_character", title=f"Design {character.name}", summary=payload.objective[:180], status="queued", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "target_id": character.id, "request": payload.model_dump()})
+    return queue_crew_proposal(action, db)
 
 
 @app.post("/api/locations/{location_id}/crew/design", response_model=CrewActionRead, status_code=status.HTTP_201_CREATED)
@@ -4212,18 +4254,8 @@ def ask_background_artist(location_id: int, payload: BackgroundArtistRequest, db
     if not assignment:
         raise HTTPException(409, "Deploy the Background Artist bot first")
     provider = crew_agent_provider(assignment, payload.provider, settings.visual_agent_provider)
-    action = CrewAction(project_id=location.project_id, assignment_id=assignment.id, role="background_artist", action_type="design_background", title=f"Design {location.name}", summary=payload.objective[:180], status="running", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "target_id": location.id, "request": payload.model_dump()})
-    db.add(action); db.commit(); db.refresh(action)
-    try:
-        proposal = create_background_design_proposal(background_design_context(location, db), payload, provider=provider, api_key=settings.openai_api_key, model=crew_agent_model(assignment, settings.openai_visual_agent_model), instructions=crew_agent_instructions(assignment))
-        action.payload = {**action.payload, "proposal": proposal.model_dump()}
-        action.summary, action.status = proposal.rationale, "proposed"
-        db.commit(); db.refresh(action)
-    except VisualAgentError as exc:
-        action.status, action.error = "failed", str(exc)
-        db.commit(); db.refresh(action)
-        return action
-    return perform_background_design_action(action, db) if assignment.autonomy == "execute" else action
+    action = CrewAction(project_id=location.project_id, assignment_id=assignment.id, role="background_artist", action_type="design_background", title=f"Design {location.name}", summary=payload.objective[:180], status="queued", requires_approval=assignment.autonomy != "execute", payload={"provider": provider, "agent_profile": crew_agent_profile(assignment), "target_id": location.id, "request": payload.model_dump()})
+    return queue_crew_proposal(action, db)
 
 
 @app.post("/api/crew-actions/{action_id}/approve", response_model=CrewActionRead)

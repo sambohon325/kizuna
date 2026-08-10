@@ -887,6 +887,7 @@ class MediaTransferJob(Base):
     __tablename__ = "media_transfer_jobs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    durable_job_id: Mapped[int | None] = mapped_column(ForeignKey("durable_jobs.id"), nullable=True, unique=True)
     job_key: Mapped[str] = mapped_column(String(64), unique=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
     asset_key: Mapped[str] = mapped_column(String(160))

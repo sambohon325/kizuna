@@ -995,6 +995,7 @@ class MediaTransferComplete(BaseModel):
 class MediaTransferRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    durable_job_id: int | None
     project_id: int
     asset_key: str
     target_node_key: str

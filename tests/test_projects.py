@@ -1342,10 +1342,22 @@ def test_media_transfer_queue_claims_verifies_and_preserves_server_original(clie
     assert policy.status_code == 200
     queued = client.post(f"/api/projects/{project_id}/media-transfers/queue", json={})
     assert queued.status_code == 200 and queued.json()["queued"] == 1
+    transfer = client.get(f"/api/projects/{project_id}/media-transfers").json()[0]
+    assert transfer["durable_job_id"] is not None
+    activity = client.get(f"/api/jobs?project_id={project_id}").json()
+    durable = next(item for item in activity if item["kind"] == "media.replication")
+    assert durable["id"] == transfer["durable_job_id"] and durable["status"] == "queued"
+    assert client.post(f"/api/jobs/{durable['id']}/cancel").json()["status"] == "cancelled"
+    assert client.get(f"/api/projects/{project_id}/media-transfers").json()[0]["status"] == "cancelled"
+    assert client.post(f"/api/jobs/{durable['id']}/retry").json()["status"] == "queued"
+    assert client.get(f"/api/projects/{project_id}/media-transfers").json()[0]["status"] == "queued"
 
     claim = client.post("/api/nodes/transfer-node-0001/media-transfers/claim", headers=headers, json={})
     assert claim.status_code == 200
     job = claim.json(); source = client.get(job["download_url"], headers=headers)
+    running_detail = client.get(f"/api/jobs/{durable['id']}").json()
+    assert running_detail["job"]["status"] == "running" and running_detail["job"]["progress_percent"] == 25
+    assert any("started downloading" in event["message"] for event in running_detail["events"])
     assert source.status_code == 200
     assert hashlib.sha256(source.content).hexdigest() == original["checksum_sha256"]
     blocked_cleanup = client.get(f"/api/projects/{project_id}/media-cleanup").json()
@@ -1356,6 +1368,7 @@ def test_media_transfer_queue_claims_verifies_and_preserves_server_original(clie
     assert wrong.status_code == 422
     completed = client.post(f"/api/nodes/transfer-node-0001/media-transfers/{job['id']}/complete", headers=headers, json={"object_ref": "vault://ren-reference", "checksum_sha256": original["checksum_sha256"], "size_bytes": len(source.content)})
     assert completed.status_code == 200 and completed.json()["status"] == "completed"
+    assert client.get(f"/api/jobs/{durable['id']}").json()["job"]["status"] == "completed"
     refreshed = client.get(f"/api/projects/{project_id}/media-index").json()
     assert refreshed["summary"]["completed_transfers"] == 1
     assert refreshed["summary"]["cleanup_eligible_assets"] == 1

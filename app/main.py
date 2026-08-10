@@ -28,7 +28,7 @@ from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
 from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecurityEvent, AccountToken, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, BillingEvent, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LibraryAsset, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, SignupAttempt, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, UserSubscription, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
 from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundAssetRead, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LibraryAssetRead, LibraryAssetUpdate, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaAssetRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SceneUpdate, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
-from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, request_cancel, retry_job, start_job, update_progress
+from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, recover_expired_jobs, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
 from app.compliance import COMPLIANCE_STAGES, append_audit_event, compliance_overview, fan_fiction_violation, latest_current_scan, policy_for as compliance_policy_for, require_release_clearance, resolve_finding, run_stage_scan, save_asset_rights, scan_passes
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
@@ -2739,7 +2739,11 @@ def get_durable_job(job_id: int, db: Session = Depends(get_db)):
 def cancel_durable_job(job_id: int, db: Session = Depends(get_db)):
     job = db.get(DurableJob, job_id)
     if job is None: raise HTTPException(status_code=404, detail="Job not found")
-    request_cancel(db, job); db.commit(); db.refresh(job)
+    request_cancel(db, job)
+    if job.kind == "media.replication":
+        transfer = db.scalar(select(MediaTransferJob).where(MediaTransferJob.durable_job_id == job.id))
+        if transfer and job.status == "cancelled": transfer.status, transfer.leased_until = "cancelled", None
+    db.commit(); db.refresh(job)
     return job
 
 
@@ -2748,7 +2752,11 @@ def retry_durable_job(job_id: int, db: Session = Depends(get_db)):
     job = db.get(DurableJob, job_id)
     if job is None: raise HTTPException(status_code=404, detail="Job not found")
     if job.status not in {"failed", "cancelled"}: raise HTTPException(status_code=409, detail="Only failed or cancelled jobs can be retried")
-    retry_job(db, job); db.commit(); db.refresh(job)
+    retry_job(db, job)
+    if job.kind == "media.replication":
+        transfer = db.scalar(select(MediaTransferJob).where(MediaTransferJob.durable_job_id == job.id))
+        if transfer: transfer.status, transfer.attempts, transfer.error, transfer.leased_until, transfer.completed_at = "queued", 0, "", None, None
+    db.commit(); db.refresh(job)
     return job
 
 
@@ -2855,10 +2863,24 @@ def authenticate_media_node(node_key: str, authorization: str | None, db: Sessio
 
 
 def recover_expired_media_transfers(db: Session) -> None:
-    for job in db.scalars(select(MediaTransferJob).where(MediaTransferJob.leased_until < utcnow(), MediaTransferJob.status.in_(["leased", "transferring"]))).all():
-        job.status = "queued" if job.attempts < job.max_attempts else "failed"
-        job.leased_until = None
+    recover_expired_jobs(db)
+    for job in db.scalars(select(MediaTransferJob).where(MediaTransferJob.durable_job_id.is_not(None))).all():
+        durable = db.get(DurableJob, job.durable_job_id)
+        if durable and job.status in {"leased", "transferring"} and durable.status != "running":
+            job.status, job.attempts, job.leased_until, job.error = durable.status, durable.attempts, durable.leased_until, durable.error
+    for job in db.scalars(select(MediaTransferJob).where(MediaTransferJob.durable_job_id.is_(None), MediaTransferJob.leased_until < utcnow(), MediaTransferJob.status.in_(["leased", "transferring"]))).all():
+        job.status = "queued" if job.attempts < job.max_attempts else "failed"; job.leased_until = None
         job.error = "Transfer lease expired before the node confirmed a verified copy."
+
+
+def ensure_transfer_durable_job(transfer: MediaTransferJob, priority: int, db: Session) -> DurableJob:
+    durable = db.get(DurableJob, transfer.durable_job_id) if transfer.durable_job_id else None
+    if durable is None:
+        durable = enqueue_job(db, "media.replication", {"transfer_id": transfer.id, "asset_key": transfer.asset_key, "target_node_key": transfer.target_node_key, "expected_size_bytes": transfer.expected_size_bytes}, project_id=transfer.project_id, queue="media", priority=priority, max_attempts=transfer.max_attempts, idempotency_key=transfer.job_key)
+        transfer.durable_job_id = durable.id
+    elif transfer.status == "queued" and durable.status in {"failed", "cancelled", "completed"}:
+        retry_job(db, durable)
+    return durable
 
 
 @app.post("/api/projects/{project_id}/media-transfers/queue")
@@ -2887,11 +2909,12 @@ def queue_media_transfers(project_id: int, db: Session = Depends(get_db)):
             job = db.scalar(select(MediaTransferJob).where(MediaTransferJob.job_key == key))
             if job is None:
                 job = MediaTransferJob(job_key=key, project_id=project_id, asset_key=source.asset_key, source_residency_id=source.id, target_node_key=control.node_key, status="queued", expected_checksum_sha256=source.checksum_sha256, expected_size_bytes=source.size_bytes)
-                db.add(job)
+                db.add(job); db.flush()
             elif job.status in {"failed", "completed"}:
                 job.status, job.attempts, job.error, job.leased_until, job.completed_at = "queued", 0, "", None, None
                 job.source_residency_id, job.expected_checksum_sha256, job.expected_size_bytes = source.id, source.checksum_sha256, source.size_bytes
             if job.status == "queued": queued += 1
+            ensure_transfer_durable_job(job, control.priority, db)
             needed -= 1
         shortfall += max(0, needed)
     db.commit()
@@ -2917,8 +2940,14 @@ def claim_media_transfer(node_key: str, authorization: str | None = Header(defau
     source = db.get(AssetResidency, job.source_residency_id); path = local_render_path(source.uri) if source else None
     if not source or not path:
         job.status, job.error = "failed", "The server source file is no longer available."
+        durable = db.get(DurableJob, job.durable_job_id) if job.durable_job_id else None
+        if durable:
+            start_job(db, durable, f"hive:{node_key}"); fail_job(db, durable, job.error)
         db.commit(); return Response(status_code=204)
-    job.status, job.attempts, job.leased_until, job.error = "leased", job.attempts + 1, utcnow() + timedelta(minutes=10), ""
+    durable = ensure_transfer_durable_job(job, control.priority, db)
+    if durable.status != "queued": db.commit(); return Response(status_code=204)
+    start_job(db, durable, f"hive:{node_key}")
+    job.status, job.attempts, job.leased_until, job.error = "leased", durable.attempts, durable.leased_until, ""
     node.last_seen = utcnow(); db.commit()
     return {"id": job.id, "project_id": job.project_id, "asset_key": job.asset_key, "filename": path.name, "expected_checksum_sha256": job.expected_checksum_sha256, "expected_size_bytes": job.expected_size_bytes, "download_url": f"/api/nodes/{node_key}/media-transfers/{job.id}/source"}
 
@@ -2937,7 +2966,11 @@ def download_media_transfer_source(node_key: str, transfer_id: int, authorizatio
     job = leased_media_transfer(node_key, transfer_id, authorization, db)
     source = db.get(AssetResidency, job.source_residency_id); path = local_render_path(source.uri) if source else None
     if not path: raise HTTPException(404, "Server source file is unavailable")
-    job.status, job.leased_until = "transferring", utcnow() + timedelta(minutes=10); db.commit()
+    job.status = "transferring"
+    durable = db.get(DurableJob, job.durable_job_id) if job.durable_job_id else None
+    if durable: update_progress(db, durable, 25, "Hive computer started downloading the original"); job.leased_until = durable.leased_until
+    else: job.leased_until = utcnow() + timedelta(minutes=10)
+    db.commit()
     return FileResponse(path, filename=path.name, media_type="application/octet-stream")
 
 
@@ -2948,6 +2981,8 @@ def complete_media_transfer(node_key: str, transfer_id: int, payload: MediaTrans
         raise HTTPException(422, "Transferred file does not match the server checksum and size")
     upsert_residency(db, job.project_id, job.asset_key, "original", "hive", node_key=node_key, object_ref=payload.object_ref, checksum=checksum, size=payload.size_bytes, status_value="available")
     job.status, job.object_ref, job.error, job.leased_until, job.completed_at = "completed", payload.object_ref, "", None, utcnow()
+    durable = db.get(DurableJob, job.durable_job_id) if job.durable_job_id else None
+    if durable: complete_job(db, durable, {"transfer_id": job.id, "object_ref": payload.object_ref, "checksum_sha256": checksum, "size_bytes": payload.size_bytes})
     db.commit(); db.refresh(job)
     return job
 
@@ -2955,7 +2990,11 @@ def complete_media_transfer(node_key: str, transfer_id: int, payload: MediaTrans
 @app.post("/api/nodes/{node_key}/media-transfers/{transfer_id}/fail", response_model=MediaTransferRead)
 def fail_media_transfer(node_key: str, transfer_id: int, payload: JobFailure, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     job = leased_media_transfer(node_key, transfer_id, authorization, db)
-    job.status = "queued" if payload.retryable and job.attempts < job.max_attempts else "failed"
+    durable = db.get(DurableJob, job.durable_job_id) if job.durable_job_id else None
+    if durable:
+        if not payload.retryable: durable.attempts = durable.max_attempts
+        fail_job(db, durable, payload.error); job.status, job.attempts = durable.status, durable.attempts
+    else: job.status = "queued" if payload.retryable and job.attempts < job.max_attempts else "failed"
     job.error, job.leased_until = payload.error[:4000], None
     db.commit(); db.refresh(job)
     return job

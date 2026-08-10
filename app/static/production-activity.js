@@ -2,6 +2,7 @@ const activityWorkspaceDialog=document.querySelector('#activity-dialog');
 const activityLabels={
   'media.proxy':{name:'Build editing preview',department:'Media preparation',icon:'▣'},
   'media.replication':{name:'Copy original to Hive',department:'Storage & backup',icon:'⇄'},
+  'maintenance.storage-audit':{name:'Verify storage safety',department:'Maintenance',icon:'◌'},
 };
 let activityJobs=[],activeActivityJobId=0,activityStatus='all';
 

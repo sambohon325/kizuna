@@ -65,7 +65,7 @@ pytest
 
 ## Next milestones
 
-1. Migrate maintenance, crew, and render workloads onto the durable job contract; media transfer is now linked to the shared ledger
+1. Migrate scheduled backups, crew, and render workloads onto the durable job contract; media transfer and storage safety audits now use the shared ledger
 2. Add PostgreSQL migration verification in CI
 3. Add health checks, job diagnostics, backup restore verification, and the guarded Coolify deployment path
 4. Add authentication and tenant isolation before any public deployment

@@ -30,6 +30,7 @@ from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecuri
 from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundAssetRead, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LibraryAssetRead, LibraryAssetUpdate, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaAssetRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SceneUpdate, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, recover_expired_jobs, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
+from app.storage_maintenance import execute_storage_audit_job
 from app.compliance import COMPLIANCE_STAGES, append_audit_event, compliance_overview, fan_fiction_violation, latest_current_scan, policy_for as compliance_policy_for, require_release_clearance, resolve_finding, run_stage_scan, save_asset_rights, scan_passes
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
@@ -2824,6 +2825,21 @@ def media_cleanup_state(project_id: int, db: Session) -> dict:
 def get_media_cleanup(project_id: int, db: Session = Depends(get_db)):
     if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
     return media_cleanup_state(project_id, db)
+
+
+@app.post("/api/projects/{project_id}/media-cleanup/verify", response_model=DurableJobRead, status_code=status.HTTP_202_ACCEPTED)
+def verify_media_cleanup(project_id: int, db: Session = Depends(get_db)):
+    if not db.get(Project, project_id): raise HTTPException(404, "Project not found")
+    job = enqueue_job(db, "maintenance.storage-audit", {"project_id": project_id, "deletion_enabled": False}, project_id=project_id, queue="maintenance", priority=65, max_attempts=3, idempotency_key=f"{project_id}|{utcnow().strftime('%Y%m%d%H%M')}")
+    if settings.job_inline_fallback and job.status == "queued":
+        try:
+            start_job(db, job, "web:inline")
+            update_progress(db, job, 5, "Starting storage safety check")
+            complete_job(db, job, execute_storage_audit_job(db, job))
+        except Exception as exc:
+            fail_job(db, job, str(exc))
+    db.commit(); db.refresh(job)
+    return job
 
 
 @app.put("/api/projects/{project_id}/media-cleanup")

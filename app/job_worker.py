@@ -9,10 +9,11 @@ from app.config import settings
 from app.database import SessionLocal
 from app.job_queue import claim_job, complete_job, fail_job, redis_client, update_progress, wait_for_notification
 from app.media_proxy import execute_media_proxy_job
+from app.storage_maintenance import execute_storage_audit_job
 from app.schema_migrations import migrate_database
 
 
-HANDLERS = {"media.proxy": execute_media_proxy_job}
+HANDLERS = {"media.proxy": execute_media_proxy_job, "maintenance.storage-audit": execute_storage_audit_job}
 
 
 def worker_identity() -> str:

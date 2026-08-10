@@ -1379,6 +1379,15 @@ def test_media_transfer_queue_claims_verifies_and_preserves_server_original(clie
     assert approved.status_code == 200
     approved_item = next(entry for entry in approved.json()["items"] if entry["asset_key"] == item["asset_key"])
     assert approved_item["status"] == "approved"
+    verification = client.post(f"/api/projects/{project_id}/media-cleanup/verify")
+    assert verification.status_code == 202
+    maintenance_job = verification.json()
+    assert maintenance_job["kind"] == "maintenance.storage-audit" and maintenance_job["status"] == "completed"
+    assert maintenance_job["result"]["checked"] >= 1
+    assert maintenance_job["result"]["eligible"] >= 1
+    assert maintenance_job["result"]["deletion_performed"] is False
+    maintenance_detail = client.get(f"/api/jobs/{maintenance_job['id']}").json()
+    assert any("Verified" in event["message"] for event in maintenance_detail["events"])
     assert client.get(generated["assets"][0]["uri"]).status_code == 200
     assert client.post(f"/api/projects/{project_id}/media-transfers/queue", json={}).json()["already_safe"] == 1
     shutil.rmtree(thumbnail_root)

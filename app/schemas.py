@@ -480,6 +480,14 @@ class SceneCreate(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     summary: str = ""
     position: int = Field(default=1, ge=1)
+    slugline: str = Field(default="", max_length=255)
+    script: str = ""
+    notes: str = ""
+    draft_status: str = Field(default="outline", pattern="^(outline|draft|review|locked)$")
+
+
+class SceneUpdate(SceneCreate):
+    pass
 
 
 class SceneRead(SceneCreate):

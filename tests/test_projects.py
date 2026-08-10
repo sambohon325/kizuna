@@ -386,6 +386,34 @@ def test_writer_room_develops_structured_story_and_character(client):
     assert edited.json()["beats"][0]["summary"].startswith("A silent train")
 
 
+def test_writer_room_persists_screenplay_scene_drafts(client):
+    project_id = client.post("/api/projects", json={"title": "Paper Moon"}).json()["id"]
+    created = client.post(
+        f"/api/projects/{project_id}/scenes",
+        json={"title": "The Signal", "summary": "A transmission arrives.", "position": 1},
+    )
+    assert created.status_code == 201
+    scene_id = created.json()["id"]
+    updated = client.put(
+        f"/api/scenes/{scene_id}",
+        json={
+            "title": "The Signal",
+            "summary": "A transmission arrives.",
+            "position": 1,
+            "slugline": "INT. LISTENING ROOM - NIGHT",
+            "script": "MARA crosses to the receiver.\n\nMARA\nThat is not our signal.",
+            "notes": "Hold on the silence before the line.",
+            "draft_status": "review",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["slugline"] == "INT. LISTENING ROOM - NIGHT"
+    assert updated.json()["draft_status"] == "review"
+    saved = client.get(f"/api/projects/{project_id}").json()["scenes"][0]
+    assert saved["script"].startswith("MARA crosses")
+    assert saved["notes"].startswith("Hold on")
+
+
 def test_writer_bot_proposes_auditable_story_before_applying_it(client):
     project_id = client.post("/api/projects", json={"title": "Neon Pilgrim", "logline": "A shrine courier carries the last sunrise through an underground city."}).json()["id"]
     deployed = client.post(f"/api/projects/{project_id}/crew/deploy", json={"roles": ["writer"], "autonomy": "propose"})

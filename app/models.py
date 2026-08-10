@@ -446,6 +446,10 @@ class Scene(Base):
     title: Mapped[str] = mapped_column(String(160))
     summary: Mapped[str] = mapped_column(Text, default="")
     position: Mapped[int] = mapped_column(default=1)
+    slugline: Mapped[str] = mapped_column(String(255), default="")
+    script: Mapped[str] = mapped_column(Text, default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    draft_status: Mapped[str] = mapped_column(String(32), default="outline")
 
     project: Mapped[Project] = relationship(back_populates="scenes")
     shots: Mapped[list[Shot]] = relationship(back_populates="scene", cascade="all, delete-orphan", order_by="Shot.position")

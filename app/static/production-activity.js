@@ -6,6 +6,7 @@ const activityLabels={
   'maintenance.backup':{name:'Back up production',department:'Storage & backup',icon:'⬡'},
   'crew.proposal':{name:'Prepare AI Crew proposal',department:'AI Crew',icon:'✧'},
   'crew.voice':{name:'Generate voice performance',department:'Audio & voice',icon:'♫'},
+  'render.shot-motion':{name:'Render shot motion preview',department:'Scene Compositor',icon:'▶'},
 };
 let activityJobs=[],activeActivityJobId=0,activityStatus='all';
 

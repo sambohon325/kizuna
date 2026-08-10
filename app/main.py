@@ -2795,6 +2795,9 @@ def cancel_durable_job(job_id: int, db: Session = Depends(get_db)):
     elif job.kind in {"crew.proposal", "crew.voice"}:
         action = db.scalar(select(CrewAction).where(CrewAction.durable_job_id == job.id))
         if action and job.status == "cancelled": action.status = "cancelled"
+    elif job.kind == "render.shot-motion":
+        render = db.scalar(select(ShotMotionRender).where(ShotMotionRender.durable_job_id == job.id))
+        if render and job.status == "cancelled": render.status = "cancelled"
     db.commit(); db.refresh(job)
     return job
 
@@ -2816,6 +2819,9 @@ def retry_durable_job(job_id: int, db: Session = Depends(get_db)):
     elif job.kind in {"crew.proposal", "crew.voice"}:
         action = db.scalar(select(CrewAction).where(CrewAction.durable_job_id == job.id))
         if action: action.status, action.error = "queued", ""
+    elif job.kind == "render.shot-motion":
+        render = db.scalar(select(ShotMotionRender).where(ShotMotionRender.durable_job_id == job.id))
+        if render: render.status, render.error = "queued", ""
     db.commit(); db.refresh(job)
     return job
 
@@ -3312,6 +3318,68 @@ def render_shot_composition(composition_id: int, db: Session = Depends(get_db)):
     return render
 
 
+def execute_shot_motion_render_job(db: Session, job: DurableJob) -> dict:
+    render = db.get(ShotMotionRender, int(job.payload["motion_render_id"]))
+    if render is None: raise RuntimeError("The queued motion render no longer exists")
+    if render.status == "completed" and render.uri:
+        return {"motion_render_id": render.id, "composition_id": render.composition_id, "uri": render.uri, "frame_count": render.render_settings.get("frame_count", 0)}
+    composition = db.get(ShotComposition, render.composition_id)
+    if composition is None: raise RuntimeError("The shot composition no longer exists")
+    shot = db.get(Shot, composition.shot_id)
+    scene = db.get(Scene, shot.scene_id) if shot else None
+    if shot is None or scene is None: raise RuntimeError("The source shot no longer exists")
+    settings_data = render.render_settings
+    render.status, render.error = "rendering", ""
+    update_progress(db, job, 15, "Preparing compositor layers")
+    db.commit()
+    layers = db.scalars(select(CompositionLayer).where(CompositionLayer.composition_id == composition.id).order_by(CompositionLayer.z_index)).all()
+    prepared = [{"name": layer.name, "kind": layer.kind, "source": render_dir / Path(layer.source_uri).name if layer.source_uri else None, "z_index": layer.z_index, "visible": layer.visible, "opacity": layer.opacity, "blend_mode": layer.blend_mode, "transform": layer.transform, "animation": layer.animation} for layer in layers]
+    render.filename = f"shot-{shot.id}-motion-v{settings_data['version']}-{render.id}.mp4"
+    update_progress(db, job, 40, "Interpolating motion and encoding the preview")
+    db.commit()
+    def report_progress(frame: int, total: int) -> bool:
+        db.refresh(job)
+        if job.cancellation_requested:
+            return False
+        percent = 40 + round(45 * frame / max(1, total))
+        update_progress(db, job, percent, f"Rendered {frame} of {total} frames")
+        db.commit()
+        return True
+
+    frame_count = render_motion_video(prepared, render_dir / render.filename, settings_data["width"], settings_data["height"], settings_data["fps"], settings_data["duration_seconds"], composition.color_grade, composition.camera, report_progress)
+    render.uri, render.status = f"/renders/{render.filename}", "completed"
+    render.render_settings = {**settings_data, "frame_count": frame_count}
+    composition.status = "motion-ready"
+    update_progress(db, job, 90, "Registering the motion preview with the production")
+    db.commit(); db.refresh(render)
+    refresh_media_lifecycle(scene.project_id, db)
+    return {"motion_render_id": render.id, "composition_id": render.composition_id, "uri": render.uri, "frame_count": frame_count}
+
+
+def mark_shot_motion_job_failed(db: Session, job: DurableJob, error: str) -> None:
+    render = db.get(ShotMotionRender, int(job.payload.get("motion_render_id") or 0))
+    if render:
+        render.status = "queued" if job.status == "queued" else "cancelled" if job.status == "cancelled" else "failed"
+        render.error = error[:4000]
+
+
+def queue_shot_motion_render(composition: ShotComposition, settings_data: dict, project_id: int, db: Session) -> ShotMotionRender:
+    render = ShotMotionRender(composition_id=composition.id, status="queued", render_settings=settings_data)
+    db.add(render); db.flush()
+    job = enqueue_job(db, "render.shot-motion", {"motion_render_id": render.id, "composition_id": composition.id, "version": settings_data["version"]}, project_id=project_id, queue="render", priority=80, max_attempts=3, idempotency_key=f"shot-motion:{render.id}")
+    render.durable_job_id = job.id
+    if settings.job_inline_fallback and job.status == "queued":
+        try:
+            start_job(db, job, "web:inline")
+            update_progress(db, job, 5, "Preparing shot motion render")
+            complete_job(db, job, execute_shot_motion_render_job(db, job))
+        except Exception as exc:
+            fail_job(db, job, str(exc))
+            mark_shot_motion_job_failed(db, job, str(exc))
+    db.commit(); db.refresh(render)
+    return render
+
+
 @app.post("/api/compositions/{composition_id}/render-video", response_model=ShotMotionRenderRead, status_code=status.HTTP_201_CREATED)
 def render_shot_motion(composition_id: int, payload: MotionRenderRequest, db: Session = Depends(get_db)):
     composition = db.get(ShotComposition, composition_id)
@@ -3325,21 +3393,7 @@ def render_shot_motion(composition_id: int, payload: MotionRenderRequest, db: Se
     width = max(2, int(composition.width * scale) // 2 * 2)
     height = max(2, int(composition.height * scale) // 2 * 2)
     settings_data = {"quality": payload.quality, "fps": fps, "width": width, "height": height, "duration_seconds": shot.duration_seconds, "version": composition.version}
-    render = ShotMotionRender(composition_id=composition.id, status="rendering", render_settings=settings_data)
-    db.add(render); db.commit(); db.refresh(render)
-    try:
-        layers = db.scalars(select(CompositionLayer).where(CompositionLayer.composition_id == composition_id).order_by(CompositionLayer.z_index)).all()
-        prepared = [{"name": layer.name, "kind": layer.kind, "source": render_dir / Path(layer.source_uri).name if layer.source_uri else None, "z_index": layer.z_index, "visible": layer.visible, "opacity": layer.opacity, "blend_mode": layer.blend_mode, "transform": layer.transform, "animation": layer.animation} for layer in layers]
-        render.filename = f"shot-{shot.id}-motion-v{composition.version}-{render.id}.mp4"
-        frame_count = render_motion_video(prepared, render_dir / render.filename, width, height, fps, shot.duration_seconds, composition.color_grade, composition.camera)
-        render.uri, render.status = f"/renders/{render.filename}", "completed"
-        render.render_settings = {**settings_data, "frame_count": frame_count}
-        composition.status = "motion-ready"
-    except Exception as exc:
-        render.status, render.error = "failed", str(exc)
-    db.commit(); db.refresh(render)
-    if render.status == "completed": refresh_media_lifecycle(scene.project_id, db)
-    return render
+    return queue_shot_motion_render(composition, settings_data, scene.project_id, db)
 
 
 def audio_studio_response(timeline: Timeline, db: Session):

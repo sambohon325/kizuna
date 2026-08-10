@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from copy import deepcopy
 from pathlib import Path
+from typing import Callable
 
 from PIL import Image
 
@@ -62,7 +63,7 @@ def _camera_frame(frame: Image.Image, camera: dict, progress: float) -> Image.Im
     return crop.resize((width, height), Image.Resampling.LANCZOS)
 
 
-def render_motion_video(layers: list[dict], output: Path, width: int, height: int, fps: int, duration_seconds: float, color_grade: dict, camera: dict) -> int:
+def render_motion_video(layers: list[dict], output: Path, width: int, height: int, fps: int, duration_seconds: float, color_grade: dict, camera: dict, progress_callback: Callable[[int, int], bool | None] | None = None) -> int:
     frame_count = max(1, round(duration_seconds * fps))
     command = [
         ffmpeg_executable(), "-y", "-loglevel", "error", "-f", "rawvideo", "-vcodec", "rawvideo", "-pix_fmt", "rgb24",
@@ -72,11 +73,16 @@ def render_motion_video(layers: list[dict], output: Path, width: int, height: in
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     try:
         for index in range(frame_count):
+            if progress_callback and (index == 0 or index % max(1, frame_count // 20) == 0):
+                if progress_callback(index, frame_count) is False:
+                    raise RuntimeError("Motion render cancelled")
             progress = index / max(1, frame_count - 1)
             frame = compose_frame(_animated_layers(layers, progress), width, height, color_grade)
             frame = _camera_frame(frame, camera, progress)
             process.stdin.write(frame.tobytes())
         process.stdin.close()
+        if progress_callback and progress_callback(frame_count, frame_count) is False:
+            raise RuntimeError("Motion render cancelled")
         error = process.stderr.read()
         return_code = process.wait(timeout=max(120, int(duration_seconds * 5)))
     except Exception:

@@ -970,7 +970,8 @@ def test_ai_crew_delegates_and_approves_sound_producer_work(client, monkeypatch)
     assert client.get(finished_action["result"]["uri"]).headers["content-type"] == "audio/wav"
 
 
-def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):
+def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client, monkeypatch):
+    import app.main as main_module
     project_id = client.post("/api/projects", json={"title": "Layer Test"}).json()["id"]
     character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "pilot"}).json()
     location = client.post(f"/api/projects/{project_id}/locations", json={"name": "Listening Hall"}).json()
@@ -1004,12 +1005,24 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client):
     motion = client.post(f"/api/compositions/{composition['id']}/render-video", json={"quality": "proxy", "fps": 8})
     assert motion.status_code == 201
     assert motion.json()["status"] == "completed", motion.json().get("error")
+    assert motion.json()["durable_job_id"] is not None
     assert motion.json()["render_settings"]["frame_count"] == 8
     video = client.get(motion.json()["uri"])
     assert video.status_code == 200
     assert video.headers["content-type"] == "video/mp4"
     refreshed = client.get(f"/api/shots/{shot['id']}/composition").json()
     assert refreshed["latest_motion_uri"] == motion.json()["uri"]
+
+    monkeypatch.setattr(main_module.settings, "job_inline_fallback", False)
+    queued_motion = client.post(f"/api/compositions/{composition['id']}/render-video", json={"quality": "proxy", "fps": 8}).json()
+    assert queued_motion["status"] == "queued" and queued_motion["durable_job_id"] is not None
+    assert client.post(f"/api/jobs/{queued_motion['durable_job_id']}/cancel").json()["status"] == "cancelled"
+    assert client.post(f"/api/jobs/{queued_motion['durable_job_id']}/retry").json()["status"] == "queued"
+    from app.job_worker import run_job_once
+    assert run_job_once("test:motion-worker") is True
+    finished_motion_job = client.get(f"/api/jobs/{queued_motion['durable_job_id']}").json()["job"]
+    assert finished_motion_job["kind"] == "render.shot-motion" and finished_motion_job["status"] == "completed"
+    assert client.get(finished_motion_job["result"]["uri"]).headers["content-type"] == "video/mp4"
 
     client.post(f"/api/scenes/{scene_id}/shots", json={"title": "Signal answers", "position": 2, "duration_seconds": 0.6})
     rebuilt_timeline = client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 8, "width": 320, "height": 180}).json()

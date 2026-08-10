@@ -838,6 +838,7 @@ class ShotMotionRenderRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     composition_id: int
+    durable_job_id: int | None = None
     status: str
     filename: str
     uri: str

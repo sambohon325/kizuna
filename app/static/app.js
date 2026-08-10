@@ -7,6 +7,7 @@ const writerDialog = document.querySelector('#writer-dialog');
 const characterDialog = document.querySelector('#character-dialog');
 const renderDialog = document.querySelector('#render-dialog');
 const worldDialog = document.querySelector('#world-dialog');
+const assetDialog = document.querySelector('#asset-dialog');
 const shotDialog = document.querySelector('#shot-dialog');
 const timelineDialog = document.querySelector('#timeline-dialog');
 const audioDialog = document.querySelector('#audio-dialog');
@@ -15,15 +16,15 @@ const accountDialog = document.querySelector('#account-dialog');
 const settingsDialog = document.querySelector('#settings-dialog');
 const workspaceMain = document.querySelector('#workspace-main');
 const dashboardHome = document.querySelector('#dashboard-home');
-const workspaceDialogs = [detailDialog, crewDialog, styleDialog, writerDialog, characterDialog, renderDialog, worldDialog, shotDialog, timelineDialog, audioDialog, compositorDialog, accountDialog, settingsDialog];
+const workspaceDialogs = [detailDialog, crewDialog, styleDialog, writerDialog, characterDialog, renderDialog, worldDialog, assetDialog, shotDialog, timelineDialog, audioDialog, compositorDialog, accountDialog, settingsDialog];
 const workspaceNav = new Map([
   [detailDialog, 'productions-nav'], [crewDialog, 'crew-nav'], [styleDialog, 'style-lab-nav'], [writerDialog, 'writer-nav'],
-  [characterDialog, 'characters-nav'], [renderDialog, 'render-nav'], [worldDialog, 'worlds-nav'],
+  [characterDialog, 'characters-nav'], [renderDialog, 'render-nav'], [worldDialog, 'worlds-nav'], [assetDialog, 'assets-nav'],
   [shotDialog, 'shots-nav'], [timelineDialog, 'timeline-nav'], [audioDialog, 'audio-nav'],
   [compositorDialog, 'compositor-nav'], [accountDialog, 'settings-nav'], [settingsDialog, 'settings-nav'],
 ]);
 const workspaceKeys = new Map([
-  [crewDialog,'crew'],[styleDialog,'style'],[writerDialog,'writer'],[characterDialog,'characters'],[worldDialog,'worlds'],[shotDialog,'shots'],[timelineDialog,'timeline'],[audioDialog,'audio'],[compositorDialog,'compositor'],[renderDialog,'render'],[accountDialog,'account'],[settingsDialog,'settings'],
+  [crewDialog,'crew'],[styleDialog,'style'],[writerDialog,'writer'],[characterDialog,'characters'],[worldDialog,'worlds'],[assetDialog,'assets'],[shotDialog,'shots'],[timelineDialog,'timeline'],[audioDialog,'audio'],[compositorDialog,'compositor'],[renderDialog,'render'],[accountDialog,'account'],[settingsDialog,'settings'],
 ]);
 
 function setActiveNavigation(navId = 'productions-nav') {
@@ -73,7 +74,7 @@ function openWorkspaceWindow(key,dialog) {
 }
 
 async function openRequestedWorkspace() {
-  const params=new URLSearchParams(location.search),key=params.get('workspace'),projectId=Number(params.get('project'))||undefined;if(params.get('popout')==='1')document.body.classList.add('popout-mode');const openers={crew:openCrewStudio,style:openStyleLab,writer:openWriterRoom,characters:openCharacterStudio,worlds:openWorldStudio,shots:openShotPlanner,timeline:openTimeline,audio:openAudioStudio,compositor:openCompositor,render:openRenderFarm,account:openAccountCenter,settings:openSettings};if(key&&openers[key])await openers[key](projectId);
+  const params=new URLSearchParams(location.search),key=params.get('workspace'),projectId=Number(params.get('project'))||undefined;if(params.get('popout')==='1')document.body.classList.add('popout-mode');const openers={crew:openCrewStudio,style:openStyleLab,writer:openWriterRoom,characters:openCharacterStudio,worlds:openWorldStudio,assets:id=>window.openAssetLibraryReady?.(id),shots:openShotPlanner,timeline:openTimeline,audio:openAudioStudio,compositor:openCompositor,render:openRenderFarm,account:openAccountCenter,settings:openSettings};if(key&&openers[key])await openers[key](projectId);
 }
 
 function showDashboard() {
@@ -1397,7 +1398,7 @@ async function askAssistant(event) {
 }
 
 function wireAssistantActions() {
-  document.querySelectorAll('[data-assistant-workspace]').forEach(button=>button.onclick=()=>{const key=button.dataset.assistantWorkspace,id=activeAssistantProjectId,openers={writer:openWriterRoom,crew:openCrewStudio,style:openStyleLab,characters:openCharacterStudio,worlds:openWorldStudio,shots:openShotPlanner,timeline:openTimeline,audio:openAudioStudio,compositor:openCompositor,render:openRenderFarm,settings:openSettings,productions:showDashboard};openers[key]?.(id);refreshAssistantContext();});
+  document.querySelectorAll('[data-assistant-workspace]').forEach(button=>button.onclick=()=>{const key=button.dataset.assistantWorkspace,id=activeAssistantProjectId,openers={writer:openWriterRoom,crew:openCrewStudio,style:openStyleLab,characters:openCharacterStudio,worlds:openWorldStudio,assets:id=>window.openAssetLibraryReady?.(id),shots:openShotPlanner,timeline:openTimeline,audio:openAudioStudio,compositor:openCompositor,render:openRenderFarm,settings:openSettings,productions:showDashboard};openers[key]?.(id);refreshAssistantContext();});
 }
 
 function collectStory(form) {

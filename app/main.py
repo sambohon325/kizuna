@@ -26,8 +26,8 @@ from app.database import SessionLocal, get_db
 from app.schema_migrations import database_revision, migrate_database
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecurityEvent, AccountToken, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, BillingEvent, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, SignupAttempt, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, UserSubscription, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
-from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundAssetRead, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaAssetRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SceneUpdate, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecurityEvent, AccountToken, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, BillingEvent, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LibraryAsset, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, SignupAttempt, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, UserSubscription, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundAssetRead, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LibraryAssetRead, LibraryAssetUpdate, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaAssetRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SceneUpdate, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
 from app.compliance import COMPLIANCE_STAGES, append_audit_event, compliance_overview, fan_fiction_violation, latest_current_scan, policy_for as compliance_policy_for, require_release_clearance, resolve_finding, run_stage_scan, save_asset_rights, scan_passes
@@ -266,7 +266,13 @@ def asset_group(asset_type: str, asset_id: int, db: Session):
         scene = db.get(Scene, shot.scene_id)
         assets = db.scalars(select(StoryboardAsset).where(StoryboardAsset.shot_id == asset.shot_id).order_by(StoryboardAsset.version.desc(), StoryboardAsset.id.desc())).all()
         return asset, scene.project_id, asset.shot_id, "storyboard_asset", assets
-    raise HTTPException(422, "Asset type must be character, background, or storyboard")
+    if asset_type == "library":
+        asset = db.get(LibraryAsset, asset_id)
+        if not asset:
+            raise HTTPException(404, "Library asset not found")
+        assets = db.scalars(select(LibraryAsset).where(LibraryAsset.project_id == asset.project_id, LibraryAsset.group_key == asset.group_key).order_by(LibraryAsset.version.desc(), LibraryAsset.id.desc())).all()
+        return asset, asset.project_id, asset.group_key, "library_asset", assets
+    raise HTTPException(422, "Asset type must be character, background, storyboard, or library")
 
 
 def review_for(asset_type: str, asset_id: int, db: Session) -> AssetReview | None:
@@ -2579,6 +2585,24 @@ def project_asset_library(project_id: int, db: Session):
         review = review_for("storyboard", asset.id, db)
         active = choose_reviewed_asset("storyboard", db.scalars(select(StoryboardAsset).where(StoryboardAsset.shot_id == asset.shot_id).order_by(StoryboardAsset.version.desc(), StoryboardAsset.id.desc())).all(), db)
         item.update({"asset_type": "storyboard", "group_id": asset.shot_id, "mime_type": asset.mime_type, "review_status": review.status if review else "pending", "review_notes": review.notes if review else "", "selected": bool(review and review.selected), "active": bool(active and active.id == asset.id)})
+    library_rows = db.scalars(select(LibraryAsset).where(LibraryAsset.project_id == project_id).order_by(LibraryAsset.id.desc())).all()
+    grouped = {}
+    for asset in library_rows:
+        grouped.setdefault(asset.group_key, []).append(asset)
+    for asset in library_rows:
+        review = review_for("library", asset.id, db)
+        active = choose_reviewed_asset("library", grouped[asset.group_key], db)
+        assets.append({
+            "id": asset.id, "asset_type": "library", "group_id": asset.group_key,
+            "source_kind": "library_asset", "kind": asset.category, "name": asset.name,
+            "description": asset.description, "tags": asset.tags, "uri": asset.uri,
+            "mime_type": asset.mime_type, "version": asset.version,
+            "rights_status": asset.rights_status, "rights_notes": asset.rights_notes,
+            "source_tool": asset.source_tool, "created_at": asset.created_at,
+            "review_status": review.status if review else "pending",
+            "review_notes": review.notes if review else "", "selected": bool(review and review.selected),
+            "active": bool(active and active.id == asset.id), "version_count": len(grouped[asset.group_key]),
+        })
     return assets
 
 
@@ -2935,6 +2959,83 @@ def fail_media_transfer(node_key: str, transfer_id: int, payload: JobFailure, au
     job.error, job.leased_until = payload.error[:4000], None
     db.commit(); db.refresh(job)
     return job
+
+
+LIBRARY_CATEGORIES = {"character", "wardrobe", "prop", "environment", "building", "furniture", "vehicle", "effect", "audio", "reference", "other"}
+LIBRARY_RIGHTS = {"owned", "licensed", "public_domain", "generated", "pending"}
+LIBRARY_FILE_TYPES = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".svg": "image/svg+xml",
+    ".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".ogg": "audio/ogg",
+    ".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm",
+    ".pdf": "application/pdf", ".psd": "image/vnd.adobe.photoshop", ".blend": "application/x-blender",
+    ".glb": "model/gltf-binary", ".gltf": "model/gltf+json", ".obj": "model/obj",
+}
+
+
+def clean_library_tags(value: str) -> list[str]:
+    tags = []
+    for raw in value.split(","):
+        tag = raw.strip()[:48]
+        if tag and tag.lower() not in {item.lower() for item in tags}:
+            tags.append(tag)
+    return tags[:30]
+
+
+async def store_library_asset(request: Request, project: Project, *, filename: str, name: str, category: str, rights_status: str, rights_notes: str, source_tool: str, tags: str, group_key: str, version: int, db: Session) -> LibraryAsset:
+    if category not in LIBRARY_CATEGORIES: raise HTTPException(422, "Choose a supported asset category")
+    if rights_status not in LIBRARY_RIGHTS: raise HTTPException(422, "Choose a valid rights status")
+    content = await request.body()
+    if not content or len(content) > settings.max_artifact_bytes: raise HTTPException(413, "Asset is empty or too large")
+    suffix = Path(filename).suffix.lower()
+    if suffix not in LIBRARY_FILE_TYPES: raise HTTPException(422, "Upload an image, audio, video, PDF, layered artwork, or 3D asset")
+    metadata = {"source": "creator_upload", "original_filename": Path(filename).name, "size_bytes": len(content), "checksum_sha256": hashlib.sha256(content).hexdigest()}
+    if suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+        try:
+            with Image.open(BytesIO(content)) as source: source.verify()
+            with Image.open(BytesIO(content)) as source: metadata.update({"width": source.width, "height": source.height})
+        except (UnidentifiedImageError, OSError): raise HTTPException(422, "The uploaded image is not valid")
+    stored_name = f"library-{project.id}-{group_key[:12]}-v{version}-{uuid4().hex[:8]}{suffix}"
+    (render_dir / stored_name).write_bytes(content)
+    asset = LibraryAsset(project_id=project.id, group_key=group_key, category=category, name=name.strip()[:160] or Path(filename).stem[:160], tags=clean_library_tags(tags), filename=stored_name, uri=f"/renders/{stored_name}", mime_type=LIBRARY_FILE_TYPES[suffix], rights_status=rights_status, rights_notes=rights_notes[:4000], source_tool=source_tool.strip()[:80] or "creator upload", asset_metadata=metadata, version=version)
+    db.add(asset); db.flush()
+    append_audit_event(db, project.id, "asset", "library_asset_uploaded", actor_type="creator", subject_type="library_asset", subject_key=str(asset.id), details={"group_key": group_key, "category": category, "version": version, "rights_status": rights_status, **metadata})
+    db.commit(); db.refresh(asset); refresh_media_lifecycle(project.id, db)
+    return asset
+
+
+@app.get("/api/projects/{project_id}/asset-library")
+def get_unified_asset_library(project_id: int, db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project: raise HTTPException(404, "Project not found")
+    assets = project_asset_library(project_id, db)
+    return {"project_id": project_id, "project_title": project.title, "assets": assets, "summary": {"groups": len({(item["asset_type"], str(item["group_id"])) for item in assets}), "versions": len(assets), "approved": sum(item["review_status"] == "approved" for item in assets), "pending": sum(item["review_status"] == "pending" for item in assets)}}
+
+
+@app.post("/api/projects/{project_id}/library-assets/upload", response_model=LibraryAssetRead, status_code=status.HTTP_201_CREATED)
+async def upload_library_asset(project_id: int, request: Request, filename: str, name: str = "", category: str = "reference", rights_status: str = "pending", rights_notes: str = "", source_tool: str = "creator upload", tags: str = "", db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project: raise HTTPException(404, "Project not found")
+    return await store_library_asset(request, project, filename=filename, name=name, category=category, rights_status=rights_status, rights_notes=rights_notes, source_tool=source_tool, tags=tags, group_key=uuid4().hex, version=1, db=db)
+
+
+@app.post("/api/library-assets/{asset_id}/versions/upload", response_model=LibraryAssetRead, status_code=status.HTTP_201_CREATED)
+async def upload_library_asset_version(asset_id: int, request: Request, filename: str, db: Session = Depends(get_db)):
+    current = db.get(LibraryAsset, asset_id)
+    if not current: raise HTTPException(404, "Library asset not found")
+    project = db.get(Project, current.project_id)
+    version = (db.scalar(select(func.max(LibraryAsset.version)).where(LibraryAsset.project_id == current.project_id, LibraryAsset.group_key == current.group_key)) or 0) + 1
+    return await store_library_asset(request, project, filename=filename, name=current.name, category=current.category, rights_status=current.rights_status, rights_notes=current.rights_notes, source_tool=current.source_tool, tags=",".join(current.tags), group_key=current.group_key, version=version, db=db)
+
+
+@app.put("/api/library-assets/{asset_id}", response_model=LibraryAssetRead)
+def update_library_asset(asset_id: int, payload: LibraryAssetUpdate, db: Session = Depends(get_db)):
+    asset = db.get(LibraryAsset, asset_id)
+    if not asset: raise HTTPException(404, "Library asset not found")
+    values = payload.model_dump(); values["tags"] = [tag.strip()[:48] for tag in payload.tags if tag.strip()][:30]
+    for key, value in values.items(): setattr(asset, key, value)
+    append_audit_event(db, asset.project_id, "asset", "library_asset_metadata_updated", actor_type="creator", subject_type="library_asset", subject_key=str(asset.id), details={"category": asset.category, "rights_status": asset.rights_status})
+    db.commit(); db.refresh(asset)
+    return asset
 
 
 @app.get("/api/projects/{project_id}/asset-reviews")

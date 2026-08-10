@@ -307,6 +307,27 @@ class MediaAsset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class LibraryAsset(Base):
+    __tablename__ = "library_assets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    group_key: Mapped[str] = mapped_column(String(64), index=True)
+    category: Mapped[str] = mapped_column(String(48), default="reference")
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    filename: Mapped[str] = mapped_column(String(255))
+    uri: Mapped[str] = mapped_column(Text)
+    mime_type: Mapped[str] = mapped_column(String(80), default="application/octet-stream")
+    rights_status: Mapped[str] = mapped_column(String(32), default="pending")
+    rights_notes: Mapped[str] = mapped_column(Text, default="")
+    source_tool: Mapped[str] = mapped_column(String(80), default="creator upload")
+    asset_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    version: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class AssetReview(Base):
     __tablename__ = "asset_reviews"
     __table_args__ = (UniqueConstraint("asset_type", "asset_id", name="uq_asset_review_target"),)

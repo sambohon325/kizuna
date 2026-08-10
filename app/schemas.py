@@ -266,6 +266,29 @@ class MediaAssetRead(BaseModel):
     version: int
 
 
+class LibraryAssetUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    category: str = Field(pattern="^(character|wardrobe|prop|environment|building|furniture|vehicle|effect|audio|reference|other)$")
+    description: str = Field(default="", max_length=4000)
+    tags: list[str] = Field(default_factory=list, max_length=30)
+    rights_status: str = Field(default="pending", pattern="^(owned|licensed|public_domain|generated|pending)$")
+    rights_notes: str = Field(default="", max_length=4000)
+    source_tool: str = Field(default="creator upload", max_length=80)
+
+
+class LibraryAssetRead(LibraryAssetUpdate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    group_key: str
+    filename: str
+    uri: str
+    mime_type: str
+    asset_metadata: dict[str, Any]
+    version: int
+    created_at: datetime
+
+
 class AssetReviewUpdate(BaseModel):
     status: str = Field(default="pending", pattern="^(pending|approved|rejected)$")
     notes: str = Field(default="", max_length=2000)

@@ -594,6 +594,47 @@ def test_creator_can_upload_background_reference_to_world_library(client):
     assert any(event["action"] == "background_reference_uploaded" and event["details"]["location_id"] == location["id"] for event in audit)
 
 
+def test_unified_asset_library_imports_versions_reviews_and_feeds_compositor(client):
+    import base64
+
+    project = client.post("/api/projects", json={"title": "Shared Production Shelf", "logline": "An original mechanic rebuilds a weather machine."}).json()
+    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+    query = "filename=weather-key.png&name=Weather%20Key&category=prop&rights_status=owned&source_tool=GIMP&tags=hero%2Cmetal%2Cepisode%201"
+    uploaded = client.post(f"/api/projects/{project['id']}/library-assets/upload?{query}", headers={"Content-Type": "image/png"}, content=png)
+    assert uploaded.status_code == 201, uploaded.text
+    first = uploaded.json()
+    assert first["category"] == "prop" and first["rights_status"] == "owned"
+    assert first["tags"] == ["hero", "metal", "episode 1"] and first["version"] == 1
+
+    library = client.get(f"/api/projects/{project['id']}/asset-library").json()
+    item = next(asset for asset in library["assets"] if asset["asset_type"] == "library")
+    assert library["summary"]["groups"] == 1 and item["source_kind"] == "library_asset"
+    assert item["active"] is True and item["version_count"] == 1
+
+    versioned = client.post(f"/api/library-assets/{first['id']}/versions/upload?filename=weather-key-v2.png", headers={"Content-Type": "image/png"}, content=png)
+    assert versioned.status_code == 201, versioned.text
+    second = versioned.json()
+    assert second["group_key"] == first["group_key"] and second["version"] == 2
+    updated = client.put(f"/api/library-assets/{second['id']}", json={"name": "Weather Key — hero", "category": "prop", "description": "The key that restarts the storm engine.", "tags": ["hero", "continuity lock"], "rights_status": "owned", "rights_notes": "Original studio design.", "source_tool": "Kizuna + GIMP"})
+    assert updated.status_code == 200 and updated.json()["description"].startswith("The key")
+    selected = client.put(f"/api/assets/library/{second['id']}/review", json={"status": "approved", "selected": True, "notes": "Approved hero prop."})
+    assert selected.status_code == 200 and selected.json()["active"] is True
+
+    refreshed = client.get(f"/api/projects/{project['id']}/asset-library").json()
+    versions = [asset for asset in refreshed["assets"] if asset["group_id"] == first["group_key"]]
+    assert len(versions) == 2 and next(asset for asset in versions if asset["id"] == second["id"])["selected"] is True
+    compositor = client.get(f"/api/projects/{project['id']}/compositor").json()
+    assert any(asset["source_kind"] == "library_asset" and asset["id"] == second["id"] for asset in compositor["assets"])
+    audit = client.get(f"/api/projects/{project['id']}/audit-ledger").json()["events"]
+    assert any(event["action"] == "library_asset_uploaded" for event in audit)
+
+
+def test_unified_asset_library_rejects_unsupported_files(client):
+    project_id = client.post("/api/projects", json={"title": "Safe Shelf"}).json()["id"]
+    response = client.post(f"/api/projects/{project_id}/library-assets/upload?filename=script.exe&name=Script&category=other", content=b"unsafe")
+    assert response.status_code == 422
+
+
 def test_render_worker_claims_uploads_and_completes_farm_job(client):
     project_id = client.post("/api/projects", json={"title": "Farm Test"}).json()["id"]
     character = client.post(f"/api/projects/{project_id}/characters", json={"name": "Iona", "role": "navigator"}).json()

@@ -63,6 +63,42 @@ class AccountSecurityEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class SignupAttempt(Base):
+    __tablename__ = "signup_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    network_hash: Mapped[str] = mapped_column(String(64))
+    email_hash: Mapped[str] = mapped_column(String(64))
+    accepted: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class UserSubscription(Base):
+    __tablename__ = "user_subscriptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    provider: Mapped[str] = mapped_column(String(32), default="stripe")
+    customer_id: Mapped[str] = mapped_column(String(160), unique=True)
+    subscription_id: Mapped[str | None] = mapped_column(String(160), unique=True, nullable=True)
+    plan_key: Mapped[str] = mapped_column(String(64), default="creator")
+    status: Mapped[str] = mapped_column(String(32), default="incomplete")
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class BillingEvent(Base):
+    __tablename__ = "billing_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), default="stripe")
+    event_id: Mapped[str] = mapped_column(String(160), unique=True)
+    event_type: Mapped[str] = mapped_column(String(100))
+    processed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class ProjectMembership(Base):
     __tablename__ = "project_memberships"
     __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_project_membership"),)

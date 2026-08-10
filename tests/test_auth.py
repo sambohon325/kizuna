@@ -1,3 +1,8 @@
+import hashlib
+import hmac
+import json
+import time
+
 from fastapi.testclient import TestClient
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -6,7 +11,7 @@ from sqlalchemy import select
 from app.auth import hash_password, token_hash, utcnow as auth_utcnow
 from app.database import SessionLocal
 from app.main import app
-from app.models import AccountSecurityEvent, AccountToken, Character, Project, ProjectMembership, Scene, Shot, Timeline, TimelineClip, User, UserSession
+from app.models import AccountSecurityEvent, AccountToken, BillingEvent, Character, Project, ProjectMembership, Scene, Shot, Timeline, TimelineClip, User, UserSession, UserSubscription
 
 
 def setup_admin(client, monkeypatch):
@@ -84,8 +89,15 @@ def test_invitations_roles_and_session_revocation(client, monkeypatch):
 
 def test_trial_signup_and_export_limits(client, monkeypatch):
     setup_admin(client, monkeypatch)
+    delivered = []
+    monkeypatch.setattr("app.main.settings.email_verification_required", True)
+    monkeypatch.setattr("app.main.settings.smtp_host", "smtp.example.test")
+    monkeypatch.setattr("app.main.settings.smtp_from_email", "security@example.test")
+    monkeypatch.setattr("app.main.turnstile_ready", lambda: True)
+    monkeypatch.setattr("app.main.verify_turnstile", lambda token, remote_ip: token == "human-token")
+    monkeypatch.setattr("app.main.send_email", lambda to_email, subject, body: delivered.append((to_email, subject, body)))
     trial = TestClient(app)
-    created = trial.post("/api/auth/trial", json={"email": "trial@example.com", "display_name": "Trial Creator", "password": "trial-secure-password"})
+    created = trial.post("/api/auth/trial", json={"email": "trial@example.com", "display_name": "Trial Creator", "password": "trial-secure-password", "challenge_token": "human-token"})
     assert created.status_code == 201
     account = created.json()
     assert account["account_tier"] == "trial"
@@ -93,6 +105,9 @@ def test_trial_signup_and_export_limits(client, monkeypatch):
     assert account["trial_export_seconds"] == 60
     remaining = datetime.fromisoformat(account["trial_ends_at"]) - auth_utcnow()
     assert timedelta(days=6, hours=23) < remaining <= timedelta(days=7)
+    verify_url = next(line for line in delivered[0][2].splitlines() if line.startswith("http"))
+    assert trial.post(f"/api/auth/verify/{urlparse(verify_url).path.rsplit('/', 1)[-1]}").status_code == 200
+    assert trial.post("/api/auth/login", json={"email": "trial@example.com", "password": "trial-secure-password"}).status_code == 200
     project_id = account["project_id"]
     with SessionLocal() as db:
         scene = Scene(project_id=project_id, title="Trial Scene", position=1)
@@ -156,9 +171,11 @@ def test_required_email_verification_blocks_login_until_link_is_used(client, mon
     monkeypatch.setattr("app.main.settings.email_verification_required", True)
     monkeypatch.setattr("app.main.settings.smtp_host", "smtp.example.test")
     monkeypatch.setattr("app.main.settings.smtp_from_email", "security@example.test")
+    monkeypatch.setattr("app.main.turnstile_ready", lambda: True)
+    monkeypatch.setattr("app.main.verify_turnstile", lambda token, remote_ip: token == "human-token")
     monkeypatch.setattr("app.main.send_email", lambda to_email, subject, body: delivered.append((to_email, subject, body)))
     trial = TestClient(app)
-    created = trial.post("/api/auth/trial", json={"email": "verify@example.com", "display_name": "Verify Creator", "password": "trial-secure-password"})
+    created = trial.post("/api/auth/trial", json={"email": "verify@example.com", "display_name": "Verify Creator", "password": "trial-secure-password", "challenge_token": "human-token"})
     assert created.status_code == 201
     assert created.json()["verification_required"] is True
     assert trial.cookies.get("kizuna_session") is None
@@ -170,3 +187,53 @@ def test_required_email_verification_blocks_login_until_link_is_used(client, mon
     signed_in = trial.post("/api/auth/login", json={"email": "verify@example.com", "password": "trial-secure-password"})
     assert signed_in.status_code == 200
     assert signed_in.json()["email_verified"] is True
+
+
+def test_trial_signup_fails_closed_without_human_verification(client, monkeypatch):
+    setup_admin(client, monkeypatch)
+    monkeypatch.setattr("app.main.settings.email_verification_required", True)
+    monkeypatch.setattr("app.main.settings.smtp_host", "smtp.example.test")
+    monkeypatch.setattr("app.main.settings.smtp_from_email", "security@example.test")
+    monkeypatch.setattr("app.main.turnstile_ready", lambda: True)
+    monkeypatch.setattr("app.main.verify_turnstile", lambda token, remote_ip: False)
+    blocked = TestClient(app).post("/api/auth/trial", json={"email": "bot@example.com", "display_name": "Bot", "password": "trial-secure-password", "challenge_token": "invalid"})
+    assert blocked.status_code == 422
+    with SessionLocal() as db:
+        assert db.scalar(select(User).where(User.email == "bot@example.com")) is None
+
+
+def test_signed_billing_webhook_is_idempotent_and_controls_entitlement(client, monkeypatch):
+    setup_admin(client, monkeypatch)
+    with SessionLocal() as db:
+        user = User(email="billing@example.com", display_name="Billing Creator", password_hash=hash_password("billing-secure-password"), role="creator", account_tier="trial", email_verified_at=auth_utcnow())
+        db.add(user);db.commit();user_id=user.id
+    billing_client = TestClient(app)
+    assert billing_client.post("/api/auth/login", json={"email": "billing@example.com", "password": "billing-secure-password"}).status_code == 200
+    monkeypatch.setattr("app.main.settings.stripe_secret_key", "sk_test_kizuna")
+    monkeypatch.setattr("app.main.settings.stripe_webhook_secret", "whsec_kizuna")
+    monkeypatch.setattr("app.main.settings.stripe_creator_price_id", "price_creator")
+    monkeypatch.setattr("app.main.stripe_request", lambda path, fields: {"id": "cs_test_kizuna", "url": "https://checkout.stripe.test/session"})
+    billing = billing_client.get("/api/account/billing").json()
+    assert billing["checkout_ready"] is True
+    checkout = billing_client.post("/api/account/billing/checkout", headers={"X-Kizuna-CSRF": billing_client.cookies.get("kizuna_csrf")})
+    assert checkout.json()["url"] == "https://checkout.stripe.test/session"
+
+    event = {"id": "evt_kizuna_1", "type": "customer.subscription.created", "data": {"object": {"id": "sub_kizuna", "customer": "cus_kizuna", "status": "active", "current_period_end": int(time.time()) + 86400, "cancel_at_period_end": False, "metadata": {"kizuna_user_id": str(user_id), "plan_key": "creator"}}}}
+    payload = json.dumps(event, separators=(",", ":")).encode();timestamp = int(time.time())
+    signature = hmac.new(b"whsec_kizuna", f"{timestamp}.".encode() + payload, hashlib.sha256).hexdigest()
+    headers = {"Stripe-Signature": f"t={timestamp},v1={signature}", "Content-Type": "application/json"}
+    assert TestClient(app).post("/api/billing/stripe/webhook", content=payload, headers={**headers, "Stripe-Signature": f"t={timestamp},v1=invalid"}).status_code == 400
+    assert TestClient(app).post("/api/billing/stripe/webhook", content=payload, headers=headers).status_code == 200
+    assert TestClient(app).post("/api/billing/stripe/webhook", content=payload, headers=headers).status_code == 200
+    with SessionLocal() as db:
+        assert db.get(User, user_id).account_tier == "creator"
+        assert db.scalar(select(UserSubscription).where(UserSubscription.user_id == user_id)).status == "active"
+        assert len(db.scalars(select(BillingEvent).where(BillingEvent.event_id == "evt_kizuna_1")).all()) == 1
+
+    canceled = {"id": "evt_kizuna_2", "type": "customer.subscription.deleted", "data": {"object": {"id": "sub_kizuna", "customer": "cus_kizuna", "status": "canceled", "metadata": {"kizuna_user_id": str(user_id), "plan_key": "creator"}}}}
+    canceled_payload = json.dumps(canceled, separators=(",", ":")).encode();canceled_signature = hmac.new(b"whsec_kizuna", f"{timestamp}.".encode() + canceled_payload, hashlib.sha256).hexdigest()
+    assert TestClient(app).post("/api/billing/stripe/webhook", content=canceled_payload, headers={"Stripe-Signature": f"t={timestamp},v1={canceled_signature}", "Content-Type": "application/json"}).status_code == 200
+    with SessionLocal() as db:
+        canceled_user = db.get(User, user_id)
+        assert canceled_user.account_tier == "trial"
+        assert canceled_user.trial_ends_at <= auth_utcnow()

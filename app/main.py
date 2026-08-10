@@ -25,7 +25,7 @@ from app.database import SessionLocal, get_db
 from app.schema_migrations import database_revision, migrate_database
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecurityEvent, AccountToken, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecurityEvent, AccountToken, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, BillingEvent, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, SignupAttempt, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, UserSubscription, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
 from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
@@ -45,6 +45,8 @@ from app.visual_agents import VisualAgentError, create_background_design_proposa
 from app.animator_agent import AnimatorAgentError, create_animator_proposal
 from app.editor_agent import EditorAgentError, create_editor_proposal
 from app.email_delivery import send_email, smtp_ready
+from app.billing import ACTIVE_SUBSCRIPTION_STATUSES, stripe_ready, stripe_request, stripe_timestamp, verify_stripe_event
+from app.signup_protection import turnstile_ready, verify_turnstile
 from app.auth import CSRF_COOKIE, SESSION_COOKIE, create_session, hash_password, normalize_email, project_for_path, project_for_render_uri, project_membership, public_path, request_identity, safe_render_path, token_hash, user_project_ids, utcnow as auth_utcnow, verify_password
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
@@ -69,6 +71,7 @@ class TrialSignupInput(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     display_name: str = Field(min_length=1, max_length=160)
     password: str = Field(min_length=12, max_length=256)
+    challenge_token: str = Field(default="", max_length=2048)
 
 
 class EmailInput(BaseModel):
@@ -113,8 +116,12 @@ def account_response(user: User) -> dict:
 
 
 def request_network_hash(request: Request) -> str:
+    return token_hash(request_network_address(request))
+
+
+def request_network_address(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
-    return token_hash(forwarded or (request.client.host if request.client else "unknown"))
+    return forwarded or (request.client.host if request.client else "unknown")
 
 
 def security_event(db: Session, event_type: str, request: Request, user_id: int | None = None, metadata: dict | None = None) -> None:
@@ -310,7 +317,8 @@ def health():
 
 @app.get("/api/auth/status")
 def auth_status(db: Session = Depends(get_db)):
-    return {"auth_required": settings.auth_required, "setup_required": settings.auth_required and db.scalar(select(User.id).limit(1)) is None, "trial_signup_available": settings.auth_required and settings.trial_signup_enabled and db.scalar(select(User.id).where(User.role == "admin").limit(1)) is not None, "trial_days": settings.trial_days, "trial_export_seconds": settings.trial_export_seconds, "public_url": settings.public_url, "marketing_url": settings.marketing_url, "email_delivery_ready": smtp_ready(), "email_verification_required": settings.email_verification_required}
+    protected_signup_ready = turnstile_ready() and smtp_ready() and settings.email_verification_required
+    return {"auth_required": settings.auth_required, "setup_required": settings.auth_required and db.scalar(select(User.id).limit(1)) is None, "trial_signup_available": settings.auth_required and settings.trial_signup_enabled and protected_signup_ready and db.scalar(select(User.id).where(User.role == "admin").limit(1)) is not None, "trial_days": settings.trial_days, "trial_export_seconds": settings.trial_export_seconds, "public_url": settings.public_url, "marketing_url": settings.marketing_url, "email_delivery_ready": smtp_ready(), "email_verification_required": settings.email_verification_required, "turnstile_site_key": settings.turnstile_site_key if settings.trial_signup_enabled else "", "signup_protection_ready": protected_signup_ready}
 
 
 @app.post("/api/auth/trial", status_code=status.HTTP_201_CREATED)
@@ -319,6 +327,8 @@ def create_trial_account(payload: TrialSignupInput, response: Response, request:
         raise HTTPException(409, "Trial accounts are only available on the hosted Kizuna studio")
     if not settings.trial_signup_enabled:
         raise HTTPException(403, "Trial signup is not open yet")
+    if not settings.email_verification_required or not smtp_ready() or not turnstile_ready():
+        raise HTTPException(503, "Protected trial signup is not fully configured")
     if db.scalar(select(User.id).where(User.role == "admin").limit(1)) is None:
         raise HTTPException(503, "Kizuna is finishing studio setup. Please try again shortly.")
     if settings.email_verification_required and not smtp_ready():
@@ -326,8 +336,23 @@ def create_trial_account(payload: TrialSignupInput, response: Response, request:
     email = normalize_email(payload.email)
     if "@" not in email or email.startswith("@") or email.endswith("@"):
         raise HTTPException(422, "Enter a valid email address")
+    now = auth_utcnow()
+    since = now - timedelta(hours=1)
+    network_hash = request_network_hash(request)
+    email_hash = token_hash(email)
+    limit = max(1, settings.trial_signup_limit_per_hour)
+    network_attempts = db.scalar(select(func.count(SignupAttempt.id)).where(SignupAttempt.network_hash == network_hash, SignupAttempt.created_at >= since)) or 0
+    email_attempts = db.scalar(select(func.count(SignupAttempt.id)).where(SignupAttempt.email_hash == email_hash, SignupAttempt.created_at >= since)) or 0
+    attempt = SignupAttempt(network_hash=network_hash, email_hash=email_hash, accepted=False)
+    db.add(attempt)
+    if network_attempts >= limit or email_attempts >= limit:
+        db.commit()
+        raise HTTPException(429, "Too many signup attempts. Try again later.")
+    if not verify_turnstile(payload.challenge_token, request_network_address(request)):
+        db.commit()
+        raise HTTPException(422, "Please complete the human verification and try again")
     trial_ends_at = auth_utcnow() + timedelta(days=max(1, settings.trial_days))
-    verification_required = settings.email_verification_required
+    verification_required = True
     user = User(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="creator", account_tier="trial", trial_ends_at=trial_ends_at, active=not verification_required, email_verified_at=None if verification_required else auth_utcnow())
     project = Project(title="My First Production", logline="")
     project.style_profile = StyleProfile(era_secondary="2020s", visual={"linework": "bold variable ink", "palette": "controlled cinematic", "shading": "two-tone cel"}, direction={"camera": "character-led", "motion": "selective fluidity"}, narrative={"structure": "kishotenketsu", "tone": "hopeful"}, archetypes=["reluctant protagonist", "ideological rival"])
@@ -341,6 +366,7 @@ def create_trial_account(payload: TrialSignupInput, response: Response, request:
         else:
             user.last_sign_in_at = auth_utcnow()
             session_token, csrf_token, _ = create_session(user, db)
+        attempt.accepted = True
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -515,6 +541,135 @@ def resend_account_verification(payload: EmailInput, request: Request, backgroun
 def account_security_events(request: Request, db: Session = Depends(get_db)):
     events = db.scalars(select(AccountSecurityEvent).where(AccountSecurityEvent.user_id == request.state.user.id).order_by(AccountSecurityEvent.created_at.desc()).limit(50)).all()
     return [{"id": item.id, "event_type": item.event_type, "metadata": item.event_metadata, "created_at": item.created_at} for item in events]
+
+
+def subscription_response(item: UserSubscription | None) -> dict | None:
+    if item is None:
+        return None
+    return {"plan_key": item.plan_key, "status": item.status, "current_period_end": item.current_period_end, "cancel_at_period_end": item.cancel_at_period_end}
+
+
+def sync_subscription_entitlement(user: User, subscription: UserSubscription) -> None:
+    if subscription.status in ACTIVE_SUBSCRIPTION_STATUSES:
+        user.account_tier = "creator"
+        return
+    user.account_tier = "trial"
+    now = auth_utcnow()
+    if user.trial_ends_at is None or user.trial_ends_at > now:
+        user.trial_ends_at = now
+
+
+@app.get("/api/account/billing")
+def account_billing(request: Request, db: Session = Depends(get_db)):
+    user = db.get(User, request.state.user.id)
+    subscription = db.scalar(select(UserSubscription).where(UserSubscription.user_id == user.id))
+    events = db.scalars(select(AccountSecurityEvent).where(AccountSecurityEvent.user_id == user.id, AccountSecurityEvent.event_type.like("billing_%")).order_by(AccountSecurityEvent.created_at.desc()).limit(20)).all()
+    return {"account": account_response(user), "subscription": subscription_response(subscription), "checkout_ready": stripe_ready() and user.role != "admin", "portal_ready": bool(stripe_ready() and subscription), "provider": "stripe" if stripe_ready() else "not_configured", "events": [{"event_type": event.event_type, "metadata": event.event_metadata, "created_at": event.created_at} for event in events]}
+
+
+@app.post("/api/account/billing/checkout")
+def create_billing_checkout(request: Request, db: Session = Depends(get_db)):
+    if not stripe_ready():
+        raise HTTPException(503, "Subscription checkout is not configured yet")
+    user = db.get(User, request.state.user.id)
+    if user.role == "admin":
+        raise HTTPException(409, "Studio administrator accounts do not require a creator subscription")
+    existing = db.scalar(select(UserSubscription).where(UserSubscription.user_id == user.id))
+    fields = {"mode": "subscription", "line_items[0][price]": settings.stripe_creator_price_id, "line_items[0][quantity]": "1", "client_reference_id": str(user.id), "success_url": f"{settings.public_url.rstrip('/')}/?billing=success", "cancel_url": f"{settings.public_url.rstrip('/')}/?billing=cancelled", "subscription_data[metadata][kizuna_user_id]": str(user.id), "subscription_data[metadata][plan_key]": "creator", "allow_promotion_codes": "true"}
+    if existing:
+        fields["customer"] = existing.customer_id
+    else:
+        fields["customer_email"] = user.email
+    try:
+        session = stripe_request("checkout/sessions", fields)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    security_event(db, "billing_checkout_created", request, user.id, {"checkout_session_id": session.get("id", "")})
+    db.commit()
+    return {"url": session["url"]}
+
+
+@app.post("/api/account/billing/portal")
+def create_billing_portal(request: Request, db: Session = Depends(get_db)):
+    if not stripe_ready():
+        raise HTTPException(503, "Subscription management is not configured yet")
+    user = db.get(User, request.state.user.id)
+    subscription = db.scalar(select(UserSubscription).where(UserSubscription.user_id == user.id))
+    if subscription is None:
+        raise HTTPException(409, "No subscription account exists yet")
+    try:
+        session = stripe_request("billing_portal/sessions", {"customer": subscription.customer_id, "return_url": f"{settings.public_url.rstrip('/')}/?billing=return"})
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {"url": session["url"]}
+
+
+def apply_subscription_event(db: Session, item: dict, event_type: str) -> UserSubscription | None:
+    customer_id = str(item.get("customer") or "")
+    subscription_id = str(item.get("id") or "")
+    metadata = item.get("metadata") or {}
+    user_id = int(metadata.get("kizuna_user_id") or 0)
+    subscription = db.scalar(select(UserSubscription).where(UserSubscription.subscription_id == subscription_id)) if subscription_id else None
+    if subscription is None and customer_id:
+        subscription = db.scalar(select(UserSubscription).where(UserSubscription.customer_id == customer_id))
+    if subscription is None and user_id:
+        user = db.get(User, user_id)
+        if user:
+            subscription = UserSubscription(user_id=user.id, customer_id=customer_id, subscription_id=subscription_id or None)
+            db.add(subscription)
+    if subscription is None:
+        return None
+    subscription.customer_id = customer_id or subscription.customer_id
+    subscription.subscription_id = subscription_id or subscription.subscription_id
+    subscription.plan_key = str(metadata.get("plan_key") or subscription.plan_key or "creator")
+    subscription.status = "canceled" if event_type == "customer.subscription.deleted" else str(item.get("status") or subscription.status)
+    subscription.current_period_end = stripe_timestamp(item.get("current_period_end"))
+    subscription.cancel_at_period_end = bool(item.get("cancel_at_period_end", False))
+    user = db.get(User, subscription.user_id)
+    if user:
+        sync_subscription_entitlement(user, subscription)
+    return subscription
+
+
+@app.post("/api/billing/stripe/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    payload = await request.body()
+    try:
+        event = verify_stripe_event(payload, request.headers.get("stripe-signature", ""))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, "Invalid Stripe webhook") from exc
+    event_id, event_type = str(event.get("id") or ""), str(event.get("type") or "")
+    if not event_id or db.scalar(select(BillingEvent.id).where(BillingEvent.event_id == event_id)) is not None:
+        return {"received": True}
+    item = (event.get("data") or {}).get("object") or {}
+    subscription = None
+    if event_type == "checkout.session.completed":
+        user_id = int(item.get("client_reference_id") or 0)
+        user = db.get(User, user_id)
+        customer_id, subscription_id = str(item.get("customer") or ""), str(item.get("subscription") or "")
+        if user and customer_id:
+            subscription = db.scalar(select(UserSubscription).where(UserSubscription.user_id == user.id))
+            if subscription is None:
+                subscription = UserSubscription(user_id=user.id, customer_id=customer_id, subscription_id=subscription_id or None)
+                db.add(subscription)
+            subscription.customer_id, subscription.subscription_id = customer_id, subscription_id or subscription.subscription_id
+            subscription.status = "active" if item.get("payment_status") == "paid" else "incomplete"
+            sync_subscription_entitlement(user, subscription)
+    elif event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
+        subscription = apply_subscription_event(db, item, event_type)
+    elif event_type == "invoice.payment_failed":
+        subscription_id = str(item.get("subscription") or "")
+        subscription = db.scalar(select(UserSubscription).where(UserSubscription.subscription_id == subscription_id))
+        if subscription:
+            subscription.status = "past_due"
+            user = db.get(User, subscription.user_id)
+            if user:
+                sync_subscription_entitlement(user, subscription)
+    db.add(BillingEvent(event_id=event_id, event_type=event_type))
+    if subscription:
+        db.add(AccountSecurityEvent(user_id=subscription.user_id, event_type=f"billing_{event_type.replace('.', '_')}", network_hash="", event_metadata={"status": subscription.status, "plan_key": subscription.plan_key}))
+    db.commit()
+    return {"received": True}
 
 
 def invitation_response(invitation: StudioInvitation, db: Session) -> dict:

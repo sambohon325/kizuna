@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     trial_signup_enabled: bool = False
     trial_export_seconds: int = 60
     trial_watermark: str = "KIZUNA TRIAL | kizuna.technology"
+    trial_signup_limit_per_hour: int = 5
+    turnstile_site_key: str = ""
+    turnstile_secret_key: str = ""
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_creator_price_id: str = ""
     cookie_secure: bool = False
     database_url: str = "sqlite:///./anime_studio.db"
     generation_provider: str = "mock"

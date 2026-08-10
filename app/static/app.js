@@ -11,18 +11,19 @@ const shotDialog = document.querySelector('#shot-dialog');
 const timelineDialog = document.querySelector('#timeline-dialog');
 const audioDialog = document.querySelector('#audio-dialog');
 const compositorDialog = document.querySelector('#compositor-dialog');
+const accountDialog = document.querySelector('#account-dialog');
 const settingsDialog = document.querySelector('#settings-dialog');
 const workspaceMain = document.querySelector('#workspace-main');
 const dashboardHome = document.querySelector('#dashboard-home');
-const workspaceDialogs = [detailDialog, crewDialog, styleDialog, writerDialog, characterDialog, renderDialog, worldDialog, shotDialog, timelineDialog, audioDialog, compositorDialog, settingsDialog];
+const workspaceDialogs = [detailDialog, crewDialog, styleDialog, writerDialog, characterDialog, renderDialog, worldDialog, shotDialog, timelineDialog, audioDialog, compositorDialog, accountDialog, settingsDialog];
 const workspaceNav = new Map([
   [detailDialog, 'productions-nav'], [crewDialog, 'crew-nav'], [styleDialog, 'style-lab-nav'], [writerDialog, 'writer-nav'],
   [characterDialog, 'characters-nav'], [renderDialog, 'render-nav'], [worldDialog, 'worlds-nav'],
   [shotDialog, 'shots-nav'], [timelineDialog, 'timeline-nav'], [audioDialog, 'audio-nav'],
-  [compositorDialog, 'compositor-nav'], [settingsDialog, 'settings-nav'],
+  [compositorDialog, 'compositor-nav'], [accountDialog, 'settings-nav'], [settingsDialog, 'settings-nav'],
 ]);
 const workspaceKeys = new Map([
-  [crewDialog,'crew'],[styleDialog,'style'],[writerDialog,'writer'],[characterDialog,'characters'],[worldDialog,'worlds'],[shotDialog,'shots'],[timelineDialog,'timeline'],[audioDialog,'audio'],[compositorDialog,'compositor'],[renderDialog,'render'],[settingsDialog,'settings'],
+  [crewDialog,'crew'],[styleDialog,'style'],[writerDialog,'writer'],[characterDialog,'characters'],[worldDialog,'worlds'],[shotDialog,'shots'],[timelineDialog,'timeline'],[audioDialog,'audio'],[compositorDialog,'compositor'],[renderDialog,'render'],[accountDialog,'account'],[settingsDialog,'settings'],
 ]);
 
 function setActiveNavigation(navId = 'productions-nav') {
@@ -43,7 +44,7 @@ function openWorkspace(dialog) {
   });
   dashboardHome.hidden = true;
   workspaceMain.classList.add('tool-open');
-  workspaceMain.classList.toggle('settings-open',dialog===settingsDialog);
+  workspaceMain.classList.toggle('settings-open',dialog===settingsDialog||dialog===accountDialog);
   workspaceMain.appendChild(dialog);
   dialog.classList.add('workspace-view');
   dialog.setAttribute('open', '');
@@ -72,7 +73,7 @@ function openWorkspaceWindow(key,dialog) {
 }
 
 async function openRequestedWorkspace() {
-  const params=new URLSearchParams(location.search),key=params.get('workspace'),projectId=Number(params.get('project'))||undefined;if(params.get('popout')==='1')document.body.classList.add('popout-mode');const openers={crew:openCrewStudio,style:openStyleLab,writer:openWriterRoom,characters:openCharacterStudio,worlds:openWorldStudio,shots:openShotPlanner,timeline:openTimeline,audio:openAudioStudio,compositor:openCompositor,render:openRenderFarm,settings:openSettings};if(key&&openers[key])await openers[key](projectId);
+  const params=new URLSearchParams(location.search),key=params.get('workspace'),projectId=Number(params.get('project'))||undefined;if(params.get('popout')==='1')document.body.classList.add('popout-mode');const openers={crew:openCrewStudio,style:openStyleLab,writer:openWriterRoom,characters:openCharacterStudio,worlds:openWorldStudio,shots:openShotPlanner,timeline:openTimeline,audio:openAudioStudio,compositor:openCompositor,render:openRenderFarm,account:openAccountCenter,settings:openSettings};if(key&&openers[key])await openers[key](projectId);
 }
 
 function showDashboard() {
@@ -225,6 +226,7 @@ function safe(value = '') {
 async function loadAccountIdentity(){
   const status=await fetch('/api/auth/status').then(response=>response.json());if(!status.auth_required)return;
   const user=await api('/api/auth/me');activeAccount=user;document.querySelector('#studio-identity').textContent=user.account_tier==='trial'?`${user.display_name} · Trial`:user.display_name;
+  const accountButton=document.querySelector('#account-nav');accountButton.hidden=false;accountButton.onclick=openAccountCenter;
   const button=document.querySelector('#sign-out');button.hidden=false;button.onclick=async()=>{await api('/api/auth/logout',{method:'POST'});location.href='/login';};
 }
 
@@ -1226,7 +1228,21 @@ async function duplicateSelectedAudioRegion() { if(!activeAudioCueId)return;cons
 
 async function deleteSelectedAudioRegion() { if(!activeAudioCueId)return;await api(`/api/audio-cues/${activeAudioCueId}`,{method:'DELETE'});activeAudioCueId=null;activeAudioStudio=await api(`/api/projects/${activeAudioStudio.project_id}/audio-studio`);document.querySelector('#cue-form').style.display='none';document.querySelector('#cue-empty').style.display='block';renderAudioStudio(activeAudioStudio.project_id); }
 
-let integrationSettings=null,aiRoutingSettings=null,computeSettings=null,storageSettings=null,professionalProfile=null,teamSettings=null,settingsView='compute';
+let integrationSettings=null,aiRoutingSettings=null,computeSettings=null,storageSettings=null,professionalProfile=null,teamSettings=null,accountBilling=null,settingsView='compute';
+
+async function openAccountCenter(){
+  openWorkspace(accountDialog);const host=document.querySelector('#account-center');host.innerHTML='<div class="settings-loading">Loading account...</div>';try{accountBilling=await api('/api/account/billing');renderAccountCenter();}catch(error){host.innerHTML=`<div class="job-error">${safe(error.message)}</div>`;}
+}
+
+function renderAccountCenter(){
+  const host=document.querySelector('#account-center'),account=accountBilling.account,subscription=accountBilling.subscription,trialEnd=account.trial_ends_at?new Date(account.trial_ends_at).toLocaleDateString():null,periodEnd=subscription?.current_period_end?new Date(subscription.current_period_end).toLocaleDateString():null;
+  const plan=subscription&&['active','trialing'].includes(subscription.status)?'Creator subscription':account.account_tier==='trial'?'7-day trial':account.role==='admin'?'Studio administrator':account.account_tier.replaceAll('_',' ');
+  const action=accountBilling.portal_ready?'<button id="manage-subscription" class="primary" type="button">Manage subscription</button>':accountBilling.checkout_ready?'<button id="start-subscription" class="primary" type="button">Choose Creator plan</button>':'<button type="button" disabled>Subscriptions are not configured yet</button>';
+  host.innerHTML=`<section class="account-overview"><header><div><p class="eyebrow">CURRENT ACCESS</p><h3>${safe(plan)}</h3><p>${safe(account.email)}</p></div><span class="account-status ${safe(subscription?.status||account.account_tier)}">${safe(subscription?.status||account.account_tier)}</span></header><div class="account-facts"><span><b>${account.email_verified?'Verified':'Verification needed'}</b>Email</span><span><b>${trialEnd||periodEnd||'Ongoing'}</b>${subscription?'Current period':'Trial ends'}</span><span><b>${account.trial_watermarked?'Yes':'No'}</b>Trial watermark</span><span><b>${account.trial_export_seconds?account.trial_export_seconds+' seconds':'Plan allowance'}</b>Export limit</span></div><div class="account-actions">${action}<small>Checkout, invoices, payment methods, and cancellation are handled by Stripe. Kizuna changes access only after a signed billing event.</small></div></section><section class="account-events"><header><div><p class="eyebrow">BILLING ACTIVITY</p><h3>Recent account events</h3></div></header>${accountBilling.events.length?accountBilling.events.map(event=>`<article><b>${safe(event.event_type.replaceAll('_',' '))}</b><span>${new Date(event.created_at).toLocaleString()}</span></article>`).join(''):'<div class="compute-empty">No billing activity yet.</div>'}</section>`;
+  host.querySelector('#start-subscription')?.addEventListener('click',()=>openBillingSession('/api/account/billing/checkout'));host.querySelector('#manage-subscription')?.addEventListener('click',()=>openBillingSession('/api/account/billing/portal'));
+}
+
+async function openBillingSession(path){const button=document.querySelector('#account-center .account-actions button');button.disabled=true;button.textContent='Opening secure billing...';try{const session=await api(path,{method:'POST'});location.assign(session.url);}catch(error){button.disabled=false;button.textContent=error.message;}}
 
 async function openSettings() {
   openWorkspace(settingsDialog);
@@ -1406,6 +1422,7 @@ document.querySelector('#timeline-nav').onclick = () => openTimeline();
 document.querySelector('#audio-nav').onclick = () => openAudioStudio();
 document.querySelector('#compositor-nav').onclick = () => openCompositor();
 document.querySelector('#settings-nav').onclick = openSettings;
+document.querySelector('#account-nav').onclick = openAccountCenter;
 document.querySelector('.close').onclick = () => projectDialog.close();
 document.querySelector('#style-close').onclick = closeWorkspace;
 document.querySelector('#crew-close').onclick = closeWorkspace;
@@ -1418,6 +1435,7 @@ document.querySelector('#timeline-close').onclick = closeWorkspace;
 document.querySelector('#audio-close').onclick = closeWorkspace;
 document.querySelector('#compositor-close').onclick = closeWorkspace;
 document.querySelector('#settings-close').onclick = closeWorkspace;
+document.querySelector('#account-close').onclick = closeWorkspace;
 document.querySelector('#deploy-crew').onclick = deploySelectedCrew;
 document.querySelector('#start-producer').onclick = saveProducerWorkflow;
 document.querySelector('#advance-producer').onclick = advanceProducerWorkflow;

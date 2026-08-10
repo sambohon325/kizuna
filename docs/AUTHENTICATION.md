@@ -31,6 +31,14 @@ Kizuna uses standard SMTP rather than a provider-specific SDK. Configure `KIZUNA
 
 Keep `KIZUNA_EMAIL_VERIFICATION_REQUIRED=false` while testing delivery. After a real message can be requested and completed from the deployed application, change it to `true` before opening public trial signup. Recovery and resend requests are rate-limited with `KIZUNA_ACCOUNT_EMAIL_LIMIT_PER_HOUR` and deliberately return generic responses that do not reveal whether an email address has an account.
 
+Public trial registration also fails closed unless Cloudflare Turnstile is fully configured. The browser widget is only the first half of the control: Kizuna redeems every short-lived token through Turnstile's server-side Siteverify API, verifies the response hostname against `KIZUNA_PUBLIC_URL`, and separately limits attempts by hashed email and network address. Configure `KIZUNA_TURNSTILE_SITE_KEY`, `KIZUNA_TURNSTILE_SECRET_KEY`, and `KIZUNA_TRIAL_SIGNUP_LIMIT_PER_HOUR` before enabling signup.
+
+## Subscriptions and entitlements
+
+The Account workspace shows trial, email, export, and subscription status. Paid conversion uses Stripe-hosted Checkout; payment methods, invoices, plan changes, and cancellation use Stripe's hosted customer portal. Kizuna never upgrades access from a browser redirect. Only webhooks signed with `KIZUNA_STRIPE_WEBHOOK_SECRET` can change the stored subscription and entitlement, and every Stripe event ID is processed at most once.
+
+Configure a recurring Stripe Price and add `KIZUNA_STRIPE_SECRET_KEY`, `KIZUNA_STRIPE_WEBHOOK_SECRET`, and `KIZUNA_STRIPE_CREATOR_PRICE_ID`. Register the public webhook URL `https://app.kizuna.technology/api/billing/stripe/webhook` for Checkout completion, subscription created/updated/deleted, and invoice payment failure events. Use Stripe test mode until the full purchase, portal, cancellation, and failed-payment paths have been exercised.
+
 ## App and marketing hostnames
 
 Kizuna keeps the application and marketing URLs separate. Set `KIZUNA_PUBLIC_URL=https://app.kizuna.technology`; invitation links are generated from this value. Set `KIZUNA_MARKETING_URL=https://kizuna.technology`; the Kizuna logo on account screens links back there.

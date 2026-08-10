@@ -24,7 +24,7 @@ SESSION_COOKIE = "kizuna_session"
 CSRF_COOKIE = "kizuna_csrf"
 PASSWORD_ITERATIONS = 600_000
 PUBLIC_PREFIXES = ("/static/", "/api/workers/", "/api/nodes/", "/api/internal/")
-PUBLIC_EXACT = {"/api/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/trial", "/login", "/signup", "/setup"}
+PUBLIC_EXACT = {"/api/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/trial", "/api/auth/password/forgot", "/api/auth/verification/resend", "/login", "/signup", "/forgot-password", "/setup"}
 
 
 def utcnow() -> datetime:
@@ -82,7 +82,7 @@ def request_identity(request: Request, db: Session) -> tuple[User | None, UserSe
 
 
 def public_path(path: str) -> bool:
-    return path in PUBLIC_EXACT or path.startswith(PUBLIC_PREFIXES) or path.startswith(("/delivery/", "/invite/", "/api/auth/invitations/"))
+    return path in PUBLIC_EXACT or path.startswith(PUBLIC_PREFIXES) or path.startswith(("/delivery/", "/invite/", "/reset-password/", "/verify-email/", "/api/auth/invitations/", "/api/auth/password/reset/", "/api/auth/verify/"))
 
 
 def has_membership(db: Session, user_id: int, project_id: int) -> bool:

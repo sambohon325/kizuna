@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
@@ -25,7 +25,7 @@ from app.database import SessionLocal, get_db
 from app.schema_migrations import database_revision, migrate_database
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecurityEvent, AccountToken, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
 from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
@@ -44,6 +44,7 @@ from app.director_agent import DirectorAgentError, create_director_proposal
 from app.visual_agents import VisualAgentError, create_background_design_proposal, create_character_design_proposal
 from app.animator_agent import AnimatorAgentError, create_animator_proposal
 from app.editor_agent import EditorAgentError, create_editor_proposal
+from app.email_delivery import send_email, smtp_ready
 from app.auth import CSRF_COOKIE, SESSION_COOKIE, create_session, hash_password, normalize_email, project_for_path, project_for_render_uri, project_membership, public_path, request_identity, safe_render_path, token_hash, user_project_ids, utcnow as auth_utcnow, verify_password
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
@@ -68,6 +69,15 @@ class TrialSignupInput(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     display_name: str = Field(min_length=1, max_length=160)
     password: str = Field(min_length=12, max_length=256)
+
+
+class EmailInput(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+
+class PasswordResetInput(BaseModel):
+    password: str = Field(min_length=12, max_length=256)
+    confirm_password: str = Field(min_length=12, max_length=256)
 
 
 class ProjectAccessInput(BaseModel):
@@ -99,7 +109,47 @@ def set_auth_cookies(response: Response, session_token: str, csrf_token: str) ->
 def account_response(user: User) -> dict:
     now = auth_utcnow()
     trial_active = user.account_tier == "trial" and bool(user.trial_ends_at and user.trial_ends_at > now)
-    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role, "account_tier": user.account_tier, "trial_ends_at": user.trial_ends_at, "trial_active": trial_active, "trial_export_seconds": settings.trial_export_seconds if user.account_tier == "trial" else None, "trial_watermarked": user.account_tier == "trial"}
+    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role, "account_tier": user.account_tier, "trial_ends_at": user.trial_ends_at, "trial_active": trial_active, "trial_export_seconds": settings.trial_export_seconds if user.account_tier == "trial" else None, "trial_watermarked": user.account_tier == "trial", "email_verified": user.email_verified_at is not None, "email_delivery_ready": smtp_ready()}
+
+
+def request_network_hash(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
+    return token_hash(forwarded or (request.client.host if request.client else "unknown"))
+
+
+def security_event(db: Session, event_type: str, request: Request, user_id: int | None = None, metadata: dict | None = None) -> None:
+    db.add(AccountSecurityEvent(user_id=user_id, event_type=event_type, network_hash=request_network_hash(request), event_metadata=metadata or {}))
+
+
+def issue_account_token(db: Session, user: User, purpose: str) -> tuple[str, AccountToken]:
+    now = auth_utcnow()
+    for existing in db.scalars(select(AccountToken).where(AccountToken.user_id == user.id, AccountToken.purpose == purpose, AccountToken.used_at.is_(None))).all():
+        existing.used_at = now
+    raw = secrets.token_urlsafe(48)
+    item = AccountToken(user_id=user.id, purpose=purpose, token_hash=token_hash(raw), expires_at=now + timedelta(hours=max(1, settings.account_token_hours)))
+    db.add(item); db.flush()
+    return raw, item
+
+
+def deliver_account_email(user_id: int, to_email: str, subject: str, body: str, event_type: str) -> None:
+    try:
+        send_email(to_email, subject, body)
+    except Exception:
+        with SessionLocal() as delivery_db:
+            delivery_db.add(AccountSecurityEvent(user_id=user_id, event_type="email_delivery_failed", network_hash="", event_metadata={"message_type": event_type}))
+            delivery_db.commit()
+
+
+def schedule_verification_email(user: User, raw_token: str, background_tasks: BackgroundTasks) -> None:
+    url = f"{settings.public_url.rstrip('/')}/verify-email/{raw_token}"
+    body = f"Verify your Kizuna email address\n\nOpen this single-use link within {max(1, settings.account_token_hours)} hour(s):\n{url}\n\nIf you did not create or join a Kizuna account, ignore this message."
+    background_tasks.add_task(deliver_account_email, user.id, user.email, "Verify your Kizuna email", body, "email_verification")
+
+
+def schedule_password_reset_email(user: User, raw_token: str, background_tasks: BackgroundTasks) -> None:
+    url = f"{settings.public_url.rstrip('/')}/reset-password/{raw_token}"
+    body = f"Reset your Kizuna password\n\nOpen this single-use link within {max(1, settings.account_token_hours)} hour(s):\n{url}\n\nIf you did not request this reset, you can ignore this message."
+    background_tasks.add_task(deliver_account_email, user.id, user.email, "Reset your Kizuna password", body, "password_reset")
 
 
 @app.middleware("http")
@@ -260,35 +310,46 @@ def health():
 
 @app.get("/api/auth/status")
 def auth_status(db: Session = Depends(get_db)):
-    return {"auth_required": settings.auth_required, "setup_required": settings.auth_required and db.scalar(select(User.id).limit(1)) is None, "trial_signup_available": settings.auth_required and settings.trial_signup_enabled and db.scalar(select(User.id).where(User.role == "admin").limit(1)) is not None, "trial_days": settings.trial_days, "trial_export_seconds": settings.trial_export_seconds, "public_url": settings.public_url, "marketing_url": settings.marketing_url}
+    return {"auth_required": settings.auth_required, "setup_required": settings.auth_required and db.scalar(select(User.id).limit(1)) is None, "trial_signup_available": settings.auth_required and settings.trial_signup_enabled and db.scalar(select(User.id).where(User.role == "admin").limit(1)) is not None, "trial_days": settings.trial_days, "trial_export_seconds": settings.trial_export_seconds, "public_url": settings.public_url, "marketing_url": settings.marketing_url, "email_delivery_ready": smtp_ready(), "email_verification_required": settings.email_verification_required}
 
 
 @app.post("/api/auth/trial", status_code=status.HTTP_201_CREATED)
-def create_trial_account(payload: TrialSignupInput, response: Response, db: Session = Depends(get_db)):
+def create_trial_account(payload: TrialSignupInput, response: Response, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     if not settings.auth_required:
         raise HTTPException(409, "Trial accounts are only available on the hosted Kizuna studio")
     if not settings.trial_signup_enabled:
         raise HTTPException(403, "Trial signup is not open yet")
     if db.scalar(select(User.id).where(User.role == "admin").limit(1)) is None:
         raise HTTPException(503, "Kizuna is finishing studio setup. Please try again shortly.")
+    if settings.email_verification_required and not smtp_ready():
+        raise HTTPException(503, "Account email is temporarily unavailable. Please try again shortly.")
     email = normalize_email(payload.email)
     if "@" not in email or email.startswith("@") or email.endswith("@"):
         raise HTTPException(422, "Enter a valid email address")
     trial_ends_at = auth_utcnow() + timedelta(days=max(1, settings.trial_days))
-    user = User(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="creator", account_tier="trial", trial_ends_at=trial_ends_at, last_sign_in_at=auth_utcnow())
+    verification_required = settings.email_verification_required
+    user = User(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="creator", account_tier="trial", trial_ends_at=trial_ends_at, active=not verification_required, email_verified_at=None if verification_required else auth_utcnow())
     project = Project(title="My First Production", logline="")
     project.style_profile = StyleProfile(era_secondary="2020s", visual={"linework": "bold variable ink", "palette": "controlled cinematic", "shading": "two-tone cel"}, direction={"camera": "character-led", "motion": "selective fluidity"}, narrative={"structure": "kishotenketsu", "tone": "hopeful"}, archetypes=["reluctant protagonist", "ideological rival"])
     db.add_all([user, project])
     try:
         db.flush()
         db.add(ProjectMembership(project_id=project.id, user_id=user.id, role="owner"))
-        session_token, csrf_token, _ = create_session(user, db)
+        if verification_required:
+            raw_token, _ = issue_account_token(db, user, "verify_email")
+            security_event(db, "email_verification_requested", request, user.id)
+        else:
+            user.last_sign_in_at = auth_utcnow()
+            session_token, csrf_token, _ = create_session(user, db)
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(409, "An account already uses this email")
-    set_auth_cookies(response, session_token, csrf_token)
-    return {**account_response(user), "project_id": project.id}
+    if verification_required:
+        schedule_verification_email(user, raw_token, background_tasks)
+    else:
+        set_auth_cookies(response, session_token, csrf_token)
+    return {**account_response(user), "project_id": project.id, "verification_required": verification_required}
 
 
 @app.post("/api/auth/setup")
@@ -302,7 +363,7 @@ def setup_first_admin(payload: AuthSetupInput, response: Response, db: Session =
     email = normalize_email(payload.email)
     if "@" not in email or email.startswith("@") or email.endswith("@"):
         raise HTTPException(422, "Enter a valid email address")
-    user = User(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="admin", account_tier="studio")
+    user = User(email=email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="admin", account_tier="studio", email_verified_at=auth_utcnow())
     db.add(user)
     try:
         db.flush()
@@ -358,6 +419,104 @@ def sign_out(request: Request, response: Response, db: Session = Depends(get_db)
     response.delete_cookie(CSRF_COOKIE, path="/")
 
 
+def valid_account_token(db: Session, raw_token: str, purpose: str) -> AccountToken | None:
+    return db.scalar(select(AccountToken).where(AccountToken.token_hash == token_hash(raw_token), AccountToken.purpose == purpose, AccountToken.used_at.is_(None), AccountToken.expires_at > auth_utcnow()))
+
+
+@app.post("/api/auth/password/forgot", status_code=status.HTTP_202_ACCEPTED)
+def forgot_password(payload: EmailInput, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    generic = {"message": "If that email is registered, a reset link will be sent."}
+    now = auth_utcnow()
+    since = now - timedelta(hours=1)
+    network = request_network_hash(request)
+    network_count = db.scalar(select(func.count(AccountSecurityEvent.id)).where(AccountSecurityEvent.network_hash == network, AccountSecurityEvent.event_type == "password_reset_requested", AccountSecurityEvent.created_at >= since)) or 0
+    user = db.scalar(select(User).where(User.email == normalize_email(payload.email)))
+    user_count = 0
+    if user:
+        user_count = db.scalar(select(func.count(AccountToken.id)).where(AccountToken.user_id == user.id, AccountToken.purpose == "password_reset", AccountToken.created_at >= since)) or 0
+    allowed = bool(user and user.active and network_count < max(1, settings.account_email_limit_per_hour) and user_count < max(1, settings.account_email_limit_per_hour) and smtp_ready())
+    security_event(db, "password_reset_requested", request, user.id if user else None, {"accepted_for_delivery": allowed})
+    if allowed:
+        raw_token, _ = issue_account_token(db, user, "password_reset")
+    else:
+        token_hash(secrets.token_urlsafe(48))
+    db.commit()
+    if allowed:
+        schedule_password_reset_email(user, raw_token, background_tasks)
+    return generic
+
+
+@app.get("/api/auth/password/reset/{raw_token}")
+def inspect_password_reset(raw_token: str, db: Session = Depends(get_db)):
+    if valid_account_token(db, raw_token, "password_reset") is None:
+        raise HTTPException(404, "This password reset link is invalid or expired")
+    return {"valid": True}
+
+
+@app.post("/api/auth/password/reset/{raw_token}")
+def reset_password(raw_token: str, payload: PasswordResetInput, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    if payload.password != payload.confirm_password:
+        raise HTTPException(422, "Passwords do not match")
+    item = valid_account_token(db, raw_token, "password_reset")
+    if item is None:
+        raise HTTPException(404, "This password reset link is invalid or expired")
+    user = db.get(User, item.user_id)
+    if user is None:
+        raise HTTPException(404, "This password reset link is invalid or expired")
+    now = auth_utcnow()
+    user.password_hash = hash_password(payload.password)
+    user.failed_sign_in_count, user.locked_until = 0, None
+    for token in db.scalars(select(AccountToken).where(AccountToken.user_id == user.id, AccountToken.used_at.is_(None))).all():
+        token.used_at = now
+    for session in db.scalars(select(UserSession).where(UserSession.user_id == user.id)).all():
+        db.delete(session)
+    security_event(db, "password_reset_completed", request, user.id)
+    db.commit()
+    if smtp_ready():
+        background_tasks.add_task(deliver_account_email, user.id, user.email, "Your Kizuna password was changed", "Your Kizuna password was changed and all existing sessions were signed out. If you did not make this change, contact your studio administrator immediately.", "password_changed")
+    return {"message": "Password updated. Sign in with your new password."}
+
+
+@app.post("/api/auth/verify/{raw_token}")
+def verify_account_email(raw_token: str, request: Request, db: Session = Depends(get_db)):
+    item = valid_account_token(db, raw_token, "verify_email")
+    if item is None:
+        raise HTTPException(404, "This verification link is invalid or expired")
+    user = db.get(User, item.user_id)
+    if user is None:
+        raise HTTPException(404, "This verification link is invalid or expired")
+    now = auth_utcnow()
+    item.used_at = now
+    user.email_verified_at = now
+    user.active = True
+    security_event(db, "email_verification_completed", request, user.id)
+    db.commit()
+    return {"message": "Email verified. You can now sign in."}
+
+
+@app.post("/api/auth/verification/resend", status_code=status.HTTP_202_ACCEPTED)
+def resend_account_verification(payload: EmailInput, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    generic = {"message": "If that account still needs verification, another email will arrive shortly."}
+    user = db.scalar(select(User).where(User.email == normalize_email(payload.email)))
+    if user is None or user.email_verified_at is not None or not smtp_ready():
+        return generic
+    since = auth_utcnow() - timedelta(hours=1)
+    recent = db.scalar(select(func.count(AccountToken.id)).where(AccountToken.user_id == user.id, AccountToken.purpose == "verify_email", AccountToken.created_at >= since)) or 0
+    if recent >= max(1, settings.account_email_limit_per_hour):
+        return generic
+    raw_token, _ = issue_account_token(db, user, "verify_email")
+    security_event(db, "email_verification_requested", request, user.id)
+    db.commit()
+    schedule_verification_email(user, raw_token, background_tasks)
+    return generic
+
+
+@app.get("/api/auth/security-events")
+def account_security_events(request: Request, db: Session = Depends(get_db)):
+    events = db.scalars(select(AccountSecurityEvent).where(AccountSecurityEvent.user_id == request.state.user.id).order_by(AccountSecurityEvent.created_at.desc()).limit(50)).all()
+    return [{"id": item.id, "event_type": item.event_type, "metadata": item.event_metadata, "created_at": item.created_at} for item in events]
+
+
 def invitation_response(invitation: StudioInvitation, db: Session) -> dict:
     titles = {item.id: item.title for item in db.scalars(select(Project).where(Project.id.in_([entry.get("project_id") for entry in invitation.project_roles]))).all()}
     return {"id": invitation.id, "email": invitation.email, "display_name": invitation.display_name, "project_access": [{**entry, "project_title": titles.get(entry.get("project_id"), "Production")} for entry in invitation.project_roles], "expires_at": invitation.expires_at, "accepted_at": invitation.accepted_at, "revoked_at": invitation.revoked_at, "created_at": invitation.created_at}
@@ -378,7 +537,7 @@ def accept_invitation(invitation_token: str, payload: InvitationAcceptInput, res
         raise HTTPException(404, "Invitation is invalid or expired")
     if db.scalar(select(User.id).where(User.email == invitation.email)) is not None:
         raise HTTPException(409, "An account already uses this email. Sign in and ask the studio administrator to add production access.")
-    user = User(email=invitation.email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="creator", account_tier="collaborator", last_sign_in_at=auth_utcnow())
+    user = User(email=invitation.email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="creator", account_tier="collaborator", last_sign_in_at=auth_utcnow(), email_verified_at=auth_utcnow())
     db.add(user)
     try:
         db.flush()
@@ -4147,6 +4306,21 @@ def login_page():
 
 @app.get("/signup", include_in_schema=False)
 def signup_page():
+    return FileResponse(static_dir / "login.html")
+
+
+@app.get("/forgot-password", include_in_schema=False)
+def forgot_password_page():
+    return FileResponse(static_dir / "login.html")
+
+
+@app.get("/reset-password/{raw_token}", include_in_schema=False)
+def reset_password_page(raw_token: str):
+    return FileResponse(static_dir / "login.html")
+
+
+@app.get("/verify-email/{raw_token}", include_in_schema=False)
+def verify_email_page(raw_token: str):
     return FileResponse(static_dir / "login.html")
 
 

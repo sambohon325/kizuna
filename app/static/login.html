@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <title>Sign in · Kizuna Studio</title>
   <link rel="icon" type="image/png" href="/static/assets/kizuna-icon.png">
   <link rel="stylesheet" href="/static/login.css">
@@ -22,11 +23,12 @@
         <label id="name-field" hidden>Your name<input name="display_name" autocomplete="name" maxlength="160"></label>
         <label>Email<input name="email" type="email" autocomplete="email" required maxlength="320"></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="12" maxlength="256"></label>
+        <label id="confirm-field" hidden>Confirm password<input name="confirm_password" type="password" autocomplete="new-password" minlength="12" maxlength="256"></label>
         <label id="key-field" hidden>Studio setup key<input name="bootstrap_key" type="password" autocomplete="off" maxlength="512"></label>
         <button type="submit">Continue</button>
         <p id="auth-error" role="alert"></p>
       </form>
-      <p id="auth-switch"><a href="/signup">Start a 7-day free trial</a></p>
+      <p id="auth-switch"><a href="/forgot-password">Forgot password?</a> · <a href="/signup">Start a 7-day free trial</a></p>
       <small>Secure sessions use encrypted transport and HttpOnly cookies in production.</small>
     </section>
   </main>

@@ -3,10 +3,10 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from sqlalchemy import select
 
-from app.auth import hash_password, utcnow as auth_utcnow
+from app.auth import hash_password, token_hash, utcnow as auth_utcnow
 from app.database import SessionLocal
 from app.main import app
-from app.models import Character, Project, ProjectMembership, Scene, Shot, Timeline, TimelineClip, User
+from app.models import AccountSecurityEvent, AccountToken, Character, Project, ProjectMembership, Scene, Shot, Timeline, TimelineClip, User, UserSession
 
 
 def setup_admin(client, monkeypatch):
@@ -115,3 +115,58 @@ def test_trial_signup_and_export_limits(client, monkeypatch):
         db.commit()
     expired = trial.post(f"/api/timelines/{timeline_id}/master-exports", headers={"X-Kizuna-CSRF": trial.cookies.get("kizuna_csrf")}, json={"profile": "preview"})
     assert expired.status_code == 402
+
+
+def test_password_reset_is_generic_single_use_and_revokes_sessions(client, monkeypatch):
+    setup_admin(client, monkeypatch)
+    delivered = []
+    monkeypatch.setattr("app.main.settings.smtp_host", "smtp.example.test")
+    monkeypatch.setattr("app.main.settings.smtp_from_email", "security@example.test")
+    monkeypatch.setattr("app.main.send_email", lambda to_email, subject, body: delivered.append((to_email, subject, body)))
+
+    known = client.post("/api/auth/password/forgot", json={"email": "owner@example.com"})
+    unknown = client.post("/api/auth/password/forgot", json={"email": "unknown@example.com"})
+    assert known.status_code == unknown.status_code == 202
+    assert known.json() == unknown.json()
+    assert len(delivered) == 1
+    reset_url = next(line for line in delivered[0][2].splitlines() if line.startswith("http"))
+    raw_token = urlparse(reset_url).path.rsplit("/", 1)[-1]
+    with SessionLocal() as db:
+        stored = db.scalar(select(AccountToken).where(AccountToken.purpose == "password_reset"))
+        assert stored.token_hash == token_hash(raw_token)
+        assert raw_token != stored.token_hash
+        assert db.scalar(select(UserSession).where(UserSession.user_id == stored.user_id)) is not None
+
+    assert client.get(f"/api/auth/password/reset/{raw_token}").json() == {"valid": True}
+    mismatch = client.post(f"/api/auth/password/reset/{raw_token}", json={"password": "new-long-secure-password", "confirm_password": "different-secure-password"})
+    assert mismatch.status_code == 422
+    completed = client.post(f"/api/auth/password/reset/{raw_token}", json={"password": "new-long-secure-password", "confirm_password": "new-long-secure-password"})
+    assert completed.status_code == 200
+    assert client.get("/api/auth/me").status_code == 401
+    assert client.post(f"/api/auth/password/reset/{raw_token}", json={"password": "another-long-password", "confirm_password": "another-long-password"}).status_code == 404
+    assert TestClient(app).post("/api/auth/login", json={"email": "owner@example.com", "password": "long-secure-password"}).status_code == 401
+    assert TestClient(app).post("/api/auth/login", json={"email": "owner@example.com", "password": "new-long-secure-password"}).status_code == 200
+    with SessionLocal() as db:
+        assert db.scalar(select(AccountSecurityEvent).where(AccountSecurityEvent.event_type == "password_reset_completed")) is not None
+
+
+def test_required_email_verification_blocks_login_until_link_is_used(client, monkeypatch):
+    setup_admin(client, monkeypatch)
+    delivered = []
+    monkeypatch.setattr("app.main.settings.email_verification_required", True)
+    monkeypatch.setattr("app.main.settings.smtp_host", "smtp.example.test")
+    monkeypatch.setattr("app.main.settings.smtp_from_email", "security@example.test")
+    monkeypatch.setattr("app.main.send_email", lambda to_email, subject, body: delivered.append((to_email, subject, body)))
+    trial = TestClient(app)
+    created = trial.post("/api/auth/trial", json={"email": "verify@example.com", "display_name": "Verify Creator", "password": "trial-secure-password"})
+    assert created.status_code == 201
+    assert created.json()["verification_required"] is True
+    assert trial.cookies.get("kizuna_session") is None
+    assert trial.post("/api/auth/login", json={"email": "verify@example.com", "password": "trial-secure-password"}).status_code == 401
+    verify_url = next(line for line in delivered[0][2].splitlines() if line.startswith("http"))
+    raw_token = urlparse(verify_url).path.rsplit("/", 1)[-1]
+    assert trial.post(f"/api/auth/verify/{raw_token}").status_code == 200
+    assert trial.post(f"/api/auth/verify/{raw_token}").status_code == 404
+    signed_in = trial.post("/api/auth/login", json={"email": "verify@example.com", "password": "trial-secure-password"})
+    assert signed_in.status_code == 200
+    assert signed_in.json()["email_verified"] is True

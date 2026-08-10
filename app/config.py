@@ -12,6 +12,17 @@ class Settings(BaseSettings):
     bootstrap_admin_key: str = ""
     session_days: int = 7
     invitation_days: int = 7
+    account_token_hours: int = 1
+    account_email_limit_per_hour: int = 5
+    email_verification_required: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = True
+    smtp_ssl: bool = False
+    smtp_from_email: str = ""
+    smtp_from_name: str = "Kizuna Studio"
     trial_days: int = 7
     trial_signup_enabled: bool = False
     trial_export_seconds: int = 60

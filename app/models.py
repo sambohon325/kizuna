@@ -19,6 +19,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(32), default="creator")
     account_tier: Mapped[str] = mapped_column(String(32), default="collaborator")
     trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     active: Mapped[bool] = mapped_column(default=True)
     failed_sign_in_count: Mapped[int] = mapped_column(default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -36,6 +37,29 @@ class UserSession(Base):
     csrf_hash: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AccountToken(Base):
+    __tablename__ = "account_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    purpose: Mapped[str] = mapped_column(String(32))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AccountSecurityEvent(Base):
+    __tablename__ = "account_security_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64))
+    network_hash: Mapped[str] = mapped_column(String(64), default="")
+    event_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

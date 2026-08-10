@@ -1,35 +1,48 @@
-const form=document.querySelector('#auth-form'),error=document.querySelector('#auth-error');
-let setup=false,signup=false,invitationToken='';
+const form=document.querySelector('#auth-form'),error=document.querySelector('#auth-error'),button=form.querySelector('button');
+const title=document.querySelector('#auth-title'),intro=document.querySelector('#auth-intro'),eyebrow=document.querySelector('#auth-eyebrow'),authSwitch=document.querySelector('#auth-switch');
+let mode='login',invitationToken='',flowToken='';
+const field=name=>form.elements[name].closest('label');
+const hideForm=message=>{form.hidden=true;intro.textContent=message;authSwitch.hidden=false;authSwitch.innerHTML='<a href="/login">Return to sign in</a>';};
+async function jsonRequest(url,options={}){const response=await fetch(url,options);let payload={};try{payload=await response.json();}catch{}if(!response.ok)throw new Error(typeof payload.detail==='string'?payload.detail:'Unable to continue');return payload;}
 async function initialize(){
-  const status=await fetch('/api/auth/status').then(response=>response.json());
+  const status=await jsonRequest('/api/auth/status');
   if(status.marketing_url)document.querySelector('#marketing-link').href=status.marketing_url;
-  invitationToken=location.pathname.startsWith('/invite/')?decodeURIComponent(location.pathname.split('/').pop()):'';
+  const parts=location.pathname.split('/').filter(Boolean);flowToken=parts.length>1?decodeURIComponent(parts.at(-1)):'';
+  if(location.pathname.startsWith('/verify-email/')){
+    mode='verify';form.hidden=true;authSwitch.hidden=true;eyebrow.textContent='ACCOUNT SECURITY';title.textContent='Verifying your email';intro.textContent='Checking your single-use verification link…';
+    const result=await jsonRequest(`/api/auth/verify/${encodeURIComponent(flowToken)}`,{method:'POST'});title.textContent='Email verified';hideForm(result.message);return;
+  }
+  if(location.pathname.startsWith('/reset-password/')){
+    mode='reset';await jsonRequest(`/api/auth/password/reset/${encodeURIComponent(flowToken)}`);eyebrow.textContent='ACCOUNT RECOVERY';title.textContent='Choose a new password';intro.textContent='Use at least 12 characters. Completing this reset signs out every existing session.';
+    field('email').hidden=true;form.elements.email.required=false;field('confirm_password').hidden=false;form.elements.confirm_password.required=true;form.elements.password.autocomplete='new-password';button.textContent='Update password';authSwitch.hidden=true;return;
+  }
+  if(location.pathname==='/forgot-password'){
+    mode='forgot';eyebrow.textContent='ACCOUNT RECOVERY';title.textContent='Reset your password';intro.textContent='Enter your account email. For privacy, Kizuna always returns the same response.';field('password').hidden=true;form.elements.password.required=false;button.textContent='Send reset link';authSwitch.innerHTML='<a href="/login">Return to sign in</a>';return;
+  }
+  invitationToken=location.pathname.startsWith('/invite/')?decodeURIComponent(parts.at(-1)):'';
   if(invitationToken){
-    const response=await fetch(`/api/auth/invitations/${encodeURIComponent(invitationToken)}`);if(!response.ok)throw new Error('This invitation is invalid or expired.');const invitation=await response.json();
-    document.querySelector('#auth-eyebrow').textContent='STUDIO INVITATION';document.querySelector('#auth-title').textContent='Join the production';document.querySelector('#auth-intro').textContent=`${invitation.email} was invited to ${invitation.project_access.map(item=>item.project_title).join(', ')}.`;
-    document.querySelector('#name-field').hidden=false;document.querySelector('#name-field input').required=true;document.querySelector('#name-field input').value=invitation.display_name||'';
-    form.elements.email.closest('label').hidden=true;form.elements.email.required=false;form.elements.password.autocomplete='new-password';document.querySelector('#auth-switch').hidden=true;return;
+    mode='invite';const invitation=await jsonRequest(`/api/auth/invitations/${encodeURIComponent(invitationToken)}`);eyebrow.textContent='STUDIO INVITATION';title.textContent='Join the production';intro.textContent=`${invitation.email} was invited to ${invitation.project_access.map(item=>item.project_title).join(', ')}.`;
+    field('display_name').hidden=false;form.elements.display_name.required=true;form.elements.display_name.value=invitation.display_name||'';field('email').hidden=true;form.elements.email.required=false;form.elements.password.autocomplete='new-password';authSwitch.hidden=true;return;
   }
   if(!status.auth_required){location.href='/';return;}
-  signup=location.pathname==='/signup';
-  if(signup){
-    if(!status.trial_signup_available)throw new Error('Trial signup will open as soon as Kizuna finishes studio setup.');
-    document.querySelector('#auth-eyebrow').textContent=`${status.trial_days}-DAY STUDIO TRIAL`;document.querySelector('#auth-title').textContent='Create your first production';document.querySelector('#auth-intro').textContent=`Explore the full workflow for ${status.trial_days} days. Trial video exports are limited to ${status.trial_export_seconds} seconds and include a Kizuna watermark.`;
-    document.querySelector('#name-field').hidden=false;document.querySelector('#name-field input').required=true;form.elements.password.autocomplete='new-password';form.querySelector('button').textContent='Start free trial';document.querySelector('#auth-switch').innerHTML='<a href="/login">Already have an account? Sign in</a>';return;
+  if(location.pathname==='/signup'){
+    mode='signup';if(!status.trial_signup_available)throw new Error('Trial signup will open as soon as Kizuna finishes studio setup.');eyebrow.textContent=`${status.trial_days}-DAY STUDIO TRIAL`;title.textContent='Create your first production';intro.textContent=`Explore the full workflow for ${status.trial_days} days. Trial video exports are limited to ${status.trial_export_seconds} seconds and include a Kizuna watermark.`;
+    field('display_name').hidden=false;form.elements.display_name.required=true;form.elements.password.autocomplete='new-password';button.textContent='Start free trial';authSwitch.innerHTML='<a href="/login">Already have an account? Sign in</a>';return;
   }
-  setup=status.setup_required;
-  if(location.pathname==='/setup'&&!setup){location.href='/login';return;}
-  if(setup){
-    document.querySelector('#auth-eyebrow').textContent='FIRST-RUN SECURITY';document.querySelector('#auth-title').textContent='Create the studio administrator';document.querySelector('#auth-intro').textContent='This account will own existing productions and control studio-wide settings.';
-    document.querySelector('#name-field').hidden=false;document.querySelector('#name-field input').required=true;document.querySelector('#key-field').hidden=false;form.elements.password.autocomplete='new-password';document.querySelector('#auth-switch').hidden=true;
+  if(status.setup_required){
+    mode='setup';eyebrow.textContent='FIRST-RUN SECURITY';title.textContent='Create the studio administrator';intro.textContent='This account will own existing productions and control studio-wide settings.';field('display_name').hidden=false;form.elements.display_name.required=true;field('bootstrap_key').hidden=false;form.elements.password.autocomplete='new-password';authSwitch.hidden=true;return;
   }
+  if(location.pathname==='/setup'){location.href='/login';}
 }
 form.addEventListener('submit',async event=>{
-  event.preventDefault();error.textContent='';const button=form.querySelector('button');button.disabled=true;button.textContent=setup?'Securing studio...':signup?'Creating your studio...':'Signing in...';
-  const body=invitationToken?{display_name:form.elements.display_name.value,password:form.elements.password.value}:{email:form.elements.email.value,password:form.elements.password.value};
-  if(signup)body.display_name=form.elements.display_name.value;
-  if(setup){body.display_name=form.elements.display_name.value;body.bootstrap_key=form.elements.bootstrap_key.value;}
-  try{const endpoint=invitationToken?`/api/auth/invitations/${encodeURIComponent(invitationToken)}`:setup?'/api/auth/setup':signup?'/api/auth/trial':'/api/auth/login';const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!response.ok){const payload=await response.json();throw new Error(typeof payload.detail==='string'?payload.detail:'Unable to continue');}location.href='/';}
-  catch(reason){error.textContent=reason.message;button.disabled=false;button.textContent=signup?'Start free trial':'Continue';}
+  event.preventDefault();error.textContent='';button.disabled=true;const original=button.textContent;button.textContent='Working…';
+  try{
+    if(mode==='forgot'){const result=await jsonRequest('/api/auth/password/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:form.elements.email.value})});title.textContent='Check your email';hideForm(result.message);return;}
+    if(mode==='reset'){const result=await jsonRequest(`/api/auth/password/reset/${encodeURIComponent(flowToken)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:form.elements.password.value,confirm_password:form.elements.confirm_password.value})});title.textContent='Password updated';hideForm(result.message);return;}
+    const body=mode==='invite'?{display_name:form.elements.display_name.value,password:form.elements.password.value}:{email:form.elements.email.value,password:form.elements.password.value};
+    if(mode==='signup')body.display_name=form.elements.display_name.value;if(mode==='setup'){body.display_name=form.elements.display_name.value;body.bootstrap_key=form.elements.bootstrap_key.value;}
+    const endpoint=mode==='invite'?`/api/auth/invitations/${encodeURIComponent(invitationToken)}`:mode==='setup'?'/api/auth/setup':mode==='signup'?'/api/auth/trial':'/api/auth/login';const result=await jsonRequest(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(result.verification_required){title.textContent='Check your email';hideForm('We sent a single-use verification link. Verify your email before signing in.');return;}location.href='/';
+  }catch(reason){error.textContent=reason.message;button.disabled=false;button.textContent=original;}
 });
 initialize().catch(reason=>{error.textContent=reason.message||'Kizuna could not check the studio security status.';});

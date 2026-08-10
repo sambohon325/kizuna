@@ -23,7 +23,13 @@ This foundation now includes local accounts, production isolation, invitations, 
 
 The marketing call to action opens `https://app.kizuna.technology/signup`. Once the first studio administrator exists, a visitor can create a trial account and a starter production. The trial lasts 7 days by default. During the active trial, every animatic and master export is limited to 60 seconds and watermarked by the render process. Segmented farm exports carry the same policy in their job manifests, and the server enforces it again during final assembly. When the trial expires, the account becomes review-only until its entitlement is upgraded.
 
-Configure the policy with `KIZUNA_TRIAL_DAYS`, `KIZUNA_TRIAL_EXPORT_SECONDS`, and `KIZUNA_TRIAL_WATERMARK`. Before opening public self-service signup, connect verified email delivery, password recovery, signup abuse controls, and billing-driven entitlement upgrades. Trial enforcement does not depend on browser controls.
+Configure the policy with `KIZUNA_TRIAL_DAYS`, `KIZUNA_TRIAL_EXPORT_SECONDS`, and `KIZUNA_TRIAL_WATERMARK`. Trial enforcement does not depend on browser controls.
+
+## Account email and recovery
+
+Kizuna uses standard SMTP rather than a provider-specific SDK. Configure `KIZUNA_SMTP_HOST`, port, username, password, from address, from name, and either STARTTLS or SSL. Keep the password in the deployment secret store. Password-reset and verification links are generated from the configured `KIZUNA_PUBLIC_URL`, expire after `KIZUNA_ACCOUNT_TOKEN_HOURS`, are stored only as hashes, and can be used once. A completed password reset revokes every existing session and records a security event.
+
+Keep `KIZUNA_EMAIL_VERIFICATION_REQUIRED=false` while testing delivery. After a real message can be requested and completed from the deployed application, change it to `true` before opening public trial signup. Recovery and resend requests are rate-limited with `KIZUNA_ACCOUNT_EMAIL_LIMIT_PER_HOUR` and deliberately return generic responses that do not reveal whether an email address has an account.
 
 ## App and marketing hostnames
 

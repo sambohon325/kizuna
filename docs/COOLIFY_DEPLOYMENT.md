@@ -30,6 +30,11 @@ Set these before the first deployment. Mark all secrets as secret/masked and nev
 - `KIZUNA_TRIAL_SIGNUP_ENABLED=false` while staging is private
 - `KIZUNA_TRIAL_EXPORT_SECONDS=60`
 - `KIZUNA_TRIAL_WATERMARK=KIZUNA TRIAL | kizuna.technology`
+- `KIZUNA_EMAIL_VERIFICATION_REQUIRED=false` until SMTP is tested
+- `KIZUNA_ACCOUNT_TOKEN_HOURS=1`
+- `KIZUNA_ACCOUNT_EMAIL_LIMIT_PER_HOUR=5`
+- `KIZUNA_SMTP_HOST`, `KIZUNA_SMTP_PORT`, `KIZUNA_SMTP_USERNAME`, `KIZUNA_SMTP_PASSWORD`, `KIZUNA_SMTP_FROM_EMAIL`, and `KIZUNA_SMTP_FROM_NAME` for any standard SMTP provider
+- `KIZUNA_SMTP_STARTTLS=true` for port 587, or set STARTTLS false and `KIZUNA_SMTP_SSL=true` when the provider requires implicit TLS
 
 Generate a safe 64-character hex secret in PowerShell with:
 
@@ -49,4 +54,4 @@ Run it separately for each secret. Keep the values in a password manager.
 6. Sign in, create a staging production, sign out, and sign back in.
 7. Confirm named volumes exist for Postgres, Redis, renders, storage, and the scanner corpus before uploading irreplaceable media.
 
-Keep `KIZUNA_TRIAL_SIGNUP_ENABLED=false` until verified email, password recovery, abuse controls, billing upgrades, and a restore drill are complete. Change it to `true` and redeploy only when public self-service signup is ready.
+Keep `KIZUNA_TRIAL_SIGNUP_ENABLED=false` while SMTP and recovery are tested. First configure SMTP with `KIZUNA_EMAIL_VERIFICATION_REQUIRED=false`, redeploy, request a password reset, and complete it. Then set verification to true, create and verify a test trial account, and confirm a second use of either link fails. Public signup should remain off until billing upgrades, broader signup abuse controls, and a restore drill are complete.

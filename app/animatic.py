@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import subprocess
 import textwrap
+import time
 from pathlib import Path
+from typing import Callable
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
@@ -47,12 +49,42 @@ def prepare_frame(source: Path | None, target: Path, width: int, height: int, ti
     canvas.save(target, "PNG")
 
 
-def render_animatic(clips: list[dict], output: Path, work_dir: Path, fps: int, width: int, height: int, audio_clips: list[dict] | None = None, watermark_text: str = "", max_duration_seconds: float | None = None) -> None:
+def run_ffmpeg(command: list[str], timeout_seconds: float, failure_message: str, status_callback: Callable[[], bool | None] | None = None, error_limit: int = 3000) -> None:
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    deadline = time.monotonic() + timeout_seconds
+    if status_callback and status_callback() is False:
+        process.terminate()
+        process.communicate()
+        raise RuntimeError("Render cancelled")
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            process.kill()
+            _, error = process.communicate()
+            raise TimeoutError(error[-error_limit:] or f"{failure_message} timed out")
+        try:
+            _, error = process.communicate(timeout=min(5, remaining))
+            break
+        except subprocess.TimeoutExpired:
+            if status_callback and status_callback() is False:
+                process.terminate()
+                try:
+                    process.communicate(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill(); process.communicate()
+                raise RuntimeError("Render cancelled")
+    if process.returncode:
+        raise RuntimeError(error[-error_limit:] or failure_message)
+
+
+def render_animatic(clips: list[dict], output: Path, work_dir: Path, fps: int, width: int, height: int, audio_clips: list[dict] | None = None, watermark_text: str = "", max_duration_seconds: float | None = None, status_callback: Callable[[], bool | None] | None = None) -> None:
     if not clips:
         raise ValueError("The timeline has no clips")
     work_dir.mkdir(parents=True, exist_ok=True)
     frames: list[Path] = []
     for index, clip in enumerate(clips):
+        if status_callback and status_callback() is False:
+            raise RuntimeError("Render cancelled")
         target = work_dir / f"frame-{index:04d}.png"
         prepare_frame(clip.get("source"), target, width, height, clip["title"], clip["subtitle"])
         frames.append(target)
@@ -102,6 +134,4 @@ def render_animatic(clips: list[dict], output: Path, work_dir: Path, fps: int, w
         "-t", f"{output_duration:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(output),
     ]
-    completed = subprocess.run(command, capture_output=True, text=True, timeout=max(120, int(elapsed * 3)))
-    if completed.returncode:
-        raise RuntimeError(completed.stderr[-3000:] or "FFmpeg failed")
+    run_ffmpeg(command, max(120, int(elapsed * 3)), "FFmpeg animatic render failed", status_callback)

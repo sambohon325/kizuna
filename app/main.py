@@ -2798,6 +2798,9 @@ def cancel_durable_job(job_id: int, db: Session = Depends(get_db)):
     elif job.kind == "render.shot-motion":
         render = db.scalar(select(ShotMotionRender).where(ShotMotionRender.durable_job_id == job.id))
         if render and job.status == "cancelled": render.status = "cancelled"
+    elif job.kind in {"render.animatic", "render.master"}:
+        render = db.scalar(select(AnimaticRender).where(AnimaticRender.durable_job_id == job.id))
+        if render and job.status == "cancelled": render.status = "cancelled"
     db.commit(); db.refresh(job)
     return job
 
@@ -2821,6 +2824,9 @@ def retry_durable_job(job_id: int, db: Session = Depends(get_db)):
         if action: action.status, action.error = "queued", ""
     elif job.kind == "render.shot-motion":
         render = db.scalar(select(ShotMotionRender).where(ShotMotionRender.durable_job_id == job.id))
+        if render: render.status, render.error = "queued", ""
+    elif job.kind in {"render.animatic", "render.master"}:
+        render = db.scalar(select(AnimaticRender).where(AnimaticRender.durable_job_id == job.id))
         if render: render.status, render.error = "queued", ""
     db.commit(); db.refresh(job)
     return job
@@ -4552,84 +4558,104 @@ def project_export_entitlement(project_id: int, db: Session) -> tuple[str, float
     raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "This production needs an active trial or studio plan before it can export.")
 
 
+def timeline_render_manifest(timeline: Timeline, db: Session) -> dict:
+    data = timeline_response(timeline, db)
+    clips = [{"motion_uri": clip["motion_uri"], "storyboard_uri": clip["storyboard_uri"], "title": clip["shot_title"], "scene_title": clip["scene_title"], "duration": clip["duration_seconds"], "transition": clip["transition"], "transition_duration": clip["transition_duration"]} for clip in data["clips"]]
+    tracks = db.scalars(select(AudioTrack).options(selectinload(AudioTrack.cues)).where(AudioTrack.timeline_id == timeline.id, AudioTrack.muted.is_(False))).unique().all()
+    audio = [{"uri": cue.uri, "start": cue.start_seconds, "duration": cue.duration_seconds, "volume": track.volume} for track in tracks for cue in track.cues if cue.uri]
+    return {"clips": clips, "audio": audio}
+
+
+def execute_timeline_render_job(db: Session, job: DurableJob) -> dict:
+    render = db.get(AnimaticRender, int(job.payload["timeline_render_id"]))
+    if render is None: raise RuntimeError("The queued timeline render no longer exists")
+    if render.status == "completed" and render.uri:
+        return {"timeline_render_id": render.id, "uri": render.uri, "kind": render.render_settings.get("kind"), "render_settings": render.render_settings}
+    timeline = db.get(Timeline, render.timeline_id)
+    if timeline is None: raise RuntimeError("The source timeline no longer exists")
+    settings_data, frozen = render.render_settings, job.payload.get("manifest") or {}
+    render.status, render.error = "rendering", ""
+    update_progress(db, job, 12, "Preparing the frozen timeline manifest")
+    db.commit()
+    progress = 20
+
+    def heartbeat() -> bool:
+        nonlocal progress
+        db.refresh(job)
+        if job.cancellation_requested:
+            return False
+        progress = min(88, progress + 3)
+        update_progress(db, job, progress, "Encoding timeline media")
+        db.commit()
+        return True
+
+    work_dir = render_dir / f"timeline-render-work-{render.id}"
+    try:
+        audio = [{"source": render_dir / Path(cue["uri"]).name, "start": cue["start"], "duration": cue["duration"], "volume": cue["volume"]} for cue in frozen.get("audio", [])]
+        if settings_data["kind"] == "proxy_animatic":
+            clips = [{"source": render_dir / Path(clip["storyboard_uri"]).name if clip["storyboard_uri"] else None, "title": clip["title"], "subtitle": f"{clip['scene_title']}  /  {clip['duration']:.1f}s  /  {clip['transition']}", "duration": clip["duration"], "transition": clip["transition"], "transition_duration": clip["transition_duration"]} for clip in frozen.get("clips", [])]
+            render.filename = f"animatic-{render.id}.mp4"
+            render.render_settings = {**settings_data, "audio_cues": len(audio)}
+            render_animatic(clips, render_dir / render.filename, work_dir, settings_data["fps"], settings_data["width"], settings_data["height"], audio, settings_data.get("watermark_text", ""), settings_data.get("max_duration_seconds"), heartbeat)
+            timeline.status = "preview-ready"
+        else:
+            clips = [{"motion_source": render_dir / Path(clip["motion_uri"]).name if clip["motion_uri"] else None, "still_source": render_dir / Path(clip["storyboard_uri"]).name if clip["storyboard_uri"] else None, "title": clip["title"], "subtitle": f"{clip['scene_title']}  /  {clip['duration']:.1f}s", "duration": clip["duration"], "transition": clip["transition"], "transition_duration": clip["transition_duration"]} for clip in frozen.get("clips", [])]
+            render.filename = f"master-{render.id}-{settings_data['profile']}.mp4"
+            output = render_timeline_master(clips, audio, render_dir / render.filename, work_dir, settings_data["fps"], settings_data["width"], settings_data["height"], settings_data.get("watermark_text", ""), settings_data.get("max_duration_seconds"), heartbeat)
+            render.render_settings = {**settings_data, **output}
+            timeline.status = "master-ready"
+        render.uri, render.status = f"/renders/{render.filename}", "completed"
+        update_progress(db, job, 94, "Registering the completed timeline output")
+        db.commit(); db.refresh(render)
+        refresh_media_lifecycle(timeline.project_id, db)
+        return {"timeline_render_id": render.id, "uri": render.uri, "kind": render.render_settings.get("kind"), "render_settings": render.render_settings}
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def mark_timeline_render_job_failed(db: Session, job: DurableJob, error: str) -> None:
+    render = db.get(AnimaticRender, int(job.payload.get("timeline_render_id") or 0))
+    if render:
+        render.status = "queued" if job.status == "queued" else "cancelled" if job.status == "cancelled" else "failed"
+        render.error = error[:4000]
+
+
+def queue_timeline_render(timeline: Timeline, settings_data: dict, db: Session) -> AnimaticRender:
+    render = AnimaticRender(timeline_id=timeline.id, status="queued", render_settings=settings_data)
+    db.add(render); db.flush()
+    durable_kind = "render.animatic" if settings_data["kind"] == "proxy_animatic" else "render.master"
+    job = enqueue_job(db, durable_kind, {"timeline_render_id": render.id, "timeline_id": timeline.id, "manifest": timeline_render_manifest(timeline, db)}, project_id=timeline.project_id, queue="render", priority=75 if durable_kind == "render.animatic" else 90, max_attempts=3, idempotency_key=f"timeline-render:{render.id}")
+    render.durable_job_id = job.id
+    if settings.job_inline_fallback and job.status == "queued":
+        try:
+            start_job(db, job, "web:inline")
+            update_progress(db, job, 5, "Preparing timeline render")
+            complete_job(db, job, execute_timeline_render_job(db, job))
+        except Exception as exc:
+            fail_job(db, job, str(exc))
+            mark_timeline_render_job_failed(db, job, str(exc))
+    db.commit(); db.refresh(render)
+    return render
+
+
 @app.post("/api/timelines/{timeline_id}/render", response_model=AnimaticRenderRead, status_code=status.HTTP_201_CREATED)
 def render_timeline(timeline_id: int, db: Session = Depends(get_db)):
     timeline = db.get(Timeline, timeline_id)
-    if not timeline:
-        raise HTTPException(404, "Timeline not found")
+    if not timeline: raise HTTPException(404, "Timeline not found")
     watermark_text, max_duration = project_export_entitlement(timeline.project_id, db)
-    render = AnimaticRender(timeline_id=timeline.id, status="rendering", render_settings={"fps": timeline.fps, "width": timeline.width, "height": timeline.height, "kind": "proxy_animatic", "watermarked": bool(watermark_text), "max_duration_seconds": max_duration})
-    db.add(render); db.commit(); db.refresh(render)
-    work_dir = render_dir / f"animatic-work-{render.id}"
-    try:
-        data = timeline_response(timeline, db)
-        clips = []
-        for clip in data["clips"]:
-            source = render_dir / Path(clip["storyboard_uri"]).name if clip["storyboard_uri"] else None
-            clips.append({"source": source, "title": clip["shot_title"], "subtitle": f"{clip['scene_title']}  /  {clip['duration_seconds']:.1f}s  /  {clip['transition']}", "duration": clip["duration_seconds"], "transition": clip["transition"], "transition_duration": clip["transition_duration"]})
-        audio_clips = []
-        tracks = db.scalars(select(AudioTrack).options(selectinload(AudioTrack.cues)).where(AudioTrack.timeline_id == timeline.id, AudioTrack.muted.is_(False))).unique().all()
-        for track in tracks:
-            for cue in track.cues:
-                if cue.uri:
-                    audio_clips.append({"source": render_dir / Path(cue.uri).name, "start": cue.start_seconds, "duration": cue.duration_seconds, "volume": track.volume})
-        render.filename = f"animatic-{render.id}.mp4"
-        render.render_settings = {**render.render_settings, "audio_cues": len(audio_clips)}
-        render_animatic(clips, render_dir / render.filename, work_dir, timeline.fps, timeline.width, timeline.height, audio_clips, watermark_text, max_duration)
-        render.uri, render.status = f"/renders/{render.filename}", "completed"
-        timeline.status = "preview-ready"
-    except Exception as exc:
-        render.status, render.error = "failed", str(exc)
-    finally:
-        shutil.rmtree(work_dir, ignore_errors=True)
-    db.commit(); db.refresh(render)
-    if render.status == "completed": refresh_media_lifecycle(timeline.project_id, db)
-    return render
+    return queue_timeline_render(timeline, {"fps": timeline.fps, "width": timeline.width, "height": timeline.height, "kind": "proxy_animatic", "watermarked": bool(watermark_text), "watermark_text": watermark_text, "max_duration_seconds": max_duration}, db)
 
 
 @app.post("/api/timelines/{timeline_id}/render-master", response_model=AnimaticRenderRead, status_code=status.HTTP_201_CREATED)
 def render_master(timeline_id: int, payload: MasterRenderRequest, db: Session = Depends(get_db)):
     timeline = db.get(Timeline, timeline_id)
-    if not timeline:
-        raise HTTPException(404, "Timeline not found")
+    if not timeline: raise HTTPException(404, "Timeline not found")
     if payload.profile != "preview":
         try: require_release_clearance(timeline.project_id, db)
         except PermissionError as exc: raise HTTPException(409, f"Master blocked: {exc}") from exc
     watermark_text, max_duration = project_export_entitlement(timeline.project_id, db)
     width, height = master_dimensions(timeline, payload.profile)
-    fps = payload.fps or timeline.fps
-    base_settings = {"kind": "production_master", "profile": payload.profile, "fps": fps, "width": width, "height": height, "watermarked": bool(watermark_text), "max_duration_seconds": max_duration}
-    render = AnimaticRender(timeline_id=timeline.id, status="rendering", render_settings=base_settings)
-    db.add(render); db.commit(); db.refresh(render)
-    work_dir = render_dir / f"master-work-{render.id}"
-    try:
-        timeline_data = timeline_response(timeline, db)
-        clips = []
-        for clip in timeline_data["clips"]:
-            clips.append({
-                "motion_source": render_dir / Path(clip["motion_uri"]).name if clip["motion_uri"] else None,
-                "still_source": render_dir / Path(clip["storyboard_uri"]).name if clip["storyboard_uri"] else None,
-                "title": clip["shot_title"], "subtitle": f"{clip['scene_title']}  /  {clip['duration_seconds']:.1f}s",
-                "duration": clip["duration_seconds"], "transition": clip["transition"], "transition_duration": clip["transition_duration"],
-            })
-        audio_clips = []
-        tracks = db.scalars(select(AudioTrack).options(selectinload(AudioTrack.cues)).where(AudioTrack.timeline_id == timeline.id, AudioTrack.muted.is_(False))).unique().all()
-        for track in tracks:
-            for cue in track.cues:
-                if cue.uri:
-                    audio_clips.append({"source": render_dir / Path(cue.uri).name, "start": cue.start_seconds, "duration": cue.duration_seconds, "volume": track.volume})
-        render.filename = f"master-{render.id}-{payload.profile}.mp4"
-        manifest = render_timeline_master(clips, audio_clips, render_dir / render.filename, work_dir, fps, width, height, watermark_text, max_duration)
-        render.uri, render.status = f"/renders/{render.filename}", "completed"
-        render.render_settings = {**base_settings, **manifest}
-        timeline.status = "master-ready"
-    except Exception as exc:
-        render.status, render.error = "failed", str(exc)
-    finally:
-        shutil.rmtree(work_dir, ignore_errors=True)
-    db.commit(); db.refresh(render)
-    if render.status == "completed": refresh_media_lifecycle(timeline.project_id, db)
-    return render
+    return queue_timeline_render(timeline, {"kind": "production_master", "profile": payload.profile, "fps": payload.fps or timeline.fps, "width": width, "height": height, "watermarked": bool(watermark_text), "watermark_text": watermark_text, "max_duration_seconds": max_duration}, db)
 
 
 def export_job_response(job: MasterExportJob, db: Session):

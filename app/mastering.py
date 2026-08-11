@@ -1,18 +1,20 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
+from typing import Callable
 
-from app.animatic import ffmpeg_executable, prepare_frame
+from app.animatic import ffmpeg_executable, prepare_frame, run_ffmpeg
 
 
-def render_timeline_master(clips: list[dict], audio_clips: list[dict], output: Path, work_dir: Path, fps: int, width: int, height: int, watermark_text: str = "", max_duration_seconds: float | None = None) -> dict:
+def render_timeline_master(clips: list[dict], audio_clips: list[dict], output: Path, work_dir: Path, fps: int, width: int, height: int, watermark_text: str = "", max_duration_seconds: float | None = None, status_callback: Callable[[], bool | None] | None = None) -> dict:
     if not clips:
         raise ValueError("The timeline has no clips")
     work_dir.mkdir(parents=True, exist_ok=True)
     command = [ffmpeg_executable(), "-y", "-loglevel", "error"]
     motion_count = 0
     for index, clip in enumerate(clips):
+        if status_callback and status_callback() is False:
+            raise RuntimeError("Render cancelled")
         motion = clip.get("motion_source")
         if motion and Path(motion).exists():
             command += ["-stream_loop", "-1", "-t", f"{clip['duration']:.3f}", "-i", str(motion)]
@@ -75,7 +77,5 @@ def render_timeline_master(clips: list[dict], audio_clips: list[dict], output: P
         "-t", f"{output_duration:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(output),
     ]
-    completed = subprocess.run(command, capture_output=True, text=True, timeout=max(300, int(elapsed * 8)))
-    if completed.returncode:
-        raise RuntimeError(completed.stderr[-4000:] or "FFmpeg master render failed")
+    run_ffmpeg(command, max(300, int(elapsed * 8)), "FFmpeg master render failed", status_callback, 4000)
     return {"motion_clips": motion_count, "fallback_clips": len(clips) - motion_count, "audio_cues": len(usable_audio), "duration_seconds": round(output_duration, 3), "watermarked": bool(watermark_text)}

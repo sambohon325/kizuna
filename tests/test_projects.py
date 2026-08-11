@@ -844,6 +844,7 @@ def test_timeline_edits_reorders_and_renders_proxy(client):
     rendered = client.post(f"/api/timelines/{timeline['id']}/render")
     assert rendered.status_code == 201
     assert rendered.json()["status"] == "completed", rendered.json().get("error")
+    assert rendered.json()["durable_job_id"] is not None
     video = client.get(rendered.json()["uri"])
     assert video.status_code == 200
     assert video.headers["content-type"] == "video/mp4"
@@ -887,6 +888,7 @@ def test_audio_studio_builds_voice_cues_and_mixes_animatic(client):
 
     rendered = client.post(f"/api/timelines/{timeline['id']}/render")
     assert rendered.json()["status"] == "completed", rendered.json().get("error")
+    assert rendered.json()["durable_job_id"] is not None
     assert rendered.json()["render_settings"]["audio_cues"] == 1
 
 
@@ -1032,12 +1034,19 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client, monke
     client.post(f"/api/audio-cues/{cue['id']}/generate-scratch")
     master = client.post(f"/api/timelines/{rebuilt_timeline['id']}/render-master", json={"profile": "preview", "fps": 8})
     assert master.status_code == 201
-    assert master.json()["status"] == "completed", master.json().get("error")
-    assert master.json()["render_settings"]["motion_clips"] == 1
-    assert master.json()["render_settings"]["fallback_clips"] == 1
-    assert master.json()["render_settings"]["audio_cues"] == 1
-    assert master.json()["render_settings"]["width"] == 320
-    assert client.get(master.json()["uri"]).headers["content-type"] == "video/mp4"
+    assert master.json()["status"] == "queued" and master.json()["durable_job_id"] is not None
+    master_job_id = master.json()["durable_job_id"]
+    assert client.post(f"/api/jobs/{master_job_id}/cancel").json()["status"] == "cancelled"
+    assert client.post(f"/api/jobs/{master_job_id}/retry").json()["status"] == "queued"
+    assert run_job_once("test:master-worker") is True
+    master_job = client.get(f"/api/jobs/{master_job_id}").json()["job"]
+    assert master_job["kind"] == "render.master" and master_job["status"] == "completed"
+    master_settings = master_job["result"]["render_settings"]
+    assert master_settings["motion_clips"] == 1
+    assert master_settings["fallback_clips"] == 1
+    assert master_settings["audio_cues"] == 1
+    assert master_settings["width"] == 320
+    assert client.get(master_job["result"]["uri"]).headers["content-type"] == "video/mp4"
 
     export_plan = client.post(f"/api/timelines/{rebuilt_timeline['id']}/master-exports", json={"profile": "preview", "fps": 8, "segment_size": 1})
     assert export_plan.status_code == 201

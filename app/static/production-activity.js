@@ -7,6 +7,8 @@ const activityLabels={
   'crew.proposal':{name:'Prepare AI Crew proposal',department:'AI Crew',icon:'✧'},
   'crew.voice':{name:'Generate voice performance',department:'Audio & voice',icon:'♫'},
   'render.shot-motion':{name:'Render shot motion preview',department:'Scene Compositor',icon:'▶'},
+  'render.animatic':{name:'Render proxy animatic',department:'Timeline & Animatic',icon:'▤'},
+  'render.master':{name:'Export continuous master',department:'Timeline & Animatic',icon:'◆'},
 };
 let activityJobs=[],activeActivityJobId=0,activityStatus='all';
 

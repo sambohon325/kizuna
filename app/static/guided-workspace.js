@@ -14,7 +14,7 @@
     shots: 'shots', timeline: 'timeline', audio: 'audio', composite: 'compositor', render: 'render'
   };
   const guideState = new Map();
-  let collapsed = false;
+  let expanded = false;
   let renderRequest = 0;
 
   const deepLinkViews = {
@@ -141,9 +141,12 @@
     const step = Math.max(0, Math.min(saved.step, article.steps.length - 1));
     const deepLink = deepLinkFor(workspace, step);
     guideState.set(stateKey, {...saved, step});
-    host.classList.toggle('collapsed', collapsed);
-    host.innerHTML = `<header><div><span>GUIDED PATH</span><b>${safe(article.title)}</b></div><div class="guided-workspace-actions"><button type="button" data-guide-full>Full guide</button><button type="button" data-guide-collapse aria-expanded="${!collapsed}">${collapsed ? 'Show' : 'Hide'}</button></div></header><div class="guided-workspace-body"><p>${safe(article.summary)}</p>${production ? `<div class="guided-production-status ${safe(production.state)}"><span><i></i><b>${safe(production.label)}</b><small>${safe(production.summary)}</small></span>${production.target ? `<button type="button" data-guide-target="${safe(production.target)}">${safe(production.targetLabel)}</button>` : ''}</div>` : ''}<div class="guided-workspace-step"><span>RECOMMENDED STEP ${step + 1} OF ${article.steps.length}</span><b>${safe(article.steps[step])}</b>${deepLink ? `<button type="button" data-guide-deep-link>${safe(deepLink[0])}<span aria-hidden="true">&rarr;</span></button>` : ''}</div><footer><div><div class="guided-workspace-dots" aria-label="Guide pages">${article.steps.map((_, index) => `<i class="${index === step ? 'active' : ''}"></i>`).join('')}</div><small>Guide pages do not mark work complete.</small></div><div><button type="button" data-guide-back ${step === 0 ? 'disabled' : ''}>Back</button><button type="button" data-guide-ai>Ask AI about this</button><button class="primary" type="button" data-guide-next>${step === article.steps.length - 1 ? 'Start again' : 'Next'}</button></div></footer></div>`;
-    host.querySelector('[data-guide-collapse]').onclick = () => { collapsed = !collapsed; render(); };
+    const focusText = workspace === 'productions' && production ? production.summary : workspace === 'crew' ? 'Choose how much help you want from the crew.' : article.steps[step];
+    const primaryLabel = production?.target ? production.targetLabel : workspace === 'crew' ? 'Choose crew mode' : deepLink?.[0] || 'Open guide';
+    host.classList.toggle('expanded', expanded);
+    host.innerHTML = `<div class="guided-focus"><div class="guided-focus-copy"><span>RIGHT NOW</span><b>${safe(focusText)}</b>${production ? `<small class="${safe(production.state)}"><i></i>${safe(production.label)}</small>` : ''}</div><div class="guided-focus-actions"><button class="primary" type="button" data-guide-primary>${safe(primaryLabel)}<span aria-hidden="true">&rarr;</span></button><button type="button" data-guide-expand aria-expanded="${expanded}">${expanded ? 'Close guidance' : 'More guidance'}</button></div></div><div class="guided-workspace-body"><header><div><span>BEGINNER PATH</span><b>${safe(article.title)}</b></div><button type="button" data-guide-full>Open full manual</button></header><p>${safe(article.summary)}</p>${production ? `<div class="guided-production-status ${safe(production.state)}"><span><i></i><b>${safe(production.label)}</b><small>${safe(production.summary)}</small></span>${production.target ? `<button type="button" data-guide-target="${safe(production.target)}">${safe(production.targetLabel)}</button>` : ''}</div>` : ''}<div class="guided-workspace-step"><span>STEP ${step + 1} OF ${article.steps.length}</span><b>${safe(article.steps[step])}</b></div><footer><div><div class="guided-workspace-dots" aria-label="Guide pages">${article.steps.map((_, index) => `<i class="${index === step ? 'active' : ''}"></i>`).join('')}</div><small>This guide never marks work complete.</small></div><div><button type="button" data-guide-back ${step === 0 ? 'disabled' : ''}>Back</button><button type="button" data-guide-ai>Ask AI</button><button type="button" data-guide-next>${step === article.steps.length - 1 ? 'Start again' : 'Next tip'}</button></div></footer></div>`;
+    host.querySelector('[data-guide-expand]').onclick = () => { expanded = !expanded; render(); };
+    host.querySelector('[data-guide-primary]').onclick = () => production?.target ? openGuideTarget(production.target) : workspace === 'crew' ? document.querySelector('.crew-v2-modes')?.scrollIntoView({behavior: 'smooth', block: 'center'}) : deepLink ? focusDeepLink(workspace, step) : openHelpCenter(article.id);
     host.querySelector('[data-guide-full]').onclick = () => openHelpCenter(article.id);
     host.querySelector('[data-guide-target]')?.addEventListener('click', event => openGuideTarget(event.currentTarget.dataset.guideTarget));
     host.querySelector('[data-guide-deep-link]')?.addEventListener('click', () => focusDeepLink(workspace, step));

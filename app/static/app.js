@@ -1065,7 +1065,9 @@ function renderCrew(briefing) {
 }
 
 async function applyCrewPreset(preset) {
-  if(preset==='custom'){document.querySelector('#crew-roles').scrollIntoView({behavior:'smooth',block:'start'});return;}const roles=preset==='manual'?[]:crewRoles.map(role=>role.id),autonomy=preset==='autopilot'?'execute':'propose',status=document.querySelector('#crew-mode-status');status.textContent='Saving...';document.querySelector('#crew-default-autonomy').value=autonomy;await api(`/api/projects/${activeCrew.project_id}/crew/deploy`,{method:'POST',body:JSON.stringify({roles,autonomy})});await loadCrew(activeCrew.project_id);
+  const panel=document.querySelector('#crew-dialog>.crew-panel');
+  if(preset==='custom'){panel?.classList.add('crew-custom-open');document.querySelector('#crew-roles').scrollIntoView({behavior:'smooth',block:'start'});return;}
+  panel?.classList.remove('crew-custom-open');const roles=preset==='manual'?[]:crewRoles.map(role=>role.id),autonomy=preset==='autopilot'?'execute':'propose',status=document.querySelector('#crew-mode-status');status.textContent='Saving...';document.querySelector('#crew-default-autonomy').value=autonomy;await api(`/api/projects/${activeCrew.project_id}/crew/deploy`,{method:'POST',body:JSON.stringify({roles,autonomy})});await loadCrew(activeCrew.project_id);
 }
 
 async function saveCrewRole(assignmentId) {

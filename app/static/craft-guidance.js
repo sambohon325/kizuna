@@ -116,13 +116,17 @@ async function renderCraftGuidance(host, projectId, stage, options = {}) {
     const label = options.label || craftGuidanceLabels[stage] || 'Craft guidance';
     host.innerHTML = `<header class="craft-guidance-head">
       <div><span>CRAFT COMPASS · ${safe(label.toUpperCase())}</span><h3>${intent ? safe(intent) : 'Set the creative intent for this production'}</h3></div>
-      <div class="craft-guidance-actions"><small>Catalog ${safe(review.catalog?.pinned_version||review.catalog?.current_version||'not set')}</small><em class="${openFindings.length ? 'open' : 'aligned'}">${openFindings.length ? `${openFindings.length} open` : 'Aligned'}</em><button type="button" data-open-craft-compass>${intent ? 'Edit compass' : 'Set compass'}</button></div>
+      <div class="craft-guidance-actions"><small>Catalog ${safe(review.catalog?.pinned_version||review.catalog?.current_version||'not set')}</small><em class="${openFindings.length ? 'open' : 'aligned'}">${openFindings.length ? `${openFindings.length} open` : 'Aligned'}</em><button type="button" class="craft-guidance-toggle" data-craft-guidance-toggle>Open guidance</button><button type="button" data-open-craft-compass>${intent ? 'Edit compass' : 'Set compass'}</button></div>
     </header>
     ${traditions.length ? `<div class="craft-guidance-lenses">${traditions.map(item => `<span title="${safe(item.context)}">${item.japanese ? `<b lang="ja">${safe(item.japanese)}</b> ` : ''}${safe(item.reading || item.name)}</span>`).join('')}</div>` : '<p class="craft-guidance-empty">Choose traditions for the questions they help the crew ask—not as a recipe or a purity test.</p>'}
     ${findings.length ? `<div class="craft-guidance-findings">${findings.map(craftFindingMarkup).join('')}</div>` : '<p class="craft-guidance-clear">No open craft tension was found for this desk. Keep making specific, intentional choices.</p>'}
     ${sourceNotesMarkup(sourceNotes)}
     <footer>Advisory creative guidance · separate from originality, rights, consent, and release compliance</footer>`;
     host.querySelector('[data-open-craft-compass]').onclick = () => openCraftCompass(projectId);
+    host.querySelector('[data-craft-guidance-toggle]').onclick = event => {
+      const open = host.classList.toggle('expanded');
+      event.currentTarget.textContent = open ? 'Hide guidance' : 'Open guidance';
+    };
     host.querySelectorAll('[data-craft-choice]').forEach(button => button.onclick = () => {
       const form = host.querySelector(`[data-craft-rationale="${CSS.escape(button.dataset.craftFinding)}"]`);
       if (!form) return;

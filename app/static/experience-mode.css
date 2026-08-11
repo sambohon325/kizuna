@@ -1,5 +1,26 @@
-.workspace-depth-quick{display:flex;align-items:center;gap:7px;color:#8f9aa7;font-size:12px}.workspace-depth-quick span{white-space:nowrap}.workspace-depth-quick select{width:auto;min-width:100px;padding:8px 30px 8px 10px;border-color:#303740;background:#15191f;color:#eef2f6;font-size:12px}
+.workspace-depth-quick{display:flex;align-items:center;gap:8px;color:#9ca7b3;font-size:13px;font-weight:700}.workspace-depth-quick span{white-space:nowrap}.workspace-depth-quick select{width:auto;min-width:132px;padding:9px 34px 9px 11px;border-color:#303944;background:#151a20;color:#f1f5f8;font-size:13px}
 .experience-settings{max-width:1180px}.experience-settings>header{margin:4px 0 18px}.experience-settings>header h3{margin:3px 0 7px;font-size:22px}.experience-settings>header p:not(.eyebrow){max-width:780px;margin:0;color:#929daa;font-size:14px;line-height:1.55}.experience-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.experience-options button{min-height:142px;padding:20px;text-align:left;background:rgba(20,24,30,.72);border:1px solid #313943;border-radius:14px;color:#f2f5f7}.experience-options button:hover{border-color:#536270;background:#191f26}.experience-options button.active{border-color:#6fdcff;background:linear-gradient(145deg,rgba(54,179,221,.14),rgba(159,104,232,.08));box-shadow:0 0 26px rgba(80,196,236,.09)}.experience-options span,.experience-options small{display:block}.experience-options span{font-size:18px;font-weight:800}.experience-options small{margin-top:9px;color:#9ba6b2;font-size:13px;line-height:1.5}.experience-safety{display:flex;gap:12px;margin-top:12px;padding:13px 15px;border:1px solid #29333c;border-radius:10px;background:#11161b;color:#86939f;font-size:12px}.experience-safety b{color:#b7eafa;white-space:nowrap}
+
+.experience-options span em{display:inline-block;margin-left:8px;padding:4px 7px;color:#a8eaff;background:#15242b;border:1px solid #31515d;border-radius:999px;font-size:9px;font-style:normal;letter-spacing:.08em;text-transform:uppercase;vertical-align:2px}
+
+/* Beginner is the default: one task, one canvas, deeper controls on demand. */
+html[data-workspace-depth="guided"] .production-flow{display:none!important}
+html[data-workspace-depth="guided"] .writer-v2-stages{display:none}
+html[data-workspace-depth="guided"] .writer-v2-workspace{grid-template-columns:minmax(0,1fr)}
+html[data-workspace-depth="guided"] .writer-v2-navigator{display:none}
+html[data-workspace-depth="guided"] .writer-v2-copilot{border-left:0;border-top:1px solid rgba(255,255,255,.08)}
+html[data-workspace-depth="guided"] :is(.visual-agent-controls,.director-agent-controls) label{display:none}
+html[data-workspace-depth="guided"] :is(.visual-agent-panel,.director-agent-panel) p:not(.eyebrow){display:none}
+html[data-workspace-depth="guided"] .crew-panel:not(.crew-custom-open) :is(.producer-console,.crew-section-heading,.crew-v2-workspace,.crew-v2-lower,.crew-deploy,.crew-activity){display:none!important}
+html[data-workspace-depth="guided"] .crew-modes{grid-template-columns:repeat(2,minmax(0,1fr))}
+html[data-workspace-depth="guided"] .craft-guidance:not(.expanded)>:not(.craft-guidance-head){display:none!important}
+html[data-workspace-depth="guided"] .craft-guidance:not(.expanded){padding:0!important}
+html[data-workspace-depth="guided"] .craft-guidance:not(.expanded) .craft-guidance-head{margin:0!important;padding:11px 14px}
+html[data-workspace-depth="guided"] .craft-guidance:not(.expanded) .craft-guidance-head>div:first-child span,
+html[data-workspace-depth="guided"] .craft-guidance:not(.expanded) .craft-guidance-actions :is(small,em){display:none}
+html[data-workspace-depth="guided"] .craft-guidance:not(.expanded) .craft-guidance-head h3{margin:0;font-size:14px}
+html[data-workspace-depth="guided"] .craft-guidance-toggle{display:inline-flex}
+.craft-guidance-toggle{display:none}
 
 html[data-workspace-depth="studio"] .form-intro{max-width:900px}
 html[data-workspace-depth="studio"] .craft-learning details:not([open]){display:none}

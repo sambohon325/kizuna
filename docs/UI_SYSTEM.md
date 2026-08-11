@@ -2,6 +2,14 @@
 
 Kizuna uses one shared interface foundation across every creative department. Craft workspaces may differ in layout, but controls, typography, hierarchy, navigation, and feedback must remain predictable.
 
+## Progressive disclosure
+
+- **Beginner** is the default. Show the active craft, one clear next action, and only the controls needed to complete it. Longer walkthroughs, craft guidance, agent configuration, and specialist settings stay available behind plainly named expansion controls.
+- **Intermediate** exposes the complete craft sequence, supporting context, and commonly adjusted controls.
+- **Advanced** exposes the full production toolset in a denser layout for experienced operators.
+- Experience level changes presentation only. It must never change saved production data, compliance gates, approvals, AI autonomy, output quality, or available capabilities.
+- AI autonomy is a separate choice. A beginner may work manually, and an advanced user may delegate heavily.
+
 ## Baseline
 
 - Body copy is 16px with a comfortable line height.

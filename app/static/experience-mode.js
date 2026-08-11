@@ -2,19 +2,19 @@
   const STORAGE_KEY = 'kizuna-workspace-depth';
   const modes = {
     guided: {
-      label: 'Guided',
-      short: 'Guided workspace',
-      description: 'Full explanations, craft context, and clear next actions while you learn the studio.'
+      label: 'Beginner',
+      short: 'Beginner view',
+      description: 'One clear next action at a time. Extra controls stay close by without crowding your work.'
     },
     studio: {
-      label: 'Studio',
-      short: 'Studio workspace',
-      description: 'Short production context with the working controls kept front and center.'
+      label: 'Intermediate',
+      short: 'Intermediate view',
+      description: 'See the full craft workflow, supporting context, and the controls used most often.'
     },
     expert: {
-      label: 'Expert',
-      short: 'Expert workspace',
-      description: 'Compact professional workspaces with maximum room for the active craft.'
+      label: 'Advanced',
+      short: 'Advanced view',
+      description: 'Open the complete production toolset in a denser professional workspace.'
     }
   };
 
@@ -44,13 +44,13 @@
     if (document.body) document.body.dataset.workspaceDepth = selected;
     syncControls(selected);
     document.dispatchEvent(new CustomEvent('kizuna:workspace-depth', {detail: {mode: selected}}));
-    if (notify && window.showToast) window.showToast(`${modes[selected].label} workspace enabled`);
+    if (notify && window.showToast) window.showToast(`${modes[selected].label} view enabled`);
     return selected;
   }
 
   function settingsMarkup() {
     const active = getMode();
-    return `<section class="experience-settings"><header><div><p class="eyebrow">WORKSPACE DEPTH</p><h3>Choose how much guidance you see</h3><p>This changes explanation density and spacing for you. Production data, compliance gates, approvals, and AI authority stay exactly the same.</p></div></header><div class="experience-options" role="group" aria-label="Workspace depth">${Object.entries(modes).map(([key, item]) => `<button type="button" data-workspace-depth="${key}" class="${active === key ? 'active' : ''}" aria-pressed="${active === key}"><span>${item.label}</span><small>${item.description}</small></button>`).join('')}</div><div class="experience-safety"><b>Personal display preference</b><span>Saved in this browser so collaborators can choose the view that suits them.</span></div></section>`;
+    return `<section class="experience-settings"><header><div><p class="eyebrow">EXPERIENCE LEVEL</p><h3>Choose how much of the studio you see</h3><p>Beginner is the default. Move up or down at any time as you learn a craft or need deeper control.</p></div></header><div class="experience-options" role="group" aria-label="Experience level">${Object.entries(modes).map(([key, item]) => `<button type="button" data-workspace-depth="${key}" class="${active === key ? 'active' : ''}" aria-pressed="${active === key}"><span>${item.label}${key === 'guided' ? '<em>Recommended</em>' : ''}</span><small>${item.description}</small></button>`).join('')}</div><div class="experience-safety"><b>Only the view changes</b><span>Your production, approvals, compliance gates, and AI authority remain exactly the same.</span></div></section>`;
   }
 
   function wire(root) {

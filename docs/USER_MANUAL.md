@@ -6,9 +6,10 @@ The primary user manual lives inside Kizuna under **Help & manual** so creators 
 
 - First-run users receive a seven-step, skippable studio tour.
 - Completion is stored in the browser and the tour can always be restarted from Help.
-- The Workspace selector offers Guided, Studio, and Expert presentation depths without changing production data, compliance, approvals, or AI authority.
-- Guided mode adds a contextual click-through path to every craft workspace, with direct links to the complete manual article and the project-aware AI assistant.
-- Guided paths read saved production milestones to recommend a useful page, explain real prerequisites, and route to required earlier work. Browsing guide pages never changes completion.
+- The View selector offers Beginner, Intermediate, and Advanced experience levels without changing production data, compliance, approvals, or AI authority.
+- Beginner is the default. It keeps one compact **Right now** action above the active craft and places longer walkthroughs, craft context, and specialist controls behind clear expansion controls.
+- Intermediate reveals the complete craft workflow and supporting production context. Advanced opens the full toolset in a denser professional workspace.
+- The Beginner path reads saved production milestones, routes to required earlier work, and never marks work complete simply because a page was visited.
 - Articles are organized around creator tasks rather than implementation details.
 - Search covers article titles, summaries, steps, and categories.
 - The contextual Kizuna Assistant remains available for project-specific questions.

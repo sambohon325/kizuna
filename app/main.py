@@ -38,6 +38,8 @@ from app.usage_monitor import record_ai_usage, usage_savings_suggestions
 from app.storage import LocalProductionStorage, S3ProductionStorage
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
+from app.anime_craft import CRAFT_CATALOG, normalize_compass, review_project_craft
+from app.schemas import CraftCompassInput, CraftDecisionInput, CraftReviewRequest
 from app.story_development import develop_story
 from app.world_development import compile_background_brief
 from app.voice import VoiceProviderError, generate_voice
@@ -791,6 +793,71 @@ def style_catalog():
     return STYLE_CATALOG
 
 
+@app.get("/api/anime-craft/catalog")
+def anime_craft_catalog():
+    return CRAFT_CATALOG
+
+
+def craft_project(project_id: int, db: Session) -> Project:
+    project = db.scalars(project_query().where(Project.id == project_id)).one_or_none()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return project
+
+
+@app.get("/api/projects/{project_id}/craft-compass")
+def get_craft_compass(project_id: int, db: Session = Depends(get_db)):
+    return review_project_craft(craft_project(project_id, db))
+
+
+@app.put("/api/projects/{project_id}/craft-compass")
+def update_craft_compass(project_id: int, payload: CraftCompassInput, db: Session = Depends(get_db)):
+    project = craft_project(project_id, db)
+    profile = project.style_profile
+    if profile is None:
+        profile = StyleProfile(project_id=project_id)
+        db.add(profile)
+    valid_traditions = {item["id"] for item in CRAFT_CATALOG["traditions"]}
+    valid_genres = {item["id"] for item in CRAFT_CATALOG["genre_lenses"]}
+    unknown_traditions = set(payload.tradition_ids) - valid_traditions
+    unknown_genres = set(payload.genre_lenses) - valid_genres
+    if payload.primary_genre and payload.primary_genre not in valid_genres:
+        unknown_genres.add(payload.primary_genre)
+    if unknown_traditions or unknown_genres:
+        raise HTTPException(422, {"unknown_traditions": sorted(unknown_traditions), "unknown_genres": sorted(unknown_genres)})
+    previous = normalize_compass(profile.craft)
+    profile.craft = {**payload.model_dump(), "departures": previous["departures"]}
+    append_audit_event(db, project_id, "craft", "compass_updated", subject_type="craft_compass", subject_key=str(project_id), details={"traditions": profile.craft["tradition_ids"], "genre_lenses": profile.craft["genre_lenses"]})
+    db.commit()
+    return review_project_craft(craft_project(project_id, db))
+
+
+@app.post("/api/projects/{project_id}/craft-review")
+def run_craft_review(project_id: int, payload: CraftReviewRequest, db: Session = Depends(get_db)):
+    result = review_project_craft(craft_project(project_id, db), payload.stage)
+    append_audit_event(db, project_id, "craft", "review_completed", subject_type="production_stage", subject_key=payload.stage, details={"review_hash": result["review_hash"], "status": result["status"], "open_findings": len([item for item in result["findings"] if not item["resolved"]])})
+    db.commit()
+    return result
+
+
+@app.post("/api/projects/{project_id}/craft-decisions")
+def save_craft_decision(project_id: int, payload: CraftDecisionInput, db: Session = Depends(get_db)):
+    project = craft_project(project_id, db)
+    profile = project.style_profile
+    if profile is None:
+        raise HTTPException(409, "Set up the Craft Compass before recording a decision")
+    current_review = review_project_craft(project)
+    if payload.finding_id not in {item["id"] for item in current_review["findings"]}:
+        raise HTTPException(404, "Current craft finding not found")
+    compass = normalize_compass(profile.craft)
+    decision = {"finding_id": payload.finding_id, "decision": payload.decision, "rationale": payload.rationale.strip(), "recorded_at": datetime.now(timezone.utc).isoformat()}
+    compass["departures"] = [item for item in compass["departures"] if item.get("finding_id") != payload.finding_id] + [decision]
+    profile.craft = compass
+    append_audit_event(db, project_id, "craft", "guidance_decided", subject_type="craft_finding", subject_key=payload.finding_id, details={"decision": payload.decision, "rationale_hash": hashlib.sha256(payload.rationale.encode()).hexdigest()})
+    db.commit()
+    return review_project_craft(craft_project(project_id, db))
+
+
 @app.get("/api/generation/providers")
 def generation_providers():
     workflow_ready = bool(settings.comfyui_workflow_path and Path(settings.comfyui_workflow_path).exists())
@@ -1257,7 +1324,8 @@ ASSISTANT_PAGE_GUIDANCE = {
 
 def assistant_project_summary(project: Project, scope: ProductionScope | None) -> dict:
     shots = [shot for scene in project.scenes for shot in scene.shots]
-    return {"project_id": project.id, "title": project.title, "scope": scope_response(scope)["summary"] if scope else "Scope not set", "story_status": scope.story_status if scope else "not_started", "characters": len(project.characters), "locations": len(project.locations), "scenes": len(project.scenes), "shots": len(shots)}
+    compass = normalize_compass(project.style_profile.craft if project.style_profile else None)
+    return {"project_id": project.id, "title": project.title, "scope": scope_response(scope)["summary"] if scope else "Scope not set", "story_status": scope.story_status if scope else "not_started", "characters": len(project.characters), "locations": len(project.locations), "scenes": len(project.scenes), "shots": len(shots), "craft_compass": {"intent": compass["intent"], "primary_genre": compass["primary_genre"], "genre_lenses": compass["genre_lenses"], "traditions": compass["tradition_ids"], "anchors": compass["anchors"], "flexible": compass["flexible"]}}
 
 
 def local_assistant_reply(project: Project, scope: ProductionScope | None, request: AssistantRequest) -> tuple[str, list[dict[str, str]]]:
@@ -1291,6 +1359,10 @@ def local_assistant_reply(project: Project, scope: ProductionScope | None, reque
     response = f"You are in {page.replace('_', ' ').title()} working on {selected} for {project.title}. This production is planned as {summary['scope']}. {guidance}"
     if needs:
         response += "\n\nWhat I would protect next: " + " ".join(needs)
+    craft_review = review_project_craft(project, page if page in {"story", "worlds", "shots", "edit", "sound"} else "all")
+    open_craft = [item for item in craft_review["findings"] if not item["resolved"]]
+    if open_craft:
+        response += f"\n\nCraft Compass: {open_craft[0]['title']}. This is guidance, not a compliance failure; you can realign, keep the departure and explain why, or revise the compass."
     response += f"\n\nYou asked: {request.message.strip()}"
     return response, actions
 
@@ -1309,8 +1381,8 @@ def routed_assistant_reply(project: Project, scope: ProductionScope | None, requ
     scope_guidance = scope_response(scope)["writing_guidance"] if scope else []
     recent = db.scalars(select(AssistantMessage).where(AssistantMessage.project_id == project.id).order_by(AssistantMessage.id.desc()).limit(10)).all()[::-1]
     conversation = [{"role": item.role, "content": item.content} for item in recent]
-    system = """You are Kizuna's embedded anime production assistant. You understand the full workflow from scope and writing through visual development, animation, sound, edit, render, and delivery. Give concise, concrete, professional guidance based only on the supplied project state and current screen. Collaborate at the creator's level, explain unfamiliar craft terms plainly, preserve approved work, and clearly distinguish suggestions from known project facts. Never claim that work is complete unless the project state says it is. When discussing style, describe transferable craft traits and original art direction rather than imitating a living artist."""
-    prompt = json.dumps({"project": summary, "scope_guidance": scope_guidance, "current_workspace": page, "screen": request.screen_context, "recent_conversation": conversation, "creator_request": request.message}, ensure_ascii=False)
+    system = """You are Kizuna's embedded anime production assistant. You understand the full workflow from scope and writing through visual development, animation, sound, edit, render, and delivery. Give concise, concrete, professional guidance based only on the supplied project state and current screen. Collaborate at the creator's level, explain unfamiliar craft terms plainly, preserve approved work, and clearly distinguish suggestions from known project facts. Never claim that work is complete unless the project state says it is. When discussing anime craft, name the relevant tradition or production practice, explain what it can accomplish, and avoid presenting any one convention as a cultural purity test. Treat departures from the creator's Craft Compass as a conversation: offer a way to realign, a way to continue intentionally, and a way to revise the compass. Keep advisory craft guidance separate from originality, rights, consent, and release compliance. Describe transferable traits and original art direction rather than imitating a living artist."""
+    prompt = json.dumps({"project": summary, "craft_review": review_project_craft(project), "scope_guidance": scope_guidance, "current_workspace": page, "screen": request.screen_context, "recent_conversation": conversation, "creator_request": request.message}, ensure_ascii=False)
     generated = generate_text(provider, system=system, prompt=prompt)
     if isinstance(generated, GeneratedText):
         content = generated.text
@@ -1729,6 +1801,8 @@ def update_style(project_id: int, payload: StyleProfileInput, db: Session = Depe
         profile = StyleProfile(project_id=project_id)
         db.add(profile)
     for key, value in payload.model_dump().items():
+        if key == "craft" and key not in payload.model_fields_set:
+            continue
         setattr(profile, key, value)
     mark_project_milestone(project_id, "style", db)
     db.commit()
@@ -3517,7 +3591,8 @@ def writer_project_context(project: Project, db: Session) -> dict:
     return {
         "title": project.title,
         "logline": project.logline,
-        "style": {"era_primary": style.era_primary, "era_secondary": style.era_secondary, "direction": style.direction, "narrative": style.narrative, "archetypes": style.archetypes} if style else {},
+        "style": {"era_primary": style.era_primary, "era_secondary": style.era_secondary, "direction": style.direction, "narrative": style.narrative, "archetypes": style.archetypes, "craft_compass": normalize_compass(style.craft)} if style else {},
+        "craft_review": review_project_craft(project),
         "story_brief": {"premise": brief.premise, "format": brief.format, "target_duration_minutes": brief.target_duration_minutes, "audience": brief.audience, "genre": brief.genre, "themes": brief.themes, "synopsis": brief.synopsis, "beats": brief.beats} if brief else None,
         "production_scope": scope_response(scope) if scope else None,
         "characters": [{"name": character.name, "role": character.role, "want": character.want, "need": character.need, "contradiction": character.contradiction} for character in characters],

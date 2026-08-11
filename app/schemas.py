@@ -11,12 +11,34 @@ class StyleProfileInput(BaseModel):
     direction: dict[str, Any] = Field(default_factory=dict)
     narrative: dict[str, Any] = Field(default_factory=dict)
     archetypes: list[str] = Field(default_factory=list)
+    craft: dict[str, Any] = Field(default_factory=dict)
 
 
 class StyleProfileRead(StyleProfileInput):
     model_config = ConfigDict(from_attributes=True)
     id: int
     project_id: int
+
+
+class CraftCompassInput(BaseModel):
+    intent: str = Field(default="", max_length=4000)
+    cultural_context: str = Field(default="", max_length=4000)
+    primary_genre: str = Field(default="", max_length=120)
+    genre_lenses: list[str] = Field(default_factory=list, max_length=6)
+    tradition_ids: list[str] = Field(default_factory=list, max_length=10)
+    anchors: list[str] = Field(default_factory=list, max_length=20)
+    flexible: list[str] = Field(default_factory=list, max_length=20)
+    departures: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CraftReviewRequest(BaseModel):
+    stage: str = Field(default="all", pattern="^(all|compass|story|characters|worlds|shots|edit|sound|finish)$")
+
+
+class CraftDecisionInput(BaseModel):
+    finding_id: str = Field(min_length=3, max_length=180)
+    decision: str = Field(pattern="^(continue|realign|revise_compass)$")
+    rationale: str = Field(min_length=10, max_length=2000)
 
 
 class StoryBriefInput(BaseModel):

@@ -4,6 +4,35 @@ def test_health(client):
     assert response.json()["status"] == "ok"
 
 
+def test_anime_craft_compass_guides_without_becoming_a_compliance_gate(client):
+    catalog = client.get("/api/anime-craft/catalog").json()
+    assert catalog["stance"]["title"] == "Tradition is a living practice, not a purity test"
+    assert {"kishotenketsu", "jo-ha-kyu", "ma", "sound-ma"}.issubset({item["id"] for item in catalog["traditions"]})
+
+    project = client.post("/api/projects", json={"title": "Quiet Circuit", "logline": "A repair apprentice learns to hear a city's failing public memory."}).json()
+    project_id = project["id"]
+    initial = client.get(f"/api/projects/{project_id}/craft-compass").json()
+    assert initial["advisory"] is True and initial["blocking"] is False
+    assert {item["id"] for item in initial["findings"]} >= {"compass:missing-intent", "compass:missing-traditions"}
+
+    saved = client.put(f"/api/projects/{project_id}/craft-compass", json={"intent": "Find restoration in careful attention to a shared place.", "cultural_context": "Research everyday maintenance practices and avoid using sacred imagery as atmosphere.", "primary_genre": "iyashikei", "genre_lenses": ["iyashikei"], "tradition_ids": ["ma", "sound-ma", "environment-as-agent"], "anchors": ["Silence carries story information"], "flexible": ["Beat count"]})
+    assert saved.status_code == 200
+    assert saved.json()["compass"]["tradition_ids"] == ["ma", "sound-ma", "environment-as-agent"]
+
+    style = client.get("/api/projects").json()[0]["style_profile"]
+    style["direction"]["editing"] = "rapid impact"
+    style_update = {key: style[key] for key in ("era_primary", "era_secondary", "visual", "direction", "narrative", "archetypes")}
+    assert client.put(f"/api/projects/{project_id}/style", json=style_update).status_code == 200
+    review = client.post(f"/api/projects/{project_id}/craft-review", json={"stage": "edit"}).json()
+    finding = next(item for item in review["findings"] if item["id"] == "edit:iyashikei-rapid-edit")
+    assert set(finding["choices"]) == {"continue", "realign", "revise_compass"}
+    decision = client.post(f"/api/projects/{project_id}/craft-decisions", json={"finding_id": finding["id"], "decision": "continue", "rationale": "The brief rupture represents industrial noise invading an otherwise restorative daily rhythm."}).json()
+    resolved = next(item for item in decision["findings"] if item["id"] == finding["id"])
+    assert resolved["level"] == "intentional"
+    assert decision["blocking"] is False
+    assert client.get(f"/api/projects/{project_id}/compliance").status_code == 200
+
+
 def test_durable_jobs_are_idempotent_inspectable_cancelable_and_recoverable(client):
     from datetime import timedelta
 

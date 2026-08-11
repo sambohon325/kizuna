@@ -1,5 +1,6 @@
 from app.models import StyleProfile, WorldLocation
 from app.schemas import LocationDesignInput
+from app.anime_craft import craft_prompt_context
 
 
 def compile_background_brief(location: WorldLocation, design: LocationDesignInput, style: StyleProfile | None) -> str:
@@ -10,6 +11,7 @@ def compile_background_brief(location: WorldLocation, design: LocationDesignInpu
     anchors = "; ".join(design.continuity_anchors) or "preserve landmark positions, horizon, entrances, and scale"
     era = f"{style.era_primary} blended with {style.era_secondary}" if style else "project-defined anime"
     visual = ", ".join(str(value) for value in (style.visual.values() if style else []))
+    craft = craft_prompt_context(style.craft if style else None, "world")
     description = (location.description or "develop from the project story").rstrip(". ")
     return (
         f"Create an original anime production background concept for {location.name}. "
@@ -18,7 +20,7 @@ def compile_background_brief(location: WorldLocation, design: LocationDesignInpu
         f"Geography and period: {location.geography or 'unspecified geography'}, {location.time_period or 'story-defined period'}. "
         f"Appearance: {appearance or 'readable staging, strong depth, and a distinct silhouette'}. Palette: {palette}. "
         f"Layer plan: {layers}. Lighting variants required: {lighting}. "
-        f"Art direction: {era}; {visual or 'clean production linework and painted background treatment'}. "
+        f"Art direction: {era}; {visual or 'clean production linework and painted background treatment'}. {craft} "
         "Provide a wide establishing composition with clear character staging zones, camera-ready perspective, scale reference, and separate parallax layers. "
         f"Continuity locks: {anchors}. Keep the environment original, coherent, and reusable across shots."
     )

@@ -156,6 +156,7 @@ class StyleProfile(Base):
     direction: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     narrative: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     archetypes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    craft: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
     project: Mapped[Project] = relationship(back_populates="style_profile")
 

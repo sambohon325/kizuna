@@ -1,5 +1,7 @@
 # Kizuna Studio
 
+Kizuna includes an Anime Craft Compass that connects historically situated storytelling, visual, motion, environmental, performance, and audio practices to each production. It offers explainable alignment guidance and supports intentional creative departures without turning tradition into a purity test. See `docs/ANIME_CRAFT_COMPASS.md`.
+
 Kizuna Studio is a browser-based, AI-powered anime production workspace. Creators can direct every detail or delegate selected departments to an AI Crew while keeping proposals, approvals, outputs, and failures visible. The platform is intentionally provider agnostic so local and hosted generation engines can be added without changing the editor.
 
 ## Run locally

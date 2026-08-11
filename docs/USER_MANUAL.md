@@ -4,8 +4,10 @@ The primary user manual lives inside Kizuna under **Help & manual** so creators 
 
 ## Help model
 
-- First-run users receive a six-step, skippable studio tour.
+- First-run users receive a seven-step, skippable studio tour.
 - Completion is stored in the browser and the tour can always be restarted from Help.
+- The Workspace selector offers Guided, Studio, and Expert presentation depths without changing production data, compliance, approvals, or AI authority.
+- Guided mode adds a contextual click-through path to every craft workspace, with direct links to the complete manual article and the project-aware AI assistant.
 - Articles are organized around creator tasks rather than implementation details.
 - Search covers article titles, summaries, steps, and categories.
 - The contextual Kizuna Assistant remains available for project-specific questions.

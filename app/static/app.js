@@ -63,6 +63,7 @@ function openWorkspace(dialog) {
   setActiveNavigation(workspaceNav.get(dialog));
   renderProductionFlow();
   refreshAssistantContext();
+  document.dispatchEvent(new CustomEvent('kizuna:workspace-opened',{detail:{workspace:workspaceKeys.get(dialog)||'productions'}}));
   window.scrollTo({top: 0, left: 0, behavior: 'auto'});
 }
 
@@ -90,6 +91,7 @@ function showDashboard() {
   setActiveNavigation();
   renderProductionFlow();
   refreshAssistantContext();
+  document.dispatchEvent(new CustomEvent('kizuna:workspace-opened',{detail:{workspace:'productions'}}));
   window.scrollTo({top: 0, left: 0, behavior: 'auto'});
 }
 

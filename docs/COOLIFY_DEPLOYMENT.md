@@ -58,10 +58,13 @@ Run it separately for each secret. Keep the values in a password manager.
 7. Confirm named volumes exist for Postgres, Redis, renders, storage, and the scanner corpus before uploading irreplaceable media.
 8. Open **Settings → Operations** and confirm the database, web application, background job worker, backup scheduler, compliance scanner, and both production disks report ready. Redis should report ready in the Coolify stack; a polling advisory is expected only in simple local development. A stale or absent heartbeat includes the exact Coolify service to inspect.
 9. Create a production backup, return to **Settings → Operations**, and select **Verify latest backup**. This reads and validates the archive but never restores over the active production.
+10. Select **Run recovery drill**. Confirm the durable job completes and Operations reports the recovered data and media count. This rebuilds only in temporary storage and never overwrites a production.
 
 Optional capacity warning thresholds can be adjusted with `KIZUNA_STORAGE_WARNING_FREE_GB` and `KIZUNA_STORAGE_WARNING_FREE_PERCENT`. They default to 10 GB and 10 percent. Treat either warning as an operating alert rather than waiting for a render or backup to fail.
 
 Kizuna writes one-line JSON events to standard output. In Coolify Logs, search for fields such as `"service":"job-worker"`, `"event":"job_failed"`, or a request's `request_id`. Health-check successes are intentionally omitted to avoid burying useful events. `KIZUNA_LOG_LEVEL`, `KIZUNA_SERVICE_HEARTBEAT_SECONDS`, and `KIZUNA_SERVICE_STALE_SECONDS` are optional; the Compose defaults are appropriate for the initial deployment.
+
+Follow [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) for the separate isolated full-stack recovery rehearsal. A passing project-archive drill does not replace PostgreSQL and persistent-volume backups.
 
 Keep `KIZUNA_TRIAL_SIGNUP_ENABLED=false` while SMTP and recovery are tested. First configure SMTP with `KIZUNA_EMAIL_VERIFICATION_REQUIRED=false`, redeploy, request a password reset, and complete it. Then set verification to true, create and verify a test trial account, and confirm a second use of either link fails. Public signup should remain off until billing upgrades, broader signup abuse controls, and a restore drill are complete.
 

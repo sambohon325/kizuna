@@ -19,6 +19,8 @@ Each production may choose local or S3-compatible storage and override retention
 
 The Compose stack includes a dedicated `backup-scheduler` service. It checks due production schedules without requiring a browser tab to remain open, records success or failure, and calculates the next run. Local and scheduler services share the same persistent render and vault volumes.
 
+The scheduler also queues a weekly, non-destructive recovery drill for the newest local production archive. The worker reads every archived byte, rebuilds and reopens a temporary recovery catalog, validates the project and media counts, then removes the temporary files. The result appears in **Settings → Operations** and durable job history. See [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) for what this proves and the separate full-stack rehearsal procedure.
+
 ## S3-compatible vault
 
 Kizuna supports AWS S3 and services that expose an S3-compatible API, including Cloudflare R2, MinIO, and Backblaze. Configure the server or Coolify environment:

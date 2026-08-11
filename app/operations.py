@@ -98,6 +98,7 @@ def _alerts(checks: list[dict]) -> list[dict]:
         "redis": "No action is required for simple local use; enable Redis before testing the distributed production stack." if local else "Inspect Redis in Coolify; database polling remains available while it recovers.",
         "jobs": "Open Activity, inspect the failed or expired jobs, then retry only after resolving the cause.",
         "backups": "Create and verify a production backup before relying on disaster recovery.",
+        "restore-drill": "Run a recovery drill after creating a local backup, then investigate any failed archive entry before relying on it.",
         "service-web": "Inspect the web service logs and restart the container if its heartbeat remains stale.",
         "service-job-worker": "Inspect job-worker logs; queued renders will wait until the worker returns.",
         "service-backup-scheduler": "Inspect backup-scheduler logs and manually confirm the next scheduled backup.",
@@ -157,6 +158,20 @@ def operational_readiness(db: Session, storage_root: Path, render_root: Path, *,
     checks.extend(_service_checks(db, now))
     checks.append(_scanner_check())
 
+    drill = db.scalar(select(DurableJob).where(DurableJob.kind == "maintenance.restore-drill").order_by(DurableJob.created_at.desc(), DurableJob.id.desc()))
+    drill_result = (drill.result or {}) if drill else {}
+    if drill is None:
+        checks.append(_check("restore-drill", "Recovery drill", "warning", "No backup recovery drill has been recorded yet.", {"job_id": None, "status": "never"}))
+    elif drill.status == "completed" and drill_result.get("passed"):
+        overdue = drill.created_at < now - timedelta(hours=max(1, settings.restore_drill_interval_hours) * 2)
+        drill_state = "warning" if overdue else "ready"
+        drill_summary = "The last recovery rehearsal passed." if not overdue else "The last successful recovery rehearsal is overdue for renewal."
+        checks.append(_check("restore-drill", "Recovery drill", drill_state, drill_summary, {"job_id": drill.id, "status": drill.status, "backup_id": drill_result.get("backup_id"), "expanded_bytes": drill_result.get("expanded_bytes", 0), "recovered_assets": drill_result.get("recovered_assets", 0), "duration_seconds": drill_result.get("duration_seconds", 0), "completed_at": drill.completed_at.isoformat() + "Z" if drill.completed_at else ""}))
+    elif drill.status in {"queued", "running"}:
+        checks.append(_check("restore-drill", "Recovery drill", "warning", f"A recovery drill is {drill.status}.", {"job_id": drill.id, "status": drill.status, "progress_percent": drill.progress_percent}))
+    else:
+        checks.append(_check("restore-drill", "Recovery drill", "error", "The latest recovery drill did not pass.", {"job_id": drill.id, "status": drill.status, "error": bool(drill.error)}))
+
     latest = db.scalar(select(ProjectBackup).where(ProjectBackup.status == "completed").order_by(ProjectBackup.created_at.desc(), ProjectBackup.id.desc()))
     if latest is None:
         checks.append(_check("backups", "Production backups", "warning", "No completed production backup exists yet.", {"s3_configured": s3_configured}))
@@ -169,7 +184,7 @@ def operational_readiness(db: Session, storage_root: Path, render_root: Path, *,
         local_exists = backend != "local" or (root in archive_path.parents and archive_path.is_file())
         backup_state = "ready" if local_exists else "error"
         backup_summary = f"Latest backup completed {latest.created_at.isoformat()}Z." if local_exists else "The latest local backup record exists, but its archive is missing."
-        checks.append(_check("backups", "Production backups", backup_state, backup_summary, {"id": latest.id, "project_id": latest.project_id, "backend": backend, "size_bytes": latest.size_bytes, "checksum_recorded": bool(latest.checksum_sha256), "deep_verification_available": backend == "local" and local_exists, "s3_configured": s3_configured}))
+        checks.append(_check("backups", "Production backups", backup_state, backup_summary, {"id": latest.id, "project_id": latest.project_id, "backend": backend, "size_bytes": latest.size_bytes, "checksum_recorded": bool(latest.checksum_sha256), "deep_verification_available": backend == "local" and local_exists, "restore_drill_available": backend == "local" and local_exists, "s3_configured": s3_configured}))
 
     states = {item["state"] for item in checks}
     status = "error" if "error" in states else "warning" if "warning" in states else "ready"

@@ -5,7 +5,7 @@ import time
 
 from app.config import settings
 from app.database import SessionLocal
-from app.main import run_due_backups
+from app.main import run_due_backups, run_due_restore_drill
 from app.observability import ServiceHeartbeatLoop, log_event, service_logger
 
 
@@ -23,6 +23,9 @@ def main() -> None:
                 result = run_due_backups(db)
                 if result["due"]:
                     log_event(logger, logging.INFO, "backup_schedule_checked", "Due backup schedules were queued", **result)
+                drill = run_due_restore_drill(db)
+                if drill["due"]:
+                    log_event(logger, logging.INFO, "restore_drill_scheduled", "A recovery drill was scheduled", **drill)
             time.sleep(interval)
     finally:
         heartbeat.stop()

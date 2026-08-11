@@ -4,6 +4,7 @@ import os
 import socket
 import time
 import logging
+from pathlib import Path
 from uuid import uuid4
 
 from app.config import settings
@@ -11,12 +12,13 @@ from app.database import SessionLocal
 from app.job_queue import claim_job, complete_job, fail_job, redis_client, update_progress, wait_for_notification
 from app.media_proxy import execute_media_proxy_job
 from app.storage_maintenance import execute_storage_audit_job
+from app.restore_drill import execute_restore_drill_job
 from app.main import execute_composite_render_job, execute_crew_proposal_job, execute_crew_voice_job, execute_master_assembly_job, execute_project_backup_job, execute_shot_motion_render_job, execute_timeline_render_job, mark_composite_render_job_failed, mark_crew_job_failed, mark_master_assembly_job_failed, mark_project_backup_failed, mark_shot_motion_job_failed, mark_timeline_render_job_failed
 from app.schema_migrations import migrate_database
 from app.observability import ServiceHeartbeatLoop, log_event, service_logger
 
 
-HANDLERS = {"media.proxy": execute_media_proxy_job, "maintenance.storage-audit": execute_storage_audit_job, "maintenance.backup": execute_project_backup_job, "crew.proposal": execute_crew_proposal_job, "crew.voice": execute_crew_voice_job, "render.composite": execute_composite_render_job, "render.shot-motion": execute_shot_motion_render_job, "render.animatic": execute_timeline_render_job, "render.master": execute_timeline_render_job, "render.master-assembly": execute_master_assembly_job}
+HANDLERS = {"media.proxy": execute_media_proxy_job, "maintenance.storage-audit": execute_storage_audit_job, "maintenance.backup": execute_project_backup_job, "maintenance.restore-drill": lambda db, job: execute_restore_drill_job(db, job, Path(settings.storage_directory)), "crew.proposal": execute_crew_proposal_job, "crew.voice": execute_crew_voice_job, "render.composite": execute_composite_render_job, "render.shot-motion": execute_shot_motion_render_job, "render.animatic": execute_timeline_render_job, "render.master": execute_timeline_render_job, "render.master-assembly": execute_master_assembly_job}
 logger = service_logger("job-worker")
 
 

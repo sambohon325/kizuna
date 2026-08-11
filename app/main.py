@@ -33,6 +33,7 @@ from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRoute
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, recover_expired_jobs, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
 from app.storage_maintenance import execute_storage_audit_job
+from app.restore_drill import execute_restore_drill_job
 from app.compliance import COMPLIANCE_STAGES, append_audit_event, compliance_overview, fan_fiction_violation, latest_current_scan, policy_for as compliance_policy_for, require_release_clearance, resolve_finding, run_stage_scan, save_asset_rights, scan_passes
 from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
@@ -391,6 +392,30 @@ def verify_latest_backup(db: Session = Depends(get_db)):
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+def queue_restore_drill(backup: ProjectBackup, db: Session, *, idempotency_key: str = "") -> DurableJob:
+    active = db.scalar(select(DurableJob).where(DurableJob.kind == "maintenance.restore-drill", DurableJob.status.in_(["queued", "running"])).order_by(DurableJob.id.desc()))
+    if active is not None:
+        return active
+    job = enqueue_job(db, "maintenance.restore-drill", {"backup_id": backup.id}, project_id=backup.project_id, queue="maintenance", priority=65, max_attempts=2, idempotency_key=idempotency_key or f"restore-drill:{backup.id}:{uuid4().hex}")
+    if settings.job_inline_fallback:
+        start_job(db, job, "inline:restore-drill")
+        try:
+            complete_job(db, job, execute_restore_drill_job(db, job, production_storage.root))
+        except Exception as exc:
+            fail_job(db, job, str(exc))
+    return job
+
+
+@app.post("/api/settings/operations/run-restore-drill", response_model=DurableJobRead, status_code=status.HTTP_202_ACCEPTED)
+def run_restore_drill(db: Session = Depends(get_db)):
+    backup = db.scalar(select(ProjectBackup).where(ProjectBackup.status == "completed", ProjectBackup.storage_key.like("local:%")).order_by(ProjectBackup.created_at.desc(), ProjectBackup.id.desc()))
+    if backup is None:
+        raise HTTPException(409, "Create a completed local production backup before running a recovery drill.")
+    job = queue_restore_drill(backup, db)
+    db.commit(); db.refresh(job)
+    return job
 
 
 @app.get("/api/auth/status")
@@ -2449,6 +2474,21 @@ def run_due_backups(db: Session) -> dict:
         schedule.last_run_at = now; schedule.next_run_at = now + timedelta(hours=schedule.interval_hours)
         db.commit()
     return {"due": len(schedules), "queued": queued, "completed": completed, "failed": failed}
+
+
+def run_due_restore_drill(db: Session) -> dict:
+    now = utcnow()
+    interval_hours = max(1, settings.restore_drill_interval_hours)
+    latest = db.scalar(select(DurableJob).where(DurableJob.kind == "maintenance.restore-drill").order_by(DurableJob.created_at.desc(), DurableJob.id.desc()))
+    if latest and (latest.status in {"queued", "running"} or latest.created_at >= now - timedelta(hours=interval_hours)):
+        return {"due": 0, "queued": 0, "job_id": latest.id, "reason": "current"}
+    backup = db.scalar(select(ProjectBackup).where(ProjectBackup.status == "completed", ProjectBackup.storage_key.like("local:%")).order_by(ProjectBackup.created_at.desc(), ProjectBackup.id.desc()))
+    if backup is None:
+        return {"due": 0, "queued": 0, "job_id": None, "reason": "no_local_backup"}
+    bucket = int(now.timestamp() // (interval_hours * 3600))
+    job = queue_restore_drill(backup, db, idempotency_key=f"scheduled-restore-drill:{backup.id}:{bucket}")
+    db.commit()
+    return {"due": 1, "queued": int(job.status == "queued"), "job_id": job.id, "backup_id": backup.id, "status": job.status}
 
 
 def authenticate_worker(worker_id: int, authorization: str | None, db: Session) -> RenderWorker:

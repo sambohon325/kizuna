@@ -16,4 +16,6 @@ Docker Compose starts Redis and the `job-worker` service. The web service uses `
 
 The worker records a persistent service heartbeat and emits structured JSON events when it starts, claims a job, completes a job, or records a failure. Studio administrators can see stale worker heartbeats and job recovery guidance in **Settings → Operations**; Coolify Logs retains the corresponding detailed event stream.
 
+`maintenance.restore-drill` jobs rehearse the newest local production backup without restoring over live work. They are queued manually from Operations or weekly by the backup scheduler.
+
 Operators can inspect `GET /api/jobs`, filter by project, status, or kind, open `GET /api/jobs/{id}` for event history, request cancellation, and retry failed or cancelled work.

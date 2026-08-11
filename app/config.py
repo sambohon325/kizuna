@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     backup_retention_days: int = 30
     backup_max_copies: int = 10
     backup_scheduler_interval_seconds: int = 60
+    restore_drill_interval_hours: int = 168
     cleanup_verification_hours: int = 24
     redis_url: str = ""
     job_stream_key: str = "kizuna:jobs"

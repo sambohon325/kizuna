@@ -39,6 +39,7 @@ pytest
 - A durable database-backed job ledger with idempotency, progress history, cancellation, bounded retries, expired-lease recovery, optional Redis dispatch, and a separate production worker; local development can execute working-media jobs inline
 - An administrator-only Operations dashboard with database revision checks, Redis fallback visibility, writable-disk and capacity checks, durable queue diagnostics, core-service heartbeats, scanner health, actionable operating notices, latest-backup state, and non-destructive archive verification
 - Structured JSON application, worker, scheduler, scanner, and job-lifecycle logs designed for Coolify log search
+- Weekly non-destructive recovery drills that read every archived byte, rebuild a temporary recovery catalog, remove rehearsal files, and report evidence in Operations
 - A stage-aware Compliance Center with preliminary checks, provider-neutral text/trademark/visual/audio scanners, fail-closed outages, evidence-backed finding resolution, an asset rights register, stale-scan invalidation, strict release gates, and hash-chained audit events
 - An enforced original-work-only charter that rejects fan-fiction and unofficial derivative requests, plus independently reviewable professional identities and exact prior-work claims for creators working with their own catalog
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
@@ -71,7 +72,7 @@ pytest
 
 1. Add PostgreSQL migration verification in CI while retaining SQLite for local development
 2. Add external alert delivery and retention/export controls around the implemented structured logs, service heartbeats, and in-app operating notices
-3. Exercise backup verification in a recurring restore drill and document disaster recovery ownership
+3. Run an isolated full-stack Coolify recovery rehearsal and design guarded project import
 4. Finish provider-neutral execution for every AI Crew department and begin repeatable Character and World Identity Packs
 
 See [the phased Kizuna roadmap](docs/ROADMAP.md) for how Anime Studio becomes the shared foundation for Express, Paper, Hero, Motion, CineReal, AdForge, collaboration, integrations, and the future creator ecosystem.
@@ -79,6 +80,7 @@ See [the phased Kizuna roadmap](docs/ROADMAP.md) for how Anime Studio becomes th
 See [AI Crew and voice setup](docs/AI_CREW.md) for autonomy behavior and optional hosted speech configuration.
 See [AI provider routing](docs/AI_PROVIDER_ROUTING.md) for assigning OpenAI, Claude, Gemini, Ollama, or custom engines to studio roles.
 See [Kizuna Node and mixed-platform Hive](docs/KIZUNA_NODE.md) for computer enrollment, privacy, schedules, usage throttles, workload placement, and AI budget monitoring.
+See [recovery drills and disaster recovery](docs/DISASTER_RECOVERY.md) for archive evidence, infrastructure boundaries, and the isolated Coolify rehearsal.
 See [asset review and rollback](docs/ASSET_REVIEW.md) for the production-version workflow.
 See [character story development](docs/CHARACTER_STORY.md) for histories, arcs, and relationship records.
 See [multi-window workspaces](docs/MULTI_WINDOW.md) for multi-monitor usage and direct workspace links.

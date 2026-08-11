@@ -1571,6 +1571,17 @@ def test_project_backups_retention_and_expiring_delivery_links(client, monkeypat
     assert verification.json()["verified"] is True
     assert verification.json()["project_id"] == project_id
     assert verification.json()["entries"] >= 2
+    drill = client.post("/api/settings/operations/run-restore-drill")
+    assert drill.status_code == 202
+    assert drill.json()["status"] == "completed"
+    assert drill.json()["result"]["passed"] is True
+    assert drill.json()["result"]["project_title"] == "Archive Test"
+    assert drill.json()["result"]["recovered_assets"] == 1
+    assert drill.json()["result"]["temporary_files_removed"] is True
+    operations = client.get("/api/settings/operations").json()
+    recovery_check = next(item for item in operations["checks"] if item["key"] == "restore-drill")
+    assert recovery_check["state"] == "ready"
+    assert recovery_check["details"]["backup_id"] == second["id"]
     assert client.get(second["download_url"]).headers["content-type"] == "application/zip"
     assert client.get(f"/api/backups/{first['id']}/download").status_code == 404
 
@@ -1588,6 +1599,16 @@ def test_project_backups_retention_and_expiring_delivery_links(client, monkeypat
     assert client.get(f"/api/projects/{project_id}/backup-schedule").json()["last_status"] == "completed"
     backup_jobs = [job for job in client.get(f"/api/jobs?project_id={project_id}").json() if job["kind"] == "maintenance.backup"]
     assert len(backup_jobs) == 3 and all(job["status"] == "completed" for job in backup_jobs)
+
+    from app.models import DurableJob
+    with SessionLocal() as db:
+        prior_drill = db.scalar(select(DurableJob).where(DurableJob.kind == "maintenance.restore-drill").order_by(DurableJob.id.desc()))
+        prior_drill.created_at = main_module.utcnow() - timedelta(hours=main_module.settings.restore_drill_interval_hours + 1)
+        db.commit()
+        scheduled_drill = main_module.run_due_restore_drill(db)
+    assert scheduled_drill["due"] == 1 and scheduled_drill["status"] == "completed"
+    restore_jobs = [job for job in client.get(f"/api/jobs?project_id={project_id}").json() if job["kind"] == "maintenance.restore-drill"]
+    assert len(restore_jobs) == 2 and all(job["status"] == "completed" for job in restore_jobs)
 
     monkeypatch.setattr(main_module.settings, "job_inline_fallback", False)
     pending = client.post(f"/api/projects/{project_id}/backups").json()

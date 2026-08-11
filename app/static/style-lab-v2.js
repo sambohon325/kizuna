@@ -19,7 +19,9 @@ function setupStyleLabV2(){
 }
 
 function styleV2Actions(step){const index=styleV2Steps.indexOf(step),previous=styleV2Steps[index-1],next=styleV2Steps[index+1];return `<div class="style-v2-actions"><span></span><div>${previous?`<button type="button" data-style-back="${previous}">Back</button>`:''}${next?`<button type="button" class="primary" data-style-next="${next}">Continue</button>`:''}</div></div>`;}
-function setStyleV2Step(step){styleV2Step=step;document.querySelectorAll('[data-style-step]').forEach(button=>button.classList.toggle('active',button.dataset.styleStep===step));document.querySelectorAll('[data-style-panel]').forEach(panel=>panel.classList.toggle('active',panel.dataset.stylePanel===step));updateStyleV2DNA();}
+function syncStyleV2Experience(){const glossary=document.querySelector('.craft-glossary-library');if(glossary)glossary.open=window.kizunaExperience?.getMode()!=='guided';}
+function setStyleV2Step(step){styleV2Step=step;document.querySelectorAll('[data-style-step]').forEach(button=>{const active=button.dataset.styleStep===step;button.classList.toggle('active',active);button.setAttribute('aria-current',active?'step':'false');});document.querySelectorAll('[data-style-panel]').forEach(panel=>panel.classList.toggle('active',panel.dataset.stylePanel===step));syncStyleV2Experience();updateStyleV2DNA();}
+document.addEventListener('kizuna:workspace-depth',syncStyleV2Experience);
 
 openStyleLab=async function(projectId){
   if(!projects.length)await loadProjects();if(!catalog||!animeCraftCatalog){const loaded=await Promise.all([catalog||api('/api/style-catalog'),animeCraftCatalog||api('/api/anime-craft/catalog')]);catalog=loaded[0];animeCraftCatalog=loaded[1];}if(!projects.length){projectDialog.showModal();return;}const select=document.querySelector('#style-project');select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(projectId||projects[0].id));select.onchange=()=>fillStyle(Number(select.value));populateStyleV2Controls();fillStyle(Number(select.value));openWorkspace(styleDialog);

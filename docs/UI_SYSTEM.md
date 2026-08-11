@@ -30,6 +30,14 @@ Kizuna uses one shared interface foundation across every creative department. Cr
 5. Main creative canvas
 6. Contextual inspector or AI collaborator
 
+## Visual-development workspaces
+
+- In Beginner, **Style Lab** begins with the audience's emotional experience and originality guardrails beside a live creative-DNA board. Technique vocabulary and the full six-stage sequence appear when the creator moves to Intermediate.
+- In Beginner, **Character Studio** and **Worlds & Backgrounds** place the visual card library across the top, the active craft canvas beneath it, and a focused AI creative partner beside the work. This makes choosing or creating an asset the obvious first action.
+- Character and world stages remain available as plain-language tabs so a creator can move between story, design, model, staging, lighting, and assets without losing context.
+- Intermediate and Advanced restore the denser three-column library/canvas/inspector layout. Changing levels never discards field values or changes the selected stage.
+- Visual libraries scroll horizontally in Beginner and return to compact grids in deeper modes.
+
 ## Interaction hierarchy
 
 - Primary: the next meaningful creative or production action

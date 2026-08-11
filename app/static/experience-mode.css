@@ -22,6 +22,26 @@ html[data-workspace-depth="guided"] .craft-guidance:not(.expanded) .craft-guidan
 html[data-workspace-depth="guided"] .craft-guidance-toggle{display:inline-flex}
 .craft-guidance-toggle{display:none}
 
+/* Visual development: keep Beginner creative, sequential, and visibly connected. */
+html[data-workspace-depth="guided"] .style-v2-stages{display:none}
+html[data-workspace-depth="guided"] .style-v2-fields{grid-template-columns:1fr}
+html[data-workspace-depth="guided"] .style-v2-fields>.wide{grid-column:auto}
+html[data-workspace-depth="guided"] [data-style-panel="vision"] label:has([name="visual.texture_notes"]),
+html[data-workspace-depth="guided"] [data-style-panel="vision"] label:has([name="direction.signature_rule"]){display:none}
+html[data-workspace-depth="guided"] .style-v2-board{position:sticky;top:14px;align-self:start}
+
+html[data-workspace-depth="guided"] :is(.character-v2-shell,.world-v2-shell){grid-template-columns:minmax(0,1fr) 300px}
+html[data-workspace-depth="guided"] :is(.character-v2-cast,.world-v2-atlas){position:relative;top:auto;grid-column:1/-1}
+html[data-workspace-depth="guided"] .character-v2 .character-roster,
+html[data-workspace-depth="guided"] .world-v2 .world-roster{display:flex!important;gap:8px!important;overflow-x:auto!important;padding-bottom:3px!important}
+html[data-workspace-depth="guided"] :is(.character-card-v2,.world-card-v2){flex:0 0 220px}
+html[data-workspace-depth="guided"] :is(.character-card-v2.new,.world-card-v2.new){min-height:76px}
+html[data-workspace-depth="guided"] :is(.character-v2-copilot,.world-v2-copilot){position:sticky;top:14px}
+html[data-workspace-depth="guided"] :is(.character-v2-tabs,.world-v2-tabs){position:relative;top:auto}
+html[data-workspace-depth="guided"] :is(.character-v2-tabs,.world-v2-tabs) button{font-size:11px!important}
+
+@media(max-width:1250px){html[data-workspace-depth="guided"] .style-v2-workspace{grid-template-columns:1fr}html[data-workspace-depth="guided"] .style-v2-board{position:relative;top:auto;border-left:0;border-top:1px solid rgba(255,255,255,.08)}html[data-workspace-depth="guided"] :is(.character-v2-shell,.world-v2-shell){grid-template-columns:1fr}html[data-workspace-depth="guided"] :is(.character-v2-copilot,.world-v2-copilot){position:relative;top:auto}}
+
 html[data-workspace-depth="studio"] .form-intro{max-width:900px}
 html[data-workspace-depth="studio"] .craft-learning details:not([open]){display:none}
 

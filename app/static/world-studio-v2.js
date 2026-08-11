@@ -67,7 +67,7 @@ function decorateBackgroundArtistV2(agent){
 
 function setWorldViewV2(view){
   worldStudioViewV2=view;const form=document.querySelector('#world-form');form.dataset.worldView=view;
-  form.querySelectorAll('[data-world-view]').forEach(button=>button.classList.toggle('active',button.dataset.worldView===view));
+  form.querySelectorAll('[data-world-view]').forEach(button=>{const active=button.dataset.worldView===view;button.classList.toggle('active',active);button.setAttribute('aria-current',active?'step':'false');});
   form.querySelectorAll('[data-world-panel]').forEach(panel=>panel.hidden=panel.dataset.worldPanel!==view);
   const save=form.querySelector('.world-v2-save');save.hidden=view==='assets';
   save.textContent=view==='story'?(activeLocationId?'Save story location':'Create story location'):view==='place'?'Save geography & staging':view==='visual'?'Save visual system':'Save layers & lighting';

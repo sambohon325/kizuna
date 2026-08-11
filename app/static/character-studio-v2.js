@@ -99,7 +99,7 @@ function setCharacterView(view){
   characterStudioViewV2=view;
   const form=document.querySelector('#character-form');
   form.dataset.characterView=view;
-  form.querySelectorAll('[data-character-view]').forEach(button=>button.classList.toggle('active',button.dataset.characterView===view));
+  form.querySelectorAll('[data-character-view]').forEach(button=>{const active=button.dataset.characterView===view;button.classList.toggle('active',active);button.setAttribute('aria-current',active?'step':'false');});
   form.querySelectorAll('[data-character-panel]').forEach(panel=>panel.hidden=panel.dataset.characterPanel!==view);
   const save=form.querySelector('.character-v2-save');
   save.hidden=['story','model','assets'].includes(view);

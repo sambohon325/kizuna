@@ -143,6 +143,7 @@ class Project(Base):
     timeline: Mapped[Timeline | None] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
     scope: Mapped[ProductionScope | None] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
     assistant_messages: Mapped[list[AssistantMessage]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="AssistantMessage.id")
+    source_notes: Mapped[list[ProductionSourceNote]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="ProductionSourceNote.id")
     media_assets: Mapped[list[MediaAsset]] = relationship(back_populates="project", cascade="all, delete-orphan")
     library_assets: Mapped[list[LibraryAsset]] = relationship(back_populates="project", cascade="all, delete-orphan")
     asset_reviews: Mapped[list[AssetReview]] = relationship(back_populates="project", cascade="all, delete-orphan")
@@ -214,6 +215,24 @@ class StoryBrief(Base):
     beats: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
 
     project: Mapped[Project] = relationship(back_populates="story_brief")
+
+
+class ProductionSourceNote(Base):
+    __tablename__ = "production_source_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    stage: Mapped[str] = mapped_column(String(32))
+    source_type: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(160))
+    note: Mapped[str] = mapped_column(Text)
+    application: Mapped[str] = mapped_column(Text)
+    source_url: Mapped[str] = mapped_column(Text, default="")
+    evidence_refs: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    project: Mapped[Project] = relationship(back_populates="source_notes")
 
 
 class Character(Base):

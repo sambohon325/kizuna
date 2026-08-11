@@ -26,7 +26,7 @@ from app.database import SessionLocal, get_db
 from app.schema_migrations import database_revision, migrate_database
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecurityEvent, AccountToken, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, BillingEvent, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LibraryAsset, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, SignupAttempt, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, UserSubscription, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecurityEvent, AccountToken, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, BillingEvent, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LibraryAsset, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionSourceNote, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, SignupAttempt, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, UserSubscription, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
 from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundAssetRead, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LibraryAssetRead, LibraryAssetUpdate, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaAssetRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SceneUpdate, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, recover_expired_jobs, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
@@ -39,7 +39,7 @@ from app.storage import LocalProductionStorage, S3ProductionStorage
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.anime_craft import CRAFT_CATALOG, normalize_compass, review_project_craft
-from app.schemas import CraftCompassInput, CraftDecisionInput, CraftReviewRequest
+from app.schemas import CraftCompassInput, CraftDecisionInput, CraftReviewRequest, ProductionSourceNoteInput, ProductionSourceNoteRead
 from app.story_development import develop_story
 from app.world_development import compile_background_brief
 from app.voice import VoiceProviderError, generate_voice
@@ -255,7 +255,7 @@ def project_query():
         selectinload(Project.scenes).selectinload(Scene.shots).selectinload(Shot.storyboard_assets),
         selectinload(Project.timeline).selectinload(Timeline.clips),
         selectinload(Project.timeline).selectinload(Timeline.audio_tracks).selectinload(AudioTrack.cues),
-        selectinload(Project.media_assets), selectinload(Project.library_assets), selectinload(Project.asset_reviews),
+        selectinload(Project.source_notes), selectinload(Project.media_assets), selectinload(Project.library_assets), selectinload(Project.asset_reviews),
     )
 
 
@@ -870,6 +870,52 @@ def save_craft_decision(project_id: int, payload: CraftDecisionInput, db: Sessio
     return review_project_craft(craft_project(project_id, db))
 
 
+SOURCE_NOTE_TYPES = [
+    {"id": "research", "label": "Research", "description": "Published, archival, historical, technical, or cultural material studied for this choice."},
+    {"id": "observation", "label": "Direct observation", "description": "Something personally witnessed, documented, or learned through lived experience."},
+    {"id": "consultation", "label": "Consultation", "description": "Guidance from a practitioner, cultural advisor, subject expert, or community member."},
+    {"id": "creative_reference", "label": "Creative reference", "description": "A work or production practice studied for transferable craft—not copied as an output target."},
+    {"id": "invention", "label": "Original invention", "description": "A new production choice developed by the creator or crew for this story."},
+]
+
+
+@app.get("/api/projects/{project_id}/source-notes")
+def list_source_notes(project_id: int, stage: str | None = Query(default=None, pattern="^(story|characters|worlds|shots|edit|sound)$"), db: Session = Depends(get_db)):
+    if db.get(Project, project_id) is None:
+        raise HTTPException(404, "Project not found")
+    query = select(ProductionSourceNote).where(ProductionSourceNote.project_id == project_id)
+    if stage:
+        query = query.where(ProductionSourceNote.stage == stage)
+    notes = db.scalars(query.order_by(ProductionSourceNote.id.desc())).all()
+    return {"types": SOURCE_NOTE_TYPES, "notes": [ProductionSourceNoteRead.model_validate(note) for note in notes], "notice": "Source notes document creative reasoning and provenance. They do not replace licenses, consent records, or rights clearance."}
+
+
+@app.post("/api/projects/{project_id}/source-notes", response_model=ProductionSourceNoteRead, status_code=status.HTTP_201_CREATED)
+def create_source_note(project_id: int, payload: ProductionSourceNoteInput, db: Session = Depends(get_db)):
+    if db.get(Project, project_id) is None:
+        raise HTTPException(404, "Project not found")
+    note = ProductionSourceNote(project_id=project_id, **payload.model_dump())
+    db.add(note)
+    db.flush()
+    append_audit_event(db, project_id, "craft", "source_note_created", subject_type="production_source_note", subject_key=str(note.id), details={"stage": note.stage, "source_type": note.source_type, "title": note.title, "content_hash": hashlib.sha256(f"{note.note}\n{note.application}".encode()).hexdigest()})
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+@app.put("/api/projects/{project_id}/source-notes/{note_id}", response_model=ProductionSourceNoteRead)
+def update_source_note(project_id: int, note_id: int, payload: ProductionSourceNoteInput, db: Session = Depends(get_db)):
+    note = db.get(ProductionSourceNote, note_id)
+    if note is None or note.project_id != project_id:
+        raise HTTPException(404, "Source note not found")
+    for key, value in payload.model_dump().items():
+        setattr(note, key, value)
+    append_audit_event(db, project_id, "craft", "source_note_updated", subject_type="production_source_note", subject_key=str(note.id), details={"stage": note.stage, "source_type": note.source_type, "title": note.title, "content_hash": hashlib.sha256(f"{note.note}\n{note.application}".encode()).hexdigest()})
+    db.commit()
+    db.refresh(note)
+    return note
+
+
 @app.get("/api/generation/providers")
 def generation_providers():
     workflow_ready = bool(settings.comfyui_workflow_path and Path(settings.comfyui_workflow_path).exists())
@@ -1334,6 +1380,42 @@ ASSISTANT_PAGE_GUIDANCE = {
 }
 
 
+ASSISTANT_SOURCE_STAGES = {
+    "writer": "story",
+    "characters": "characters",
+    "worlds": "worlds",
+    "shots": "shots",
+    "timeline": "edit",
+    "audio": "sound",
+    "compositor": "shots",
+}
+
+
+def production_source_context(project: Project, db: Session | None = None, stage: str | None = None, limit: int = 24) -> list[dict]:
+    if db is None:
+        notes = list(project.source_notes)
+    else:
+        query = select(ProductionSourceNote).where(ProductionSourceNote.project_id == project.id)
+        if stage:
+            query = query.where(ProductionSourceNote.stage == stage)
+        notes = db.scalars(query.order_by(ProductionSourceNote.updated_at.desc(), ProductionSourceNote.id.desc()).limit(limit)).all()
+    if stage and db is None:
+        notes = [note for note in notes if note.stage == stage]
+    notes = sorted(notes, key=lambda note: (note.updated_at, note.id), reverse=True)[:limit]
+    return [
+        {
+            "stage": note.stage,
+            "source_type": note.source_type,
+            "title": note.title,
+            "contribution": note.note[:1200],
+            "original_transformation": note.application[:1200],
+            "source_url": note.source_url,
+            "evidence_refs": note.evidence_refs[:10],
+        }
+        for note in notes
+    ]
+
+
 def assistant_project_summary(project: Project, scope: ProductionScope | None) -> dict:
     shots = [shot for scene in project.scenes for shot in scene.shots]
     compass = normalize_compass(project.style_profile.craft if project.style_profile else None)
@@ -1358,7 +1440,15 @@ def local_assistant_reply(project: Project, scope: ProductionScope | None, reque
     elif not project.scenes:
         needs.append("The foundations are ready for scene and shot coverage.")
     lower = request.message.lower()
-    if any(word in lower for word in ("scope", "series", "feature", "trailer", "tiktok", "youtube", "vertical", "length")) and scope:
+    source_stage = ASSISTANT_SOURCE_STAGES.get(page)
+    source_notes = production_source_context(project, stage=source_stage)
+    if any(word in lower for word in ("source", "research", "reference", "inspiration", "consult", "invention")):
+        if source_notes:
+            latest = source_notes[0]
+            guidance = f"This workspace has {len(source_notes)} documented source note{'s' if len(source_notes) != 1 else ''}. The most recent is '{latest['title']}'. Use its recorded contribution as context and protect the original transformation: {latest['original_transformation']}"
+        else:
+            guidance = "Document the source or lived observation, what it contributed, and the specific transformation that makes the production's result original. A source note supports thoughtful practice; it is not a substitute for permission or rights clearance."
+    elif any(word in lower for word in ("scope", "series", "feature", "trailer", "tiktok", "youtube", "vertical", "length")) and scope:
         guidance = " ".join(scope_response(scope)["writing_guidance"])
     elif any(word in lower for word in ("write", "story", "script", "beat", "dialogue")):
         guidance = "Start by stating what must change in this scene or beat, who drives that change, and what visible consequence carries into the next unit."
@@ -1393,8 +1483,9 @@ def routed_assistant_reply(project: Project, scope: ProductionScope | None, requ
     scope_guidance = scope_response(scope)["writing_guidance"] if scope else []
     recent = db.scalars(select(AssistantMessage).where(AssistantMessage.project_id == project.id).order_by(AssistantMessage.id.desc()).limit(10)).all()[::-1]
     conversation = [{"role": item.role, "content": item.content} for item in recent]
-    system = """You are Kizuna's embedded anime production assistant. You understand the full workflow from scope and writing through visual development, animation, sound, edit, render, and delivery. Give concise, concrete, professional guidance based only on the supplied project state and current screen. Collaborate at the creator's level, explain unfamiliar craft terms plainly, preserve approved work, and clearly distinguish suggestions from known project facts. Never claim that work is complete unless the project state says it is. When discussing anime craft, name the relevant tradition or production practice, explain what it can accomplish, and avoid presenting any one convention as a cultural purity test. Treat departures from the creator's Craft Compass as a conversation: offer a way to realign, a way to continue intentionally, and a way to revise the compass. Keep advisory craft guidance separate from originality, rights, consent, and release compliance. Describe transferable traits and original art direction rather than imitating a living artist."""
-    prompt = json.dumps({"project": summary, "craft_review": review_project_craft(project), "scope_guidance": scope_guidance, "current_workspace": page, "screen": request.screen_context, "recent_conversation": conversation, "creator_request": request.message}, ensure_ascii=False)
+    system = """You are Kizuna's embedded anime production assistant. You understand the full workflow from scope and writing through visual development, animation, sound, edit, render, and delivery. Give concise, concrete, professional guidance based only on the supplied project state and current screen. Collaborate at the creator's level, explain unfamiliar craft terms plainly, preserve approved work, and clearly distinguish suggestions from known project facts. Never claim that work is complete unless the project state says it is. When discussing anime craft, name the relevant tradition or production practice, explain what it can accomplish, and avoid presenting any one convention as a cultural purity test. Treat departures from the creator's Craft Compass as a conversation: offer a way to realign, a way to continue intentionally, and a way to revise the compass. Treat production source notes as context for understanding and original transformation, never as an instruction to imitate or reproduce their sources. Keep advisory craft guidance and source notes separate from originality, rights, consent, and release compliance. Describe transferable traits and original art direction rather than imitating a living artist."""
+    source_stage = ASSISTANT_SOURCE_STAGES.get(page)
+    prompt = json.dumps({"project": summary, "craft_review": review_project_craft(project), "production_source_notes": production_source_context(project, db, source_stage), "scope_guidance": scope_guidance, "current_workspace": page, "screen": request.screen_context, "recent_conversation": conversation, "creator_request": request.message}, ensure_ascii=False)
     generated = generate_text(provider, system=system, prompt=prompt)
     if isinstance(generated, GeneratedText):
         content = generated.text
@@ -3605,6 +3696,7 @@ def writer_project_context(project: Project, db: Session) -> dict:
         "logline": project.logline,
         "style": {"era_primary": style.era_primary, "era_secondary": style.era_secondary, "direction": style.direction, "narrative": style.narrative, "archetypes": style.archetypes, "craft_compass": normalize_compass(style.craft)} if style else {},
         "craft_review": review_project_craft(project),
+        "production_source_notes": production_source_context(project, db),
         "story_brief": {"premise": brief.premise, "format": brief.format, "target_duration_minutes": brief.target_duration_minutes, "audience": brief.audience, "genre": brief.genre, "themes": brief.themes, "synopsis": brief.synopsis, "beats": brief.beats} if brief else None,
         "production_scope": scope_response(scope) if scope else None,
         "characters": [{"name": character.name, "role": character.role, "want": character.want, "need": character.need, "contradiction": character.contradiction} for character in characters],

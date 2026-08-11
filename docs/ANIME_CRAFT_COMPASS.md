@@ -49,6 +49,8 @@ All AI providers receive the relevant compass through project context. The Write
 
 Writer's Room, Character Studio, Worlds, Storyboard & Shot Planner, Timeline, and Audio each show a compact, stage-specific Craft Compass strip. It names the relevant selected traditions, explains open creative tensions, cites the saved production evidence behind applicable findings, and lets the creator record an intentional decision without leaving the active desk. Evidence can identify character story anchors and relationships, location functions and approved background versions, scene and shot numbers with approved storyboards, timeline clip durations and transitions, and named audio regions with timecodes. When no compass has been set, the strip returns the creator directly to the Craft Compass step in Style Lab. A guidance service failure remains non-blocking so creative work can continue.
 
+Each of those desks also includes **Sources & invention**. A creator can record whether a decision came from research, direct observation, consultation, a creative reference, or original invention; name what the source contributed; and explain how the crew transformed it into new production work. Links and research-log references are optional, while every create or edit action is recorded in the audit chain. These notes document creative reasoning and cultural care. They do not replace asset licenses, participant consent, originality scans, or qualified rights clearance.
+
 The initial rules deliberately cover only high-confidence, explainable tensions, including:
 
 - restorative iyashikei and ma paired with rapid-impact editing;
@@ -67,6 +69,5 @@ This engine should grow through reviewed craft rules, not opaque similarity scor
 
 1. Commission Japanese animation historians, working animators, writers, sound professionals, and cultural advisors to review the catalog.
 2. Add bilingual terminology, pronunciation, provenance, contested interpretations, and reading lists.
-3. Add production-level source notes so creators can distinguish research, observation, reference, and invention.
-4. Build learning paths for beginners and compact professional controls for experienced crews.
-5. Version the catalog so an existing production can keep or deliberately migrate its creative framework.
+3. Build learning paths for beginners and compact professional controls for experienced crews.
+4. Version the catalog so an existing production can keep or deliberately migrate its creative framework.

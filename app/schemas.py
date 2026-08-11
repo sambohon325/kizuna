@@ -41,6 +41,33 @@ class CraftDecisionInput(BaseModel):
     rationale: str = Field(min_length=10, max_length=2000)
 
 
+class ProductionSourceNoteInput(BaseModel):
+    stage: str = Field(pattern="^(story|characters|worlds|shots|edit|sound)$")
+    source_type: str = Field(pattern="^(research|observation|consultation|creative_reference|invention)$")
+    title: str = Field(min_length=2, max_length=160)
+    note: str = Field(min_length=3, max_length=4000)
+    application: str = Field(min_length=3, max_length=4000)
+    source_url: str = Field(default="", max_length=2000)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_source(self):
+        if self.source_url and not self.source_url.startswith(("https://", "http://")):
+            raise ValueError("Source links must begin with http:// or https://")
+        self.evidence_refs = [item.strip() for item in self.evidence_refs if item.strip()]
+        if any(len(item) > 400 for item in self.evidence_refs):
+            raise ValueError("Evidence references must be 400 characters or fewer")
+        return self
+
+
+class ProductionSourceNoteRead(ProductionSourceNoteInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    created_at: datetime
+    updated_at: datetime
+
+
 class StoryBriefInput(BaseModel):
     premise: str = ""
     format: str = "short film"

@@ -86,6 +86,49 @@ def test_craft_review_cites_shots_reviewed_assets_timeline_and_sound_regions(cli
     assert motif["evidence"] == ["Music · 00:14: Noa's main theme"]
 
 
+def test_production_source_notes_separate_research_reference_and_invention(client):
+    project_id = client.post("/api/projects", json={"title": "Source Thread"}).json()["id"]
+    created = client.post(f"/api/projects/{project_id}/source-notes", json={
+        "stage": "worlds",
+        "source_type": "research",
+        "title": "Municipal flood-control archives",
+        "note": "Maintenance routes reveal which neighborhoods receive protection first.",
+        "application": "The fictional canal gates expose class and labor through geography without reproducing a real facility.",
+        "source_url": "https://example.org/archive",
+        "evidence_refs": ["research-log:12"],
+    })
+    assert created.status_code == 201
+    note = created.json()
+    assert note["project_id"] == project_id and note["source_type"] == "research"
+
+    client.post(f"/api/projects/{project_id}/source-notes", json={
+        "stage": "characters",
+        "source_type": "invention",
+        "title": "Ari's listening ritual",
+        "note": "The crew invented a three-tap pause before difficult answers.",
+        "application": "Repeat it, then break the pattern when Ari chooses honesty.",
+    })
+    worlds = client.get(f"/api/projects/{project_id}/source-notes?stage=worlds").json()
+    assert {item["id"] for item in worlds["types"]} == {"research", "observation", "consultation", "creative_reference", "invention"}
+    assert [item["title"] for item in worlds["notes"]] == ["Municipal flood-control archives"]
+    assert "do not replace licenses" in worlds["notice"]
+
+    updated = client.put(f"/api/projects/{project_id}/source-notes/{note['id']}", json={
+        **{key: note[key] for key in ("stage", "source_type", "title", "note", "source_url", "evidence_refs")},
+        "application": "The original canal system now combines multiple research observations into an invented civic hierarchy.",
+    })
+    assert updated.status_code == 200
+    assert "invented civic hierarchy" in updated.json()["application"]
+    assert client.post(f"/api/projects/{project_id}/source-notes", json={"stage": "worlds", "source_type": "research", "title": "Bad link", "note": "A note", "application": "An application", "source_url": "javascript:alert(1)"}).status_code == 422
+    assert client.post(f"/api/projects/{project_id}/source-notes", json={"stage": "worlds", "source_type": "research", "title": "Oversized reference", "note": "A note", "application": "An application", "evidence_refs": ["x" * 401]}).status_code == 422
+    assistant = client.post(f"/api/projects/{project_id}/assistant", json={"message": "How should I use my research without copying it?", "page": "worlds", "screen_context": {"heading": "Worlds & Backgrounds"}})
+    assert assistant.status_code == 200
+    assert "Municipal flood-control archives" in assistant.json()["message"]["content"]
+    assert "invented civic hierarchy" in assistant.json()["message"]["content"]
+    audit = client.get(f"/api/projects/{project_id}/audit-ledger").json()["events"]
+    assert {event["action"] for event in audit} >= {"source_note_created", "source_note_updated"}
+
+
 def test_durable_jobs_are_idempotent_inspectable_cancelable_and_recoverable(client):
     from datetime import timedelta
 

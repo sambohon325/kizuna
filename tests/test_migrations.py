@@ -30,7 +30,7 @@ def test_blank_database_upgrades_to_current_schema(migration_db_path):
         revision = migrate_database(engine)
         tables = set(inspect(engine).get_table_names())
         assert revision == expected_revision() == database_revision(engine)
-        assert {"alembic_version", "projects", "compliance_scans", "professional_identities"}.issubset(tables)
+        assert {"alembic_version", "projects", "compliance_scans", "professional_identities", "production_source_notes"}.issubset(tables)
         assert migrate_database(engine) == revision
     finally:
         engine.dispose()

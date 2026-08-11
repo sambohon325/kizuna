@@ -33,6 +33,29 @@ def test_anime_craft_compass_guides_without_becoming_a_compliance_gate(client):
     assert client.get(f"/api/projects/{project_id}/compliance").status_code == 200
 
 
+def test_character_craft_review_cites_saved_story_relationship_and_design_evidence(client):
+    project = client.post("/api/projects", json={"title": "Listening Cast", "logline": "Two couriers learn that every message changes the person who hears it."}).json()
+    project_id = project["id"]
+    ari = client.post(f"/api/projects/{project_id}/characters", json={"name": "Ari", "role": "courier"}).json()
+    mika = client.post(f"/api/projects/{project_id}/characters", json={"name": "Mika", "role": "archivist"}).json()
+    client.put(f"/api/projects/{project_id}/craft-compass", json={"intent": "Make listening visible through relationships and designed reactions.", "tradition_ids": ["ensemble-performance", "graphic-cel-clarity"]})
+
+    initial = client.post(f"/api/projects/{project_id}/craft-review", json={"stage": "characters"}).json()
+    ensemble = next(item for item in initial["findings"] if item["id"] == "characters:ensemble-in-isolation")
+    identity = next(item for item in initial["findings"] if item["id"] == "characters:identity-locks")
+    assert any("Ari: 0/7 story anchors" in line for line in ensemble["evidence"])
+    assert set(identity["evidence"]) == {"Ari: visual model not started", "Mika: visual model not started"}
+
+    for character, target in ((ari, mika), (mika, ari)):
+        client.put(f"/api/characters/{character['id']}", json={"name": character["name"], "role": character["role"], "want": "Deliver the truth", "need": "Listen before acting", "contradiction": "Protects others by withholding information"})
+        client.put(f"/api/characters/{character['id']}/story-profile", json={"history": "Raised inside the relay system", "formative_event": "A message arrived too late", "arc_start": "Works alone", "arc_end": "Shares responsibility"})
+        client.put(f"/api/characters/{character['id']}/relationships", json={"target_character_id": target["id"], "relationship_type": "uneasy ally", "public_dynamic": "Professional distance", "private_truth": "Deep trust", "tension": "They disagree about disclosure", "arc": "Isolation becomes collaboration"})
+        client.put(f"/api/characters/{character['id']}/design", json={"appearance": {"silhouette": "clear asymmetrical field coat"}, "consistency_anchors": ["split collar", "square relay badge"]})
+
+    resolved = client.post(f"/api/projects/{project_id}/craft-review", json={"stage": "characters"}).json()
+    assert not any(item["id"] in {"characters:ensemble-in-isolation", "characters:identity-locks"} for item in resolved["findings"])
+
+
 def test_durable_jobs_are_idempotent_inspectable_cancelable_and_recoverable(client):
     from datetime import timedelta
 

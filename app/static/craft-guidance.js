@@ -3,6 +3,7 @@ const craftGuidanceReviewCache = new Map();
 
 const craftGuidanceDepartments = {
   story: ['story', 'performance'],
+  characters: ['performance', 'visual', 'motion'],
   worlds: ['world', 'visual'],
   shots: ['motion', 'visual', 'performance'],
   edit: ['edit', 'motion'],
@@ -11,6 +12,7 @@ const craftGuidanceDepartments = {
 
 const craftGuidanceLabels = {
   story: 'Story craft',
+  characters: 'Character & performance',
   worlds: 'World craft',
   shots: 'Visual storytelling',
   edit: 'Editorial rhythm',
@@ -32,12 +34,20 @@ async function craftGuidanceReview(projectId, stage, force = false) {
   const key = `${projectId}:${stage}`;
   const saved = craftGuidanceReviewCache.get(key);
   if (!force && saved && Date.now() - saved.savedAt < 15000) return saved.value;
-  const value = await api(`/api/projects/${projectId}/craft-review`, {
+  if (saved?.promise) return saved.promise;
+  const promise = api(`/api/projects/${projectId}/craft-review`, {
     method: 'POST',
     body: JSON.stringify({stage}),
   });
-  craftGuidanceReviewCache.set(key, {savedAt: Date.now(), value});
-  return value;
+  craftGuidanceReviewCache.set(key, {savedAt: 0, value: null, promise});
+  try {
+    const value = await promise;
+    craftGuidanceReviewCache.set(key, {savedAt: Date.now(), value, promise: null});
+    return value;
+  } catch (error) {
+    craftGuidanceReviewCache.delete(key);
+    throw error;
+  }
 }
 
 function craftGuidanceTraditions(catalog, review, stage) {
@@ -54,14 +64,16 @@ function craftFindingMarkup(item) {
     <summary><span>${decision ? 'DECIDED' : 'CONVERSATION'}</span><b>${safe(item.title)}</b><i aria-hidden="true">+</i></summary>
     <div class="craft-guidance-finding-body">
       <p>${safe(item.why)}</p>
+      ${(item.evidence || []).length ? `<div class="craft-guidance-evidence"><b>What Kizuna found</b>${item.evidence.map(line => `<span>${safe(line)}</span>`).join('')}</div>` : ''}
+      ${!decision && item.choices?.realign ? `<p class="craft-guidance-suggestion"><b>One way to realign:</b> ${safe(item.choices.realign)}</p>` : ''}
       ${decision ? `<small>Current choice: ${safe(decision.decision)} · ${safe(decision.rationale)}</small>` : `<div class="craft-guidance-choices">
         <button type="button" data-craft-choice="continue" data-craft-finding="${safe(item.id)}">Continue intentionally</button>
         <button type="button" data-craft-choice="realign" data-craft-finding="${safe(item.id)}">Plan to realign</button>
         <button type="button" data-craft-choice="revise_compass" data-craft-finding="${safe(item.id)}">Revise compass</button>
-      </div><form class="craft-guidance-rationale" data-craft-rationale="${safe(item.id)}" hidden>
+      </div><div class="craft-guidance-rationale" data-craft-rationale="${safe(item.id)}" hidden>
         <label>Why is this the right creative choice?<textarea rows="2" required placeholder="Record the reasoning so the whole production team understands the decision."></textarea></label>
-        <div><button type="button" data-craft-cancel>Cancel</button><button type="submit" class="primary">Save decision</button></div>
-      </form>`}
+        <div><button type="button" data-craft-cancel>Cancel</button><button type="button" class="primary" data-craft-save>Save decision</button></div>
+      </div>`}
     </div>
   </details>`;
 }
@@ -96,27 +108,25 @@ async function renderCraftGuidance(host, projectId, stage, options = {}) {
       form.dataset.decision = button.dataset.craftChoice;
       form.querySelector('textarea').focus();
     });
-    host.querySelectorAll('[data-craft-cancel]').forEach(button => button.onclick = () => { button.closest('form').hidden = true; });
-    host.querySelectorAll('[data-craft-rationale]').forEach(form => form.onsubmit = async event => {
-      event.preventDefault();
-      const rationale = form.querySelector('textarea').value.trim();
+    host.querySelectorAll('[data-craft-cancel]').forEach(button => button.onclick = () => { button.closest('[data-craft-rationale]').hidden = true; });
+    host.querySelectorAll('[data-craft-rationale]').forEach(panel => panel.querySelector('[data-craft-save]').onclick = async () => {
+      const rationale = panel.querySelector('textarea').value.trim();
       if (!rationale) return;
-      const saveButton = form.querySelector('[type="submit"]');
+      const saveButton = panel.querySelector('[data-craft-save]');
       saveButton.disabled = true;
       saveButton.textContent = 'Saving…';
       try {
-        await api(`/api/projects/${projectId}/craft-decisions`, {method: 'POST', body: JSON.stringify({finding_id: form.dataset.craftRationale, decision: form.dataset.decision, rationale})});
+        await api(`/api/projects/${projectId}/craft-decisions`, {method: 'POST', body: JSON.stringify({finding_id: panel.dataset.craftRationale, decision: panel.dataset.decision, rationale})});
         craftGuidanceReviewCache.delete(`${projectId}:${stage}`);
         await renderCraftGuidance(host, projectId, stage, {label, force: true});
         if (typeof loadProjects === 'function') await loadProjects();
       } catch (error) {
         saveButton.disabled = false;
         saveButton.textContent = 'Save decision';
-        form.insertAdjacentHTML('beforeend', `<div class="job-error">${safe(error.message)}</div>`);
+        panel.insertAdjacentHTML('beforeend', `<div class="job-error">${safe(error.message)}</div>`);
       }
     });
   } catch (error) {
     if (host.dataset.craftRequest === requestId) host.innerHTML = `<div class="craft-guidance-error"><b>Craft guidance is unavailable</b><span>${safe(error.message)}</span></div>`;
   }
 }
-

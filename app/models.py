@@ -227,6 +227,8 @@ class Character(Base):
     project: Mapped[Project] = relationship(back_populates="characters")
     design: Mapped[CharacterDesign | None] = relationship(back_populates="character", cascade="all, delete-orphan", uselist=False)
     voice_profile: Mapped[VoiceProfile | None] = relationship(back_populates="character", cascade="all, delete-orphan", uselist=False)
+    story_profile: Mapped[CharacterStoryProfile | None] = relationship(back_populates="character", cascade="all, delete-orphan", uselist=False)
+    relationships: Mapped[list[CharacterRelationship]] = relationship(back_populates="character", cascade="all, delete-orphan", foreign_keys="CharacterRelationship.character_id")
 
 
 class CharacterDesign(Base):
@@ -260,6 +262,8 @@ class CharacterStoryProfile(Base):
     stakes: Mapped[str] = mapped_column(Text, default="")
     version: Mapped[int] = mapped_column(default=1)
 
+    character: Mapped[Character] = relationship(back_populates="story_profile")
+
 
 class CharacterRelationship(Base):
     __tablename__ = "character_relationships"
@@ -273,6 +277,8 @@ class CharacterRelationship(Base):
     private_truth: Mapped[str] = mapped_column(Text, default="")
     tension: Mapped[str] = mapped_column(Text, default="")
     arc: Mapped[str] = mapped_column(Text, default="")
+
+    character: Mapped[Character] = relationship(back_populates="relationships", foreign_keys=[character_id])
 
 
 class GenerationJob(Base):

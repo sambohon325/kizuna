@@ -29,6 +29,8 @@ function setupCharacterStudioV2(){
   if(projectLabel)controls.appendChild(projectLabel);
   header.append(heading,controls);
 
+  const guidance=document.createElement('section');
+  guidance.id='character-craft-guidance';
   const shell=document.createElement('div');
   shell.className='character-v2-shell';
   const cast=document.createElement('aside');
@@ -61,7 +63,7 @@ function setupCharacterStudioV2(){
   copilot.appendChild(agent);
   decorateCharacterDesignerV2(agent);
   shell.append(cast,workspace,copilot);
-  form.append(header,shell);
+  form.append(header,guidance,shell);
   form.prepend(close);
   tabs.querySelectorAll('[data-character-view]').forEach(button=>button.onclick=()=>setCharacterView(button.dataset.characterView));
   setCharacterView('identity');
@@ -129,13 +131,14 @@ async function openCharacterStudio(projectId){
   const projectSelect=document.querySelector('#character-project');
   const selected=projectId||Number(projectSelect.value)||projects[0].id;
   projectSelect.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(selected));
-  projectSelect.onchange=async()=>{activeCharacterId=null;clearCharacterForm();await refreshCharacterAssetsV2(Number(projectSelect.value));renderCharacterRoster(Number(projectSelect.value));setCharacterView('identity');};
+  projectSelect.onchange=async()=>{activeCharacterId=null;clearCharacterForm();await refreshCharacterAssetsV2(Number(projectSelect.value));renderCharacterRoster(Number(projectSelect.value));setCharacterView('identity');renderCraftGuidance('#character-craft-guidance',Number(projectSelect.value),'characters');};
   await refreshCharacterAssetsV2(Number(projectSelect.value));
   const cast=projects.find(project=>project.id===Number(projectSelect.value))?.characters||[];
   if(!activeCharacterId&&cast.length)activeCharacterId=cast[0].id;
   renderCharacterRoster(Number(projectSelect.value));
   if(activeCharacterId)selectCharacter(Number(projectSelect.value),activeCharacterId);
   else{clearCharacterForm();setCharacterView('identity');}
+  renderCraftGuidance('#character-craft-guidance',Number(projectSelect.value),'characters');
   openWorkspace(characterDialog);
 }
 
@@ -161,6 +164,7 @@ selectCharacter=function(projectId,characterId){
   renderCharacterAssetsV2();
   renderCharacterModelCoverageV2();
   setCharacterView(characterStudioViewV2);
+  renderCraftGuidance('#character-craft-guidance',projectId,'characters',{force:true});
 };
 
 function renderCharacterAssetsV2(){

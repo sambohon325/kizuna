@@ -91,8 +91,8 @@ def craft_prompt_context(value: dict[str, Any] | None, department: str) -> str:
     return f"Creative intent: {compass['intent'] or 'still being discovered'}. Craft lenses: {lenses or 'none selected for this department'}. Anchors: {anchors or 'none declared'}. Use these as questions and transferable practices, not as permission to imitate a title, studio, or artist."
 
 
-def _finding(code: str, stage: str, title: str, why: str, continue_prompt: str, realign_prompt: str, level: str = "notice") -> dict[str, Any]:
-    return {"id": f"{stage}:{code}", "stage": stage, "level": level, "title": title, "why": why, "choices": {"continue": continue_prompt, "realign": realign_prompt, "revise_compass": "Update the Craft Compass so the production's stated intent matches its evolving direction."}}
+def _finding(code: str, stage: str, title: str, why: str, continue_prompt: str, realign_prompt: str, level: str = "notice", evidence: list[str] | None = None) -> dict[str, Any]:
+    return {"id": f"{stage}:{code}", "stage": stage, "level": level, "title": title, "why": why, "evidence": evidence or [], "choices": {"continue": continue_prompt, "realign": realign_prompt, "revise_compass": "Update the Craft Compass so the production's stated intent matches its evolving direction."}}
 
 
 def review_project_craft(project: Any, stage: str = "all") -> dict[str, Any]:
@@ -118,6 +118,26 @@ def review_project_craft(project: Any, stage: str = "all") -> dict[str, Any]:
             findings.append(_finding("isekai-rules", "worlds", "The other-world system has places but no visible costs or rules", "System stories gain tension when rules create choices and consequences instead of only advantages.", "Keep the rules implicit and identify how the audience will infer them through action.", "Add one cost, limit, law, ritual, or failure condition to the world bible."))
     if narrative.get("structure") == "kishotenketsu" and brief and brief.beats and len(brief.beats) != 4:
         findings.append(_finding("kishotenketsu-count", "story", "The selected structure and beat count are not a literal match - and that may be fine", "Kisho-ten-ketsu is more useful as a relationship among functions than as a demand for exactly four cards.", "Keep the current beat count and label which beats establish, deepen, reframe, and connect.", "Condense or regroup the beat map around those four functions."))
+    characters = getattr(project, "characters", []) or []
+    if characters and "ensemble-performance" in compass["tradition_ids"]:
+        relationship_count = sum(len(getattr(character, "relationships", []) or []) for character in characters)
+        thin_characters = []
+        ensemble_evidence = []
+        for character in characters:
+            profile = getattr(character, "story_profile", None)
+            story_signals = sum(bool((getattr(character, key, "") or "").strip()) for key in ("want", "need", "contradiction"))
+            story_signals += sum(bool((getattr(profile, key, "") or "").strip()) for key in ("history", "formative_event", "arc_start", "arc_end")) if profile else 0
+            relationships = len(getattr(character, "relationships", []) or [])
+            ensemble_evidence.append(f"{character.name}: {story_signals}/7 story anchors; {relationships} defined relationship{'s' if relationships != 1 else ''}")
+            if story_signals < 3:
+                thin_characters.append(character.name)
+        if len(characters) > 1 and (relationship_count == 0 or thin_characters):
+            findings.append(_finding("ensemble-in-isolation", "characters", "The ensemble lens is selected, but parts of the cast are still defined in isolation", "Ensemble performance becomes playable through wants, contradictions, listening, reaction, and relationships that change over time - not through role labels alone.", "Keep selected characters deliberately opaque and record how performance or later scenes will reveal their relational function.", "Add a concrete want, contradiction, formative pressure, and at least one changing relationship for the underdefined cast members.", evidence=ensemble_evidence))
+    if characters and {"graphic-cel-clarity", "selective-animation"}.intersection(compass["tradition_ids"]):
+        unlocked = [character for character in characters if not getattr(character, "design", None) or not (character.design.consistency_anchors or [])]
+        if unlocked:
+            evidence = [f"{character.name}: {'visual model not started' if not getattr(character, 'design', None) else 'no consistency anchors saved'}" for character in unlocked]
+            findings.append(_finding("identity-locks", "characters", "Some character designs do not yet have repeatable identity locks", "Graphic clarity and selective animation depend on a few stable shapes, colors, proportions, and details surviving changes in angle, pose, expression, and drawing complexity.", "Leave selected identities flexible during exploration and name the point when they must lock for production.", "Save two or three observable consistency anchors for each listed character before generating model views or final shots.", evidence=evidence))
     if "ma" in compass["tradition_ids"] and getattr(project, "scenes", None):
         shot_plans = [getattr(shot, "plan", None) for scene in project.scenes for shot in getattr(scene, "shots", [])]
         texts = " ".join(f"{getattr(plan, 'action', '')} {getattr(plan, 'continuity_notes', '')}" for plan in shot_plans if plan).lower()

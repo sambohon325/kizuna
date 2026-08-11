@@ -47,6 +47,8 @@ All AI providers receive the relevant compass through project context. The Write
 
 `POST /api/projects/{project_id}/craft-decisions` records the creator's rationale in the production audit ledger. A decision to continue intentionally resolves the advisory conversation. A plan to realign or revise remains visible until the underlying production or compass changes.
 
+Writer's Room, Worlds, Storyboard & Shot Planner, Timeline, and Audio each show a compact, stage-specific Craft Compass strip. It names the relevant selected traditions, explains open creative tensions, and lets the creator record an intentional decision without leaving the active desk. When no compass has been set, the strip returns the creator directly to the Craft Compass step in Style Lab. A guidance service failure remains non-blocking so creative work can continue.
+
 The initial rules deliberately cover only high-confidence, explainable tensions, including:
 
 - restorative iyashikei and ma paired with rapid-impact editing;
@@ -61,8 +63,7 @@ This engine should grow through reviewed craft rules, not opaque similarity scor
 
 1. Commission Japanese animation historians, working animators, writers, sound professionals, and cultural advisors to review the catalog.
 2. Add bilingual terminology, pronunciation, provenance, contested interpretations, and reading lists.
-3. Connect craft reviews to character, world, shot, edit, and audio workspaces with stage-specific evidence.
+3. Extend stage guidance into Character Studio and add more evidence tied to specific scenes, shots, cuts, motifs, and production assets.
 4. Add production-level source notes so creators can distinguish research, observation, reference, and invention.
 5. Build learning paths for beginners and compact professional controls for experienced crews.
 6. Version the catalog so an existing production can keep or deliberately migrate its creative framework.
-

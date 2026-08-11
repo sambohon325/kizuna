@@ -21,6 +21,8 @@
 
   const shell = document.createElement('div');
   shell.className = 'audio-v2-shell';
+  const guidance = document.createElement('section');
+  guidance.id = 'audio-craft-guidance';
 
   const transport = document.createElement('section');
   transport.className = 'audio-transport-v2';
@@ -40,7 +42,7 @@
   inspector.querySelector('[data-audio-panel="voice"]').appendChild(voice);
 
   shell.append(transport, arrangement, inspector);
-  title.after(shell);
+  title.after(guidance, shell);
   workspace.remove();
   editor.remove();
   voiceWrapper?.remove();
@@ -75,6 +77,7 @@
 
   loadAudioStudio = async function loadAudioStudioWithV2(projectId) {
     await originalLoadAudioStudioV2(projectId);
+    renderCraftGuidance('#audio-craft-guidance', projectId, 'sound');
     refreshAudioStudioV2();
   };
 

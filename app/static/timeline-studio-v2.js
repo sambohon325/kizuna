@@ -22,6 +22,8 @@
 
   const shell = document.createElement('div');
   shell.className = 'timeline-v2-shell';
+  const guidance = document.createElement('section');
+  guidance.id = 'timeline-craft-guidance';
 
   const upper = document.createElement('section');
   upper.className = 'timeline-v2-upper';
@@ -61,7 +63,7 @@
   deliveries.querySelector('div').append(segmented, animatic);
 
   shell.append(upper, sequence, deliveries);
-  title.after(shell);
+  title.after(guidance, shell);
   workspace.remove();
   legacyEditor.remove();
 
@@ -92,6 +94,7 @@
 
   loadTimeline = async function loadTimelineWithStudioV2(projectId) {
     await originalLoadTimelineV2(projectId);
+    renderCraftGuidance('#timeline-craft-guidance', projectId, 'edit');
     refreshTimelineStudioV2();
   };
 

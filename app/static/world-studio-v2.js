@@ -20,6 +20,7 @@ function setupWorldStudioV2(){
   const heading=document.createElement('div');heading.className='world-v2-heading';[eyebrow,title,intro].forEach(node=>node&&heading.appendChild(node));
   const controls=document.createElement('div');controls.className='world-v2-project';if(projectLabel)controls.appendChild(projectLabel);header.append(heading,controls);
 
+  const guidance=document.createElement('section');guidance.id='world-craft-guidance';
   const shell=document.createElement('div');shell.className='world-v2-shell';
   const atlas=document.createElement('aside');atlas.className='world-v2-atlas';
   atlas.innerHTML='<header><div><p class="eyebrow">WORLD ATLAS</p><h3>Story locations</h3></div><span id="world-count-v2">0</span></header><div class="world-map-v2" aria-hidden="true"><i></i><i></i><i></i><b>K</b></div>';
@@ -44,7 +45,7 @@ function setupWorldStudioV2(){
   saveButton.classList.add('world-v2-save');saveButton.textContent='Save story location';
 
   const copilot=document.createElement('aside');copilot.className='world-v2-copilot';agent.classList.add('world-ai-v2');copilot.appendChild(agent);decorateBackgroundArtistV2(agent);
-  shell.append(atlas,workspace,copilot);form.append(header,shell);form.prepend(close);
+  shell.append(atlas,workspace,copilot);form.append(header,guidance,shell);form.prepend(close);
   sections.forEach(section=>section.remove());
   tabs.querySelectorAll('[data-world-view]').forEach(button=>button.onclick=()=>setWorldViewV2(button.dataset.worldView));
   setWorldViewV2('story');
@@ -84,8 +85,8 @@ function worldThumbnailV2(location){const asset=worldAssetsForV2(location.id)[0]
 async function openWorldStudio(projectId){
   setupWorldStudioV2();if(!projects.length)await loadProjects();if(!projects.length){projectDialog.showModal();return;}if(!generationProviders.length)generationProviders=(await api('/api/generation/providers')).providers;
   const select=document.querySelector('#world-project'),selected=projectId||Number(select.value)||projects[0].id;select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(selected));
-  select.onchange=async()=>{activeLocationId=null;clearWorldForm();await refreshWorldAssetsV2(Number(select.value));const locations=projects.find(project=>project.id===Number(select.value))?.locations||[];if(locations.length)activeLocationId=locations[0].id;renderWorldRoster(Number(select.value));if(activeLocationId)selectWorld(Number(select.value),activeLocationId);setWorldViewV2('story');};
-  await refreshWorldAssetsV2(Number(select.value));const locations=projects.find(project=>project.id===Number(select.value))?.locations||[];if(!activeLocationId&&locations.length)activeLocationId=locations[0].id;renderWorldRoster(Number(select.value));if(activeLocationId)selectWorld(Number(select.value),activeLocationId);else clearWorldForm();setWorldViewV2('story');openWorkspace(worldDialog);
+  select.onchange=async()=>{activeLocationId=null;clearWorldForm();await refreshWorldAssetsV2(Number(select.value));const locations=projects.find(project=>project.id===Number(select.value))?.locations||[];if(locations.length)activeLocationId=locations[0].id;renderWorldRoster(Number(select.value));if(activeLocationId)selectWorld(Number(select.value),activeLocationId);setWorldViewV2('story');renderCraftGuidance('#world-craft-guidance',Number(select.value),'worlds');};
+  await refreshWorldAssetsV2(Number(select.value));const locations=projects.find(project=>project.id===Number(select.value))?.locations||[];if(!activeLocationId&&locations.length)activeLocationId=locations[0].id;renderWorldRoster(Number(select.value));if(activeLocationId)selectWorld(Number(select.value),activeLocationId);else clearWorldForm();setWorldViewV2('story');renderCraftGuidance('#world-craft-guidance',Number(select.value),'worlds');openWorkspace(worldDialog);
 }
 
 function renderWorldRoster(projectId){

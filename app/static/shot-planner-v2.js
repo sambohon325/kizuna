@@ -8,13 +8,14 @@ function setupShotPlannerV2(){
   panel.classList.add('shot-v2');
   const close=panel.querySelector(':scope > .close'),eyebrow=panel.querySelector(':scope > .eyebrow'),title=panel.querySelector(':scope > .shot-title'),director=panel.querySelector(':scope > .director-agent-panel'),legacyWorkspace=panel.querySelector(':scope > .shot-workspace'),tree=legacyWorkspace.querySelector('#shot-tree'),editor=legacyWorkspace.querySelector('.shot-editor'),empty=editor.querySelector('#shot-editor-empty'),form=editor.querySelector('#shot-form');
   title.classList.add('shot-v2-header');title.querySelector('h2').textContent='Storyboard & Shot Planner';title.querySelector('.form-intro').textContent='Turn story beats into visual coverage, then direct one understandable shot at a time.';
+  const guidance=document.createElement('section');guidance.id='shot-craft-guidance';
   const shell=document.createElement('div');shell.className='shot-v2-shell';
   const scenes=document.createElement('aside');scenes.className='shot-v2-scenes';scenes.innerHTML='<header><div><p class="eyebrow">STORY FLOW</p><h3>Scenes & beats</h3></div><span id="shot-scene-count-v2">0</span></header>';scenes.appendChild(tree);
   const main=document.createElement('main');main.className='shot-v2-main';
   const board=document.createElement('section');board.className='shot-board-v2';board.innerHTML='<div class="shot-v2-empty"><span>SHOT BOARD</span><h3>Build scenes from the story</h3><p>Kizuna will create an editable coverage skeleton. Nothing becomes final until you direct and approve it.</p></div>';
   const inspector=document.createElement('section');inspector.className='shot-inspector-v2';inspector.append(empty,form);main.append(board,inspector);
   const copilot=document.createElement('aside');copilot.className='shot-director-v2';copilot.appendChild(director);decorateDirectorV2(director);
-  shell.append(scenes,main,copilot);legacyWorkspace.remove();panel.append(shell);panel.prepend(close,eyebrow,title);
+  shell.append(scenes,main,copilot);legacyWorkspace.remove();panel.append(guidance,shell);panel.prepend(close,eyebrow,title);
   setupShotInspectorV2(form);
 }
 
@@ -52,8 +53,8 @@ function storyboardForShotV2(shotId){return shotPlannerAssetsV2.filter(item=>Num
 async function openShotPlanner(projectId){
   setupShotPlannerV2();if(!projects.length)await loadProjects();if(!projects.length){projectDialog.showModal();return;}if(!generationProviders.length)generationProviders=(await api('/api/generation/providers')).providers;
   const select=document.querySelector('#shot-project'),selected=projectId||Number(select.value)||projects[0].id;select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(selected));
-  select.onchange=async()=>{activeShotId=null;activeSceneIdV2=null;await refreshShotAssetsV2(Number(select.value));renderShotTree(Number(select.value));selectFirstShotV2(Number(select.value));};
-  await refreshShotAssetsV2(Number(select.value));const project=projects.find(item=>item.id===Number(select.value));if(!activeShotId)activeShotId=project?.scenes?.[0]?.shots?.[0]?.id||null;renderShotTree(Number(select.value));if(activeShotId)selectShot(Number(select.value),activeShotId);else hideShotEditor();openWorkspace(shotDialog);
+  select.onchange=async()=>{activeShotId=null;activeSceneIdV2=null;await refreshShotAssetsV2(Number(select.value));renderShotTree(Number(select.value));selectFirstShotV2(Number(select.value));renderCraftGuidance('#shot-craft-guidance',Number(select.value),'shots');};
+  await refreshShotAssetsV2(Number(select.value));const project=projects.find(item=>item.id===Number(select.value));if(!activeShotId)activeShotId=project?.scenes?.[0]?.shots?.[0]?.id||null;renderShotTree(Number(select.value));if(activeShotId)selectShot(Number(select.value),activeShotId);else hideShotEditor();renderCraftGuidance('#shot-craft-guidance',Number(select.value),'shots');openWorkspace(shotDialog);
 }
 
 function selectFirstShotV2(projectId){const project=projects.find(item=>item.id===projectId),shot=project?.scenes?.[0]?.shots?.[0];if(shot)selectShot(projectId,shot.id);else hideShotEditor();}

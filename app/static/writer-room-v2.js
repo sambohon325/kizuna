@@ -17,6 +17,7 @@ function setupWriterRoomV2(){
       <button type="button" data-writer-stage="screenplay"><span>04</span><b>Screenplay</b></button>
       <button type="button" data-writer-stage="revision"><span>05</span><b>Revision</b></button>
     </nav>
+    <section id="writer-craft-guidance"></section>
     <div class="writer-v2-workspace">
       <aside class="writer-v2-navigator"><h4>Story navigator</h4><p>Your production stays connected from premise to final scene.</p><div id="writer-v2-scene-list" class="writer-v2-scene-list"></div><div id="writer-v2-guide" class="writer-v2-help-card"></div></aside>
       <main class="writer-v2-canvas">
@@ -59,6 +60,7 @@ function writerStageCompletion(project){const brief=project?.story_brief,scenes=
 
 function refreshWriterRoomV2(){
   const project=currentWriterV2Project(),brief=project?.story_brief,scenes=[...(project?.scenes||[])].sort((a,b)=>a.position-b.position),complete=writerStageCompletion(project);
+  if(project)renderCraftGuidance('#writer-craft-guidance',project.id,'story');
   document.querySelectorAll('[data-writer-stage]').forEach(button=>button.classList.toggle('complete',complete[button.dataset.writerStage]));
   const list=document.querySelector('#writer-v2-scene-list');
   if(list)list.innerHTML=scenes.length?scenes.map(scene=>`<button type="button" class="${scene.id===writerV2SceneId?'active':''}" data-writer-scene="${scene.id}"><i>${String(scene.position).padStart(2,'0')}</i><span><b>${safe(scene.title)}</b><small>${safe(scene.draft_status||'outline')}</small></span></button>`).join(''):'<div class="writer-empty" style="padding:18px 12px"><p>No scenes yet.</p></div>';

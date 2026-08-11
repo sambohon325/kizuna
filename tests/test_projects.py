@@ -402,6 +402,19 @@ def test_ai_role_routing_drives_the_contextual_assistant(client, monkeypatch):
     assert client.put("/api/settings/ai-routing/not-a-role", json={"provider_key": "local"}).status_code == 404
 
 
+def test_assistant_respects_workspace_depth_without_changing_project_rules(client):
+    project = client.post("/api/projects", json={"title": "Depth Test", "logline": "A crew adapts its tools without changing the mission."}).json()
+    expert = client.post(
+        f"/api/projects/{project['id']}/assistant",
+        json={"message": "What should I do next?", "page": "productions", "screen_context": {"heading": "Productions", "guidance_mode": "expert"}},
+    )
+    assert expert.status_code == 200
+    assert expert.json()["message"]["content"].startswith("Depth Test · Productions ·")
+    assert expert.json()["message"]["context"]["provider"] == "local"
+    history = client.get(f"/api/projects/{project['id']}/assistant/messages").json()
+    assert history[0]["context"]["guidance_mode"] == "expert"
+
+
 def test_kizuna_node_onboarding_workload_control_and_usage_budget(client, monkeypatch):
     empty = client.get("/api/settings/compute")
     assert empty.status_code == 200

@@ -36,11 +36,14 @@
   <link rel="stylesheet" href="/static/render-farm-v2.css">
   <link rel="stylesheet" href="/static/asset-library.css">
   <link rel="stylesheet" href="/static/production-activity.css">
+  <link rel="stylesheet" href="/static/experience-mode.css">
+  <script src="/static/experience-mode.js"></script>
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="#" aria-label="Kizuna Studio home"><span class="brand-art"><img class="brand-wordmark" src="/static/assets/kizuna-wordmark.png" alt="Kizuna"><img class="brand-icon" src="/static/assets/kizuna-icon.png" alt=""></span><span class="brand-meta">Studio<small>Anime production workspace</small></span></a>
     <div class="status"><i></i> <span id="studio-identity">Local studio</span></div>
+    <label class="workspace-depth-quick"><span>Workspace</span><select data-workspace-depth aria-label="Workspace depth"><option value="guided">Guided</option><option value="studio">Studio</option><option value="expert">Expert</option></select></label>
     <button id="account-nav" type="button" hidden>Account</button>
     <button id="sign-out" type="button" hidden>Sign out</button>
     <button class="primary" id="new-project">New production</button>

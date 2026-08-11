@@ -1460,6 +1460,7 @@ def local_assistant_reply(project: Project, scope: ProductionScope | None, reque
     craft_guidance, actions = ASSISTANT_PAGE_GUIDANCE[page]
     summary = assistant_project_summary(project, scope)
     screen = request.screen_context
+    guidance_mode = screen.get("guidance_mode") if screen.get("guidance_mode") in {"guided", "studio", "expert"} else "guided"
     selected = screen.get("selection") or screen.get("heading") or "the current workspace"
     needs = []
     if scope and scope.story_status == "review_needed":
@@ -1491,7 +1492,12 @@ def local_assistant_reply(project: Project, scope: ProductionScope | None, reque
         guidance = "Tie the character's external goal to the misbelief under pressure, then place the relationship or choice that forces a visible change."
     else:
         guidance = craft_guidance
-    response = f"You are in {page.replace('_', ' ').title()} working on {selected} for {project.title}. This production is planned as {summary['scope']}. {guidance}"
+    if guidance_mode == "expert":
+        response = f"{project.title} · {page.replace('_', ' ').title()} · {summary['scope']}\n\n{guidance}"
+    elif guidance_mode == "studio":
+        response = f"In {page.replace('_', ' ').title()} for {project.title}: {guidance}"
+    else:
+        response = f"You are in {page.replace('_', ' ').title()} working on {selected} for {project.title}. This production is planned as {summary['scope']}. {guidance}"
     if needs:
         response += "\n\nWhat I would protect next: " + " ".join(needs)
     craft_review = review_project_craft(project, page if page in {"story", "worlds", "shots", "edit", "sound"} else "all")
@@ -1516,7 +1522,9 @@ def routed_assistant_reply(project: Project, scope: ProductionScope | None, requ
     scope_guidance = scope_response(scope)["writing_guidance"] if scope else []
     recent = db.scalars(select(AssistantMessage).where(AssistantMessage.project_id == project.id).order_by(AssistantMessage.id.desc()).limit(10)).all()[::-1]
     conversation = [{"role": item.role, "content": item.content} for item in recent]
-    system = """You are Kizuna's embedded anime production assistant. You understand the full workflow from scope and writing through visual development, animation, sound, edit, render, and delivery. Give concise, concrete, professional guidance based only on the supplied project state and current screen. Collaborate at the creator's level, explain unfamiliar craft terms plainly, preserve approved work, and clearly distinguish suggestions from known project facts. Never claim that work is complete unless the project state says it is. When discussing anime craft, name the relevant tradition or production practice, explain what it can accomplish, and avoid presenting any one convention as a cultural purity test. Treat departures from the creator's Craft Compass as a conversation: offer a way to realign, a way to continue intentionally, and a way to revise the compass. Treat production source notes as context for understanding and original transformation, never as an instruction to imitate or reproduce their sources. Keep advisory craft guidance and source notes separate from originality, rights, consent, and release compliance. Describe transferable traits and original art direction rather than imitating a living artist."""
+    guidance_mode = request.screen_context.get("guidance_mode") if request.screen_context.get("guidance_mode") in {"guided", "studio", "expert"} else "guided"
+    depth_instruction = {"guided": "Explain unfamiliar terms in plain language, include the reason behind the recommendation, and end with a clear next action.", "studio": "Use short production context and concrete recommendations without tutorial-level detail.", "expert": "Use compact professional shorthand and action-first recommendations; do not explain standard production terms unless asked."}[guidance_mode]
+    system = f"""You are Kizuna's embedded anime production assistant. You understand the full workflow from scope and writing through visual development, animation, sound, edit, render, and delivery. Give concise, concrete, professional guidance based only on the supplied project state and current screen. {depth_instruction} The workspace depth changes presentation only; never change compliance, approval, audit, or AI-authority rules because of it. Collaborate at the creator's level, preserve approved work, and clearly distinguish suggestions from known project facts. Never claim that work is complete unless the project state says it is. When discussing anime craft, name the relevant tradition or production practice, explain what it can accomplish, and avoid presenting any one convention as a cultural purity test. Treat departures from the creator's Craft Compass as a conversation: offer a way to realign, a way to continue intentionally, and a way to revise the compass. Treat production source notes as context for understanding and original transformation, never as an instruction to imitate or reproduce their sources. Keep advisory craft guidance and source notes separate from originality, rights, consent, and release compliance. Describe transferable traits and original art direction rather than imitating a living artist."""
     source_stage = ASSISTANT_SOURCE_STAGES.get(page)
     prompt = json.dumps({"project": summary, "craft_review": review_project_craft(project), "production_source_notes": production_source_context(project, db, source_stage), "scope_guidance": scope_guidance, "current_workspace": page, "screen": request.screen_context, "recent_conversation": conversation, "creator_request": request.message}, ensure_ascii=False)
     generated = generate_text(provider, system=system, prompt=prompt)

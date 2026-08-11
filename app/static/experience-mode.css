@@ -1,0 +1,23 @@
+.workspace-depth-quick{display:flex;align-items:center;gap:7px;color:#8f9aa7;font-size:12px}.workspace-depth-quick span{white-space:nowrap}.workspace-depth-quick select{width:auto;min-width:100px;padding:8px 30px 8px 10px;border-color:#303740;background:#15191f;color:#eef2f6;font-size:12px}
+.experience-settings{max-width:1180px}.experience-settings>header{margin:4px 0 18px}.experience-settings>header h3{margin:3px 0 7px;font-size:22px}.experience-settings>header p:not(.eyebrow){max-width:780px;margin:0;color:#929daa;font-size:14px;line-height:1.55}.experience-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.experience-options button{min-height:142px;padding:20px;text-align:left;background:rgba(20,24,30,.72);border:1px solid #313943;border-radius:14px;color:#f2f5f7}.experience-options button:hover{border-color:#536270;background:#191f26}.experience-options button.active{border-color:#6fdcff;background:linear-gradient(145deg,rgba(54,179,221,.14),rgba(159,104,232,.08));box-shadow:0 0 26px rgba(80,196,236,.09)}.experience-options span,.experience-options small{display:block}.experience-options span{font-size:18px;font-weight:800}.experience-options small{margin-top:9px;color:#9ba6b2;font-size:13px;line-height:1.5}.experience-safety{display:flex;gap:12px;margin-top:12px;padding:13px 15px;border:1px solid #29333c;border-radius:10px;background:#11161b;color:#86939f;font-size:12px}.experience-safety b{color:#b7eafa;white-space:nowrap}
+
+html[data-workspace-depth="studio"] .form-intro{max-width:900px}
+html[data-workspace-depth="studio"] .craft-learning details:not([open]){display:none}
+
+html[data-workspace-depth="expert"] .form-intro,
+html[data-workspace-depth="expert"] .settings-principle,
+html[data-workspace-depth="expert"] .craft-learning,
+html[data-workspace-depth="expert"] .craft-stance,
+html[data-workspace-depth="expert"] .source-note-intro,
+html[data-workspace-depth="expert"] .farm-note{display:none!important}
+html[data-workspace-depth="expert"] .workspace-view>form,
+html[data-workspace-depth="expert"] .workspace-view>div{padding-top:22px!important}
+html[data-workspace-depth="expert"] .workspace-view h2{font-size:34px!important;margin-bottom:8px!important}
+html[data-workspace-depth="expert"] .workspace-view .eyebrow{margin-bottom:6px!important}
+html[data-workspace-depth="expert"] .workspace-view section,
+html[data-workspace-depth="expert"] .workspace-view fieldset{margin-top:10px}
+html[data-workspace-depth="expert"] .workspace-view button{min-height:36px}
+html[data-workspace-depth="expert"] .production-flow{min-height:54px}
+html[data-workspace-depth="expert"] .settings-panel>.form-intro{display:none}
+
+@media(max-width:760px){.workspace-depth-quick span{display:none}.workspace-depth-quick select{min-width:88px}.experience-options{grid-template-columns:1fr}.experience-safety{flex-direction:column;gap:4px}.experience-safety b{white-space:normal}}

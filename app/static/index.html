@@ -39,9 +39,10 @@
   <link rel="stylesheet" href="/static/operations.css">
   <link rel="stylesheet" href="/static/experience-mode.css?v=20260811-ui2">
   <link rel="stylesheet" href="/static/guided-workspace.css?v=20260811-ui1">
+  <link rel="stylesheet" href="/static/process-navigation.css?v=20260811-nav1">
   <script src="/static/experience-mode.js?v=20260811-ui1"></script>
 </head>
-<body>
+<body data-production-chapter="home">
   <header class="topbar">
     <a class="brand" href="#" aria-label="Kizuna Studio home"><span class="brand-art"><img class="brand-wordmark" src="/static/assets/kizuna-wordmark.png" alt="Kizuna"><img class="brand-icon" src="/static/assets/kizuna-icon.png" alt=""></span><span class="brand-meta">Studio<small>Anime production workspace</small></span></a>
     <div class="status"><i></i> <span id="studio-identity">Local studio</span></div>
@@ -51,23 +52,39 @@
     <button class="primary" id="new-project">New production</button>
   </header>
   <div class="shell">
-    <nav class="rail">
-      <button id="rail-toggle" class="rail-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true">â‹<span>Collapse</span></button>
-      <button class="active" id="productions-nav">⌂<span>Productions</span></button>
-      <button id="crew-nav">✧<span>AI Crew</span></button>
-      <button id="writer-nav">✎<span>Writer's Room</span></button>
-      <button id="style-lab-nav">✦<span>Style Lab</span></button>
-      <button id="characters-nav">♙<span>Characters</span></button>
-      <button id="worlds-nav">▧<span>Worlds</span></button>
-      <button id="shots-nav">◫<span>Shots</span></button>
-      <button id="timeline-nav">▤<span>Timeline</span></button>
-      <button id="audio-nav">♫<span>Audio</span></button>
-      <button id="compositor-nav">◈<span>Composite</span></button>
-      <button id="render-nav">▶<span>Render</span></button>
-      <button id="assets-nav">▦<span>Asset Library</span></button>
-      <button id="activity-nav">◌<span>Activity</span></button>
-      <button id="help-nav" class="rail-help" type="button">?<span>Help &amp; manual</span></button>
-      <button id="settings-nav" class="rail-settings">&#9881;<span>Settings</span></button>
+    <nav class="rail process-nav" data-active-phase="home" data-open-phase="home" aria-label="Studio chapters">
+      <div class="process-nav-primary" role="tablist" aria-label="Production chapters">
+        <button class="process-home active" id="productions-nav" data-nav-phase="home" type="button"><b aria-hidden="true">&#8962;</b><span>Home</span></button>
+        <button class="process-phase" data-phase-target="imagine" type="button" role="tab" aria-controls="process-imagine"><b>01</b><span>Imagine</span></button>
+        <button class="process-phase" data-phase-target="direct" type="button" role="tab" aria-controls="process-direct"><b>02</b><span>Direct</span></button>
+        <button class="process-phase" data-phase-target="finish" type="button" role="tab" aria-controls="process-finish"><b>03</b><span>Finish</span></button>
+        <button class="process-phase" data-phase-target="studio" type="button" role="tab" aria-controls="process-studio"><b aria-hidden="true">&#9671;</b><span>Studio</span></button>
+      </div>
+      <div class="process-nav-secondary">
+        <div class="process-submenu process-home-note" id="process-home" data-phase-menu="home"><span>Your productions and current next step</span></div>
+        <div class="process-submenu" id="process-imagine" data-phase-menu="imagine" role="tabpanel">
+          <button id="crew-nav" type="button"><b aria-hidden="true">&#10023;</b><span>AI Crew</span></button>
+          <button id="writer-nav" type="button"><b aria-hidden="true">&#9998;</b><span>Writer's Room</span></button>
+          <button id="style-lab-nav" type="button"><b aria-hidden="true">&#10022;</b><span>Style Lab</span></button>
+          <button id="characters-nav" type="button"><b aria-hidden="true">&#9817;</b><span>Characters</span></button>
+          <button id="worlds-nav" type="button"><b aria-hidden="true">&#9638;</b><span>Worlds</span></button>
+        </div>
+        <div class="process-submenu" id="process-direct" data-phase-menu="direct" role="tabpanel">
+          <button id="shots-nav" type="button"><b aria-hidden="true">&#9707;</b><span>Shots</span></button>
+          <button id="timeline-nav" type="button"><b aria-hidden="true">&#9636;</b><span>Timeline</span></button>
+          <button id="audio-nav" type="button"><b aria-hidden="true">&#9835;</b><span>Audio</span></button>
+        </div>
+        <div class="process-submenu" id="process-finish" data-phase-menu="finish" role="tabpanel">
+          <button id="compositor-nav" type="button"><b aria-hidden="true">&#9672;</b><span>Composite</span></button>
+          <button id="render-nav" type="button"><b aria-hidden="true">&#9654;</b><span>Render</span></button>
+        </div>
+        <div class="process-submenu" id="process-studio" data-phase-menu="studio" role="tabpanel">
+          <button id="assets-nav" type="button"><b aria-hidden="true">&#9638;</b><span>Asset Library</span></button>
+          <button id="activity-nav" type="button"><b aria-hidden="true">&#9685;</b><span>Activity</span></button>
+          <button id="help-nav" class="rail-help" type="button"><b aria-hidden="true">?</b><span>Help</span></button>
+          <button id="settings-nav" class="rail-settings" type="button"><b aria-hidden="true">&#9881;</b><span>Settings</span></button>
+        </div>
+      </div>
     </nav>
     <main id="workspace-main">
       <section id="production-flow" class="production-flow" aria-label="Production flow"></section>
@@ -119,5 +136,6 @@
   <script src="/static/compositor-studio-v2.js"></script>
   <script src="/static/render-farm-v2.js"></script>
   <script src="/static/guided-workspace.js?v=20260811-ui1"></script>
+  <script src="/static/process-navigation.js?v=20260811-nav1"></script>
 </body>
 </html>

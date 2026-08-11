@@ -29,11 +29,23 @@ const workspaceKeys = new Map([
 ]);
 
 function setActiveNavigation(navId = 'productions-nav') {
-  document.querySelectorAll('.rail button').forEach(button => {
+  const navigation=document.querySelector('.process-nav');
+  const chapters={
+    'productions-nav':['home','home'],'crew-nav':['imagine','story'],'writer-nav':['imagine','story'],
+    'style-lab-nav':['imagine','design'],'characters-nav':['imagine','design'],'worlds-nav':['imagine','design'],
+    'shots-nav':['direct','motion'],'timeline-nav':['direct','motion'],'audio-nav':['direct','sound'],
+    'compositor-nav':['finish','finish'],'render-nav':['finish','master'],
+    'assets-nav':['studio','studio'],'activity-nav':['studio','studio'],'help-nav':['studio','studio'],'settings-nav':['studio','studio']
+  };
+  const [phase,chapter]=chapters[navId]||chapters['productions-nav'];
+  document.querySelectorAll('.rail button[id]').forEach(button => {
     const active = button.id === navId;
     button.classList.toggle('active', active);
     if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   });
+  if(navigation){navigation.dataset.activePhase=phase;navigation.dataset.openPhase=phase;}
+  document.querySelectorAll('[data-phase-target]').forEach(button=>{const selected=button.dataset.phaseTarget===phase;button.classList.toggle('active',selected);button.setAttribute('aria-selected',String(selected));});
+  document.body.dataset.productionChapter=chapter;
 }
 
 function openWorkspace(dialog) {
@@ -142,8 +154,8 @@ function setupCraftWorkspaces() {
     const scopeCard=document.createElement('section');scopeCard.id='writer-scope-card';scopeCard.className='writer-scope-card';scopeCard.innerHTML='<div class="settings-loading">Loading release plan...</div>';[heading,title,intro,labels[0],scopeCard,agent].forEach(node=>node&&sidebar.appendChild(node));[labels[1],form.querySelector(':scope > .writer-grid'),labels[2],form.querySelector(':scope > button.primary'),form.querySelector(':scope > .story-result')].forEach(node=>node&&page.appendChild(node));canvas.innerHTML='<nav class="writer-view-tabs" aria-label="Writer view"><button type="button" class="active" data-writer-view="document">Document</button><button type="button" data-writer-view="map">Story map</button></nav>';canvas.appendChild(page);form.append(sidebar,canvas);form.dataset.writerView='document';canvas.querySelectorAll('[data-writer-view]').forEach(button=>button.onclick=()=>setWriterView(button.dataset.writerView));
     if(agent){const controls=agent.querySelector('.writer-agent-controls'),details=document.createElement('details'),body=document.createElement('div'),ask=controls.querySelector('#ask-writer');details.className='advanced-settings writer-agent-settings';details.innerHTML='<summary>Writer settings</summary>';[...controls.querySelectorAll('label')].forEach(label=>body.appendChild(label));details.appendChild(body);controls.replaceChildren(ask,details);agent.querySelector('h3').textContent='Help me shape the story';agent.querySelector('div>p:not(.eyebrow)').textContent='The Writer prepares a complete proposal for your review.';ask.textContent='Ask Writer';}
   }
-  const shell=document.querySelector('.shell'),toggle=document.querySelector('#rail-toggle'),collapsed=localStorage.getItem('kizuna-rail-collapsed')==='true';toggle.firstChild.nodeValue='\u2039';shell.classList.toggle('rail-collapsed',collapsed);toggle.setAttribute('aria-expanded',String(!collapsed));toggle.setAttribute('aria-label',collapsed?'Expand navigation':'Collapse navigation');
-  toggle.onclick=()=>{const next=!shell.classList.contains('rail-collapsed');shell.classList.toggle('rail-collapsed',next);localStorage.setItem('kizuna-rail-collapsed',String(next));toggle.setAttribute('aria-expanded',String(!next));toggle.setAttribute('aria-label',next?'Expand navigation':'Collapse navigation');};
+  const shell=document.querySelector('.shell'),toggle=document.querySelector('#rail-toggle'),collapsed=localStorage.getItem('kizuna-rail-collapsed')==='true';
+  if(toggle){toggle.firstChild.nodeValue='\u2039';shell.classList.toggle('rail-collapsed',collapsed);toggle.setAttribute('aria-expanded',String(!collapsed));toggle.setAttribute('aria-label',collapsed?'Expand navigation':'Collapse navigation');toggle.onclick=()=>{const next=!shell.classList.contains('rail-collapsed');shell.classList.toggle('rail-collapsed',next);localStorage.setItem('kizuna-rail-collapsed',String(next));toggle.setAttribute('aria-expanded',String(!next));toggle.setAttribute('aria-label',next?'Expand navigation':'Collapse navigation');};}
   const timelineControls=document.querySelector('.timeline-project-control');if(timelineControls&&!timelineControls.querySelector('.advanced-settings')){const details=document.createElement('details'),body=document.createElement('div');details.className='advanced-settings header-advanced';details.innerHTML='<summary>Master export</summary>';['master-profile','render-master','segment-size','plan-segmented-export'].forEach(id=>{const node=document.querySelector(`#${id}`);if(node)body.appendChild(node);});details.appendChild(body);timelineControls.appendChild(details);}
   const voice=document.querySelector('.voice-bible');if(voice&&!voice.closest('.advanced-settings')){const details=document.createElement('details');details.className='advanced-settings voice-setup';details.innerHTML='<summary>Voice setup & rights</summary>';voice.before(details);details.appendChild(voice);}
   setupSimplifiedCrew();

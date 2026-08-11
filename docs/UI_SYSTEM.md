@@ -30,6 +30,14 @@ Kizuna uses one shared interface foundation across every creative department. Cr
 5. Main creative canvas
 6. Contextual inspector or AI collaborator
 
+## Production chapters and environment
+
+- Global navigation is horizontal and grouped into **Home**, **Imagine**, **Direct**, **Finish**, and **Studio**. The first row selects a chapter; the second row contains only that chapter's workspaces.
+- The global navigation must never require vertical scrolling. On narrow screens, all five chapter names remain visible and only the contextual tool row may scroll horizontally.
+- The environment changes subtly as the production story advances: cool indigo for story, violet/teal for design, warm amber/blue for motion, magenta/indigo for sound, cyan for finishing, green for mastering, and quiet slate for studio operations.
+- Chapter color is atmospheric context, not a status signal. Completion, warnings, compliance, and approvals retain their factual semantic colors.
+- Workspace surfaces, typography, controls, and content contrast do not change between chapters; only the low-contrast page backdrop and navigation accents shift.
+
 ## Visual-development workspaces
 
 - In Beginner, **Style Lab** begins with the audience's emotional experience and originality guardrails beside a live creative-DNA board. Technique vocabulary and the full six-stage sequence appear when the creator moves to Intermediate.

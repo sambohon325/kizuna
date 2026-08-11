@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     render_directory: str = "renders"
     storage_backend: str = "local"
     storage_directory: str = "storage"
+    storage_warning_free_gb: float = 10.0
+    storage_warning_free_percent: float = 10.0
     s3_bucket: str = ""
     s3_endpoint_url: str = ""
     s3_region: str = ""

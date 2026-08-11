@@ -36,6 +36,7 @@ from app.integration_catalog import CATEGORY_LABELS, INTEGRATION_CATALOG
 from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text, provider_readiness, resolve_provider
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
 from app.storage import LocalProductionStorage, S3ProductionStorage
+from app.operations import operational_readiness, verify_local_backup
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.anime_craft import CRAFT_CATALOG, LEGACY_CATALOG_VERSION, catalog_snapshot, compass_has_framework, normalize_compass, review_project_craft
@@ -335,6 +336,24 @@ def timeline_response(timeline: Timeline, db: Session):
 @app.get("/api/health")
 def health():
     return {"status": "ok", "environment": settings.environment, "database_revision": database_revision()}
+
+
+@app.get("/api/settings/operations")
+def studio_operations(db: Session = Depends(get_db)):
+    return operational_readiness(db, production_storage.root, render_dir, s3_configured=s3_production_storage.configured)
+
+
+@app.post("/api/settings/operations/verify-latest-backup")
+def verify_latest_backup(db: Session = Depends(get_db)):
+    backup = db.scalar(select(ProjectBackup).where(ProjectBackup.status == "completed").order_by(ProjectBackup.created_at.desc(), ProjectBackup.id.desc()))
+    if backup is None:
+        raise HTTPException(409, "Create a completed production backup before running verification.")
+    try:
+        return verify_local_backup(backup, production_storage.root)
+    except FileNotFoundError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @app.get("/api/auth/status")
@@ -748,11 +767,20 @@ def revoke_account_session(session_id: int, request: Request, response: Response
 
 @app.get("/api/settings/team")
 def studio_team(request: Request, db: Session = Depends(get_db)):
+    if request.state.user is None:
+        projects = db.scalars(select(Project).order_by(Project.title)).all()
+        return {
+            "local_mode": True,
+            "projects": [{"id": project.id, "title": project.title, "my_role": "owner"} for project in projects],
+            "users": [],
+            "memberships": [],
+            "invitations": [],
+        }
     projects = db.execute(select(Project, ProjectMembership).join(ProjectMembership, ProjectMembership.project_id == Project.id).where(ProjectMembership.user_id == request.state.user.id).order_by(Project.title)).all()
     users = db.scalars(select(User).order_by(User.display_name, User.email)).all()
     memberships = db.execute(select(ProjectMembership, User).join(User, User.id == ProjectMembership.user_id).where(ProjectMembership.project_id.in_([project.id for project, _ in projects]))).all()
     invitations = db.scalars(select(StudioInvitation).order_by(StudioInvitation.id.desc()).limit(100)).all()
-    return {"projects": [{"id": project.id, "title": project.title, "my_role": membership.role} for project, membership in projects], "users": [{"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role, "active": user.active} for user in users], "memberships": [{"id": membership.id, "project_id": membership.project_id, "user_id": user.id, "display_name": user.display_name, "email": user.email, "role": membership.role} for membership, user in memberships], "invitations": [invitation_response(item, db) for item in invitations if not item.accepted_at and not item.revoked_at and item.expires_at > auth_utcnow()]}
+    return {"local_mode": False, "projects": [{"id": project.id, "title": project.title, "my_role": membership.role} for project, membership in projects], "users": [{"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role, "active": user.active} for user in users], "memberships": [{"id": membership.id, "project_id": membership.project_id, "user_id": user.id, "display_name": user.display_name, "email": user.email, "role": membership.role} for membership, user in memberships], "invitations": [invitation_response(item, db) for item in invitations if not item.accepted_at and not item.revoked_at and item.expires_at > auth_utcnow()]}
 
 
 @app.post("/api/settings/team/invitations", status_code=status.HTTP_201_CREATED)

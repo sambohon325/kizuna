@@ -37,6 +37,7 @@ pytest
 - Production vault with local or S3-compatible destinations, automatic off-server schedules, configurable retention, media-inclusive project ZIPs, SHA-256 verification, backup pruning, and revocable download-limited delivery links
 - Automatic metadata-first media lifecycle with independent image/video/audio working proxies, checksum-verified Hive replication, freshness-gated cleanup eligibility, and creator approval that never silently deletes an original
 - A durable database-backed job ledger with idempotency, progress history, cancellation, bounded retries, expired-lease recovery, optional Redis dispatch, and a separate production worker; local development can execute working-media jobs inline
+- An administrator-only Operations dashboard with database revision checks, Redis fallback visibility, writable-disk and capacity checks, durable queue diagnostics, expired-lease warnings, latest-backup state, and non-destructive archive verification
 - A stage-aware Compliance Center with preliminary checks, provider-neutral text/trademark/visual/audio scanners, fail-closed outages, evidence-backed finding resolution, an asset rights register, stale-scan invalidation, strict release gates, and hash-chained audit events
 - An enforced original-work-only charter that rejects fan-fiction and unofficial derivative requests, plus independently reviewable professional identities and exact prior-work claims for creators working with their own catalog
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
@@ -67,10 +68,10 @@ pytest
 
 ## Next milestones
 
-1. Finish durable orchestration polish; timeline animatics, continuous and segmented masters, still and motion composites, AI Crew proposals, Sound Producer voice generation, media transfer, storage audits, and production backups now use the shared ledger
-2. Add PostgreSQL migration verification in CI
-3. Add health checks, job diagnostics, backup restore verification, and the guarded Coolify deployment path
-4. Add authentication and tenant isolation before any public deployment
+1. Add PostgreSQL migration verification in CI while retaining SQLite for local development
+2. Add structured application logs, service heartbeat monitoring, and automated capacity alerts around the new Operations dashboard
+3. Exercise backup verification in a recurring restore drill and document disaster recovery ownership
+4. Finish provider-neutral execution for every AI Crew department and begin repeatable Character and World Identity Packs
 
 See [the phased Kizuna roadmap](docs/ROADMAP.md) for how Anime Studio becomes the shared foundation for Express, Paper, Hero, Motion, CineReal, AdForge, collaboration, integrations, and the future creator ecosystem.
 

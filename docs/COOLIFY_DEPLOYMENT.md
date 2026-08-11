@@ -56,6 +56,10 @@ Run it separately for each secret. Keep the values in a password manager.
 5. Open `https://app.kizuna.technology/setup`, enter the bootstrap key, and create the first administrator.
 6. Sign in, create a staging production, sign out, and sign back in.
 7. Confirm named volumes exist for Postgres, Redis, renders, storage, and the scanner corpus before uploading irreplaceable media.
+8. Open **Settings → Operations** and confirm the database and both production disks report ready. Redis should report ready in the Coolify stack; a polling advisory is expected only in simple local development.
+9. Create a production backup, return to **Settings → Operations**, and select **Verify latest backup**. This reads and validates the archive but never restores over the active production.
+
+Optional capacity warning thresholds can be adjusted with `KIZUNA_STORAGE_WARNING_FREE_GB` and `KIZUNA_STORAGE_WARNING_FREE_PERCENT`. They default to 10 GB and 10 percent. Treat either warning as an operating alert rather than waiting for a render or backup to fail.
 
 Keep `KIZUNA_TRIAL_SIGNUP_ENABLED=false` while SMTP and recovery are tested. First configure SMTP with `KIZUNA_EMAIL_VERIFICATION_REQUIRED=false`, redeploy, request a password reset, and complete it. Then set verification to true, create and verify a test trial account, and confirm a second use of either link fails. Public signup should remain off until billing upgrades, broader signup abuse controls, and a restore drill are complete.
 

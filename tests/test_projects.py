@@ -4,6 +4,30 @@ def test_health(client):
     assert response.json()["status"] == "ok"
 
 
+def test_operational_readiness_reports_safe_service_diagnostics(client):
+    response = client.get("/api/settings/operations")
+    assert response.status_code == 200
+    readiness = response.json()
+    checks = {item["key"]: item for item in readiness["checks"]}
+    assert readiness["status"] in {"ready", "warning"}
+    assert checks["database"]["state"] == "ready"
+    assert checks["database"]["details"]["revision"]
+    assert checks["jobs"]["details"]["expired_leases"] == 0
+    assert checks["disk-production"]["details"]["writable"] is True
+    assert "password" not in response.text.casefold()
+
+
+def test_local_team_settings_explains_collaboration_mode(client):
+    project = client.post("/api/projects", json={"title": "Local Studio"}).json()
+    response = client.get("/api/settings/team")
+    assert response.status_code == 200
+    team = response.json()
+    assert team["local_mode"] is True
+    assert team["users"] == []
+    assert team["invitations"] == []
+    assert team["projects"] == [{"id": project["id"], "title": "Local Studio", "my_role": "owner"}]
+
+
 def test_anime_craft_compass_guides_without_becoming_a_compliance_gate(client):
     catalog = client.get("/api/anime-craft/catalog").json()
     assert catalog["stance"]["title"] == "Tradition is a living practice, not a purity test"
@@ -1501,6 +1525,11 @@ def test_project_backups_retention_and_expiring_delivery_links(client, monkeypat
     assert backups[0]["backend"] == "local"
     assert second["asset_count"] == 1
     assert len(second["checksum_sha256"]) == 64
+    verification = client.post("/api/settings/operations/verify-latest-backup")
+    assert verification.status_code == 200
+    assert verification.json()["verified"] is True
+    assert verification.json()["project_id"] == project_id
+    assert verification.json()["entries"] >= 2
     assert client.get(second["download_url"]).headers["content-type"] == "application/zip"
     assert client.get(f"/api/backups/{first['id']}/download").status_code == 404
 

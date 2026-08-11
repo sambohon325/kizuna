@@ -56,6 +56,36 @@ def test_character_craft_review_cites_saved_story_relationship_and_design_eviden
     assert not any(item["id"] in {"characters:ensemble-in-isolation", "characters:identity-locks"} for item in resolved["findings"])
 
 
+def test_craft_review_cites_shots_reviewed_assets_timeline_and_sound_regions(client):
+    project_id = client.post("/api/projects", json={"title": "Intervals", "logline": "A signal operator learns when not to answer."}).json()["id"]
+    client.put(f"/api/projects/{project_id}/craft-compass", json={
+        "intent": "Use pauses and changing musical memory to make listening visible.",
+        "tradition_ids": ["ma", "sound-ma", "leitmotif-transformation"],
+    })
+    scene = client.post(f"/api/projects/{project_id}/scenes", json={"title": "First Contact", "position": 1}).json()
+    shot = client.post(f"/api/scenes/{scene['id']}/shots", json={"title": "Receiver wakes", "position": 1, "duration_seconds": 3}).json()
+    client.put(f"/api/shots/{shot['id']}/plan", json={"action": "The receiver lights as Noa reaches for it.", "continuity_notes": "Keep the dial screen-right."})
+    storyboard = client.post(f"/api/shots/{shot['id']}/storyboard", json={"provider": "mock", "seed": 12}).json()["assets"][0]
+    client.put(f"/api/assets/storyboard/{storyboard['id']}/review", json={"status": "approved", "selected": True, "notes": "Continuity master."})
+
+    timeline = client.post(f"/api/projects/{project_id}/timeline/build", json={"fps": 12, "width": 320, "height": 180}).json()
+    client.put(f"/api/timeline-clips/{timeline['clips'][0]['id']}", json={"duration_seconds": 1.5, "transition": "cut", "transition_duration": 0, "audio_cue": "Signal begins."})
+    tracks = client.post(f"/api/timelines/{timeline['id']}/audio/build").json()["tracks"]
+    music = next(track for track in tracks if track["kind"] == "music")
+    client.post(f"/api/audio-tracks/{music['id']}/cues", json={"start_seconds": 14, "duration_seconds": 5, "text": "Noa's main theme", "direction": "Full strings."})
+
+    shot_review = client.post(f"/api/projects/{project_id}/craft-review", json={"stage": "shots"}).json()
+    staged = next(item for item in shot_review["findings"] if item["id"] == "shots:ma-not-staged")
+    assert any("Scene 01 / Shot 01 · Receiver wakes: 3s" in line for line in staged["evidence"])
+    assert any("selected storyboard asset v1" in line for line in staged["evidence"])
+
+    sound_review = client.post(f"/api/projects/{project_id}/craft-review", json={"stage": "sound"}).json()
+    quiet = next(item for item in sound_review["findings"] if item["id"] == "sound:sound-ma-not-designed")
+    motif = next(item for item in sound_review["findings"] if item["id"] == "sound:motif-without-arc")
+    assert quiet["evidence"] == ["Music · 00:14–00:19: Noa's main theme"]
+    assert motif["evidence"] == ["Music · 00:14: Noa's main theme"]
+
+
 def test_durable_jobs_are_idempotent_inspectable_cancelable_and_recoverable(client):
     from datetime import timedelta
 

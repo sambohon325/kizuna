@@ -244,7 +244,19 @@ CREW_ROLES = {
 
 
 def project_query():
-    return select(Project).options(selectinload(Project.scope), selectinload(Project.style_profile), selectinload(Project.story_brief), selectinload(Project.characters).selectinload(Character.design), selectinload(Project.characters).selectinload(Character.story_profile), selectinload(Project.characters).selectinload(Character.relationships), selectinload(Project.locations).selectinload(WorldLocation.design), selectinload(Project.scenes).selectinload(Scene.shots).selectinload(Shot.plan))
+    return select(Project).options(
+        selectinload(Project.scope), selectinload(Project.style_profile), selectinload(Project.story_brief),
+        selectinload(Project.characters).selectinload(Character.design),
+        selectinload(Project.characters).selectinload(Character.story_profile),
+        selectinload(Project.characters).selectinload(Character.relationships),
+        selectinload(Project.locations).selectinload(WorldLocation.design),
+        selectinload(Project.locations).selectinload(WorldLocation.background_assets),
+        selectinload(Project.scenes).selectinload(Scene.shots).selectinload(Shot.plan),
+        selectinload(Project.scenes).selectinload(Scene.shots).selectinload(Shot.storyboard_assets),
+        selectinload(Project.timeline).selectinload(Timeline.clips),
+        selectinload(Project.timeline).selectinload(Timeline.audio_tracks).selectinload(AudioTrack.cues),
+        selectinload(Project.media_assets), selectinload(Project.library_assets), selectinload(Project.asset_reviews),
+    )
 
 
 def asset_group(asset_type: str, asset_id: int, db: Session):

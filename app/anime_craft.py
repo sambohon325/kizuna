@@ -95,6 +95,27 @@ def _finding(code: str, stage: str, title: str, why: str, continue_prompt: str, 
     return {"id": f"{stage}:{code}", "stage": stage, "level": level, "title": title, "why": why, "evidence": evidence or [], "choices": {"continue": continue_prompt, "realign": realign_prompt, "revise_compass": "Update the Craft Compass so the production's stated intent matches its evolving direction."}}
 
 
+def _timecode(seconds: float) -> str:
+    value = max(0, int(seconds or 0))
+    return f"{value // 60:02d}:{value % 60:02d}"
+
+
+def _review_lookup(project: Any) -> dict[tuple[str, int], Any]:
+    return {(item.asset_type, item.asset_id): item for item in (getattr(project, "asset_reviews", []) or [])}
+
+
+def _reviewed_version(assets: list[Any], asset_type: str, reviews: dict[tuple[str, int], Any]) -> str:
+    reviewed = []
+    for asset in assets or []:
+        review = reviews.get((asset_type, asset.id))
+        if review and (review.selected or review.status == "approved"):
+            reviewed.append((bool(review.selected), asset.version, review.status))
+    if not reviewed:
+        return ""
+    selected, version, status = sorted(reviewed, reverse=True)[0]
+    return f"; {'selected' if selected else status} {asset_type} asset v{version}"
+
+
 def review_project_craft(project: Any, stage: str = "all") -> dict[str, Any]:
     style = getattr(project, "style_profile", None)
     compass = normalize_compass(getattr(style, "craft", None) if style else None)
@@ -107,15 +128,24 @@ def review_project_craft(project: Any, stage: str = "all") -> dict[str, Any]:
     genre_text = " ".join([getattr(brief, "genre", "") or "", compass.get("primary_genre", ""), *compass["genre_lenses"]]).lower()
     narrative = getattr(style, "narrative", {}) if style else {}
     direction = getattr(style, "direction", {}) if style else {}
+    reviews = _review_lookup(project)
+    timeline = getattr(project, "timeline", None)
+    clips = getattr(timeline, "clips", []) or [] if timeline else []
+    audio_tracks = getattr(timeline, "audio_tracks", []) or [] if timeline else []
     if "iyash" in genre_text and direction.get("editing") == "rapid impact" and "ma" in compass["tradition_ids"]:
-        findings.append(_finding("iyashikei-rapid-edit", "edit", "Rapid-impact cutting is pulling against the restorative lens", "Iyashikei and ma often depend on duration, routine, and room for attention. The contrast may be productive, but it should be deliberate.", "Keep the rapid cutting and explain what disruption or counter-rhythm it contributes.", "Try contemplative or tension-and-release editing for everyday and environmental beats."))
+        edit_evidence = ["Style direction: editing is set to ‘rapid impact’."]
+        edit_evidence.extend(f"Timeline clip {clip.position:02d} · {getattr(getattr(clip, 'shot', None), 'title', 'Untitled shot')}: {clip.duration_seconds:g}s, {clip.transition}." for clip in clips[:5])
+        findings.append(_finding("iyashikei-rapid-edit", "edit", "Rapid-impact cutting is pulling against the restorative lens", "Iyashikei and ma often depend on duration, routine, and room for attention. The contrast may be productive, but it should be deliberate.", "Keep the rapid cutting and explain what disruption or counter-rhythm it contributes.", "Try contemplative or tension-and-release editing for everyday and environmental beats.", evidence=edit_evidence))
     if "cyberpunk" in genre_text and not any("power" in x.lower() or "labor" in x.lower() or "class" in x.lower() for x in [compass["intent"], getattr(brief, "premise", "") if brief else ""]):
-        findings.append(_finding("cyberpunk-surface", "worlds", "The cyberpunk lens has a visual signal but no social question yet", "Cyberpunk becomes more than neon when technology and architecture reveal who has power, who performs labor, and who bears the cost.", "Continue with atmosphere first and record the social question during world development.", "Add a power, labor, body, surveillance, or class question to the premise or Craft Compass."))
+        cyber_evidence = [f"Creative intent: {compass['intent'] or 'not written'}", f"Premise: {getattr(brief, 'premise', '') or 'not written'}"]
+        cyber_evidence.extend(f"Location · {location.name}: {location.narrative_function or location.description or 'no social function recorded'}{_reviewed_version(getattr(location, 'background_assets', []), 'background', reviews)}" for location in (getattr(project, "locations", []) or [])[:4])
+        findings.append(_finding("cyberpunk-surface", "worlds", "The cyberpunk lens has a visual signal but no social question yet", "Cyberpunk becomes more than neon when technology and architecture reveal who has power, who performs labor, and who bears the cost.", "Continue with atmosphere first and record the social question during world development.", "Add a power, labor, body, surveillance, or class question to the premise or Craft Compass.", evidence=cyber_evidence))
     if "isekai" in genre_text:
         locations = getattr(project, "locations", []) or []
         world_text = " ".join(f"{getattr(x, 'narrative_function', '')} {getattr(x, 'description', '')}" for x in locations).lower()
         if locations and not any(word in world_text for word in ("rule", "cost", "limit", "system", "law", "ritual")):
-            findings.append(_finding("isekai-rules", "worlds", "The other-world system has places but no visible costs or rules", "System stories gain tension when rules create choices and consequences instead of only advantages.", "Keep the rules implicit and identify how the audience will infer them through action.", "Add one cost, limit, law, ritual, or failure condition to the world bible."))
+            evidence = [f"Location · {location.name}: {location.narrative_function or location.description or 'no narrative rule recorded'}{_reviewed_version(getattr(location, 'background_assets', []), 'background', reviews)}" for location in locations[:6]]
+            findings.append(_finding("isekai-rules", "worlds", "The other-world system has places but no visible costs or rules", "System stories gain tension when rules create choices and consequences instead of only advantages.", "Keep the rules implicit and identify how the audience will infer them through action.", "Add one cost, limit, law, ritual, or failure condition to the world bible.", evidence=evidence))
     if narrative.get("structure") == "kishotenketsu" and brief and brief.beats and len(brief.beats) != 4:
         findings.append(_finding("kishotenketsu-count", "story", "The selected structure and beat count are not a literal match - and that may be fine", "Kisho-ten-ketsu is more useful as a relationship among functions than as a demand for exactly four cards.", "Keep the current beat count and label which beats establish, deepen, reframe, and connect.", "Condense or regroup the beat map around those four functions."))
     characters = getattr(project, "characters", []) or []
@@ -136,13 +166,30 @@ def review_project_craft(project: Any, stage: str = "all") -> dict[str, Any]:
     if characters and {"graphic-cel-clarity", "selective-animation"}.intersection(compass["tradition_ids"]):
         unlocked = [character for character in characters if not getattr(character, "design", None) or not (character.design.consistency_anchors or [])]
         if unlocked:
-            evidence = [f"{character.name}: {'visual model not started' if not getattr(character, 'design', None) else 'no consistency anchors saved'}" for character in unlocked]
+            evidence = []
+            for character in unlocked:
+                assets = [asset for asset in (getattr(project, "media_assets", []) or []) if asset.character_id == character.id]
+                evidence.append(f"{character.name}: {'visual model not started' if not getattr(character, 'design', None) else 'no consistency anchors saved'}{_reviewed_version(assets, 'character', reviews)}")
             findings.append(_finding("identity-locks", "characters", "Some character designs do not yet have repeatable identity locks", "Graphic clarity and selective animation depend on a few stable shapes, colors, proportions, and details surviving changes in angle, pose, expression, and drawing complexity.", "Leave selected identities flexible during exploration and name the point when they must lock for production.", "Save two or three observable consistency anchors for each listed character before generating model views or final shots.", evidence=evidence))
     if "ma" in compass["tradition_ids"] and getattr(project, "scenes", None):
-        shot_plans = [getattr(shot, "plan", None) for scene in project.scenes for shot in getattr(scene, "shots", [])]
+        shots = [(scene, shot) for scene in project.scenes for shot in getattr(scene, "shots", [])]
+        shot_plans = [getattr(shot, "plan", None) for _, shot in shots]
         texts = " ".join(f"{getattr(plan, 'action', '')} {getattr(plan, 'continuity_notes', '')}" for plan in shot_plans if plan).lower()
         if shot_plans and not any(word in texts for word in ("pause", "silence", "still", "breath", "hold", "room tone", "negative space")):
-            findings.append(_finding("ma-not-staged", "shots", "Ma is an anchor but has not reached the shot language", "A declared craft principle only guides production when it becomes a concrete choice of duration, framing, performance, or sound.", "Keep it as a later editorial or sound decision and note where it will enter.", "Add a purposeful hold, pause, off-screen space, breath, or room-tone beat to selected shots."))
+            evidence = [f"Scene {scene.position:02d} / Shot {shot.position:02d} · {shot.title}: {shot.duration_seconds:g}s; no shaped interval in action or continuity{_reviewed_version(getattr(shot, 'storyboard_assets', []), 'storyboard', reviews)}" for scene, shot in shots[:6]]
+            findings.append(_finding("ma-not-staged", "shots", "Ma is an anchor but has not reached the shot language", "A declared craft principle only guides production when it becomes a concrete choice of duration, framing, performance, or sound.", "Keep it as a later editorial or sound decision and note where it will enter.", "Add a purposeful hold, pause, off-screen space, breath, or room-tone beat to selected shots.", evidence=evidence))
+    cues = [(track, cue) for track in audio_tracks for cue in (getattr(track, "cues", []) or [])]
+    if cues and "sound-ma" in compass["tradition_ids"]:
+        quiet_terms = ("silence", "room tone", "ambience", "ambient", "breath", "quiet", "unscored", "space", "air")
+        if not any(term in f"{cue.text} {cue.direction}".lower() for _, cue in cues for term in quiet_terms):
+            evidence = [f"{track.name} · {_timecode(cue.start_seconds)}–{_timecode(cue.start_seconds + cue.duration_seconds)}: {cue.text or cue.direction or 'unnamed cue'}" for track, cue in cues[:6]]
+            findings.append(_finding("sound-ma-not-designed", "sound", "Silence and room tone are selected, but no quiet region is designed in the current mix", "Sound-ma becomes audible through deliberate contrast: room tone, breath, isolated detail, or a meaningful release from music and dialogue.", "Keep the current density and explain where contrast will enter during the final mix.", "Name a room-tone, breath, isolated-detail, or deliberately unscored region in Audio Studio.", evidence=evidence))
+    music_cues = [(track, cue) for track, cue in cues if track.kind == "music"]
+    if music_cues and "leitmotif-transformation" in compass["tradition_ids"]:
+        transform_terms = ("transform", "variation", "reprise", "register", "harmony", "orchestration", "withhold", "return", "fragment")
+        if not any(term in f"{cue.text} {cue.direction}".lower() for _, cue in music_cues for term in transform_terms):
+            evidence = [f"{track.name} · {_timecode(cue.start_seconds)}: {cue.text or cue.direction or 'unnamed music cue'}" for track, cue in music_cues[:6]]
+            findings.append(_finding("motif-without-arc", "sound", "The music cues repeat an identity, but do not yet describe how it changes", "Leitmotif becomes dramatic when harmony, register, rhythm, orchestration, fragmentation, return, or absence changes its meaning.", "Keep the motif stable and explain why constancy is the dramatic choice.", "Give at least one music cue a named variation, transformation, withholding, or return.", evidence=evidence))
     departures = {item.get("finding_id"): item for item in compass["departures"] if isinstance(item, dict)}
     for finding in findings:
         if finding["id"] in departures:

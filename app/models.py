@@ -143,6 +143,9 @@ class Project(Base):
     timeline: Mapped[Timeline | None] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
     scope: Mapped[ProductionScope | None] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
     assistant_messages: Mapped[list[AssistantMessage]] = relationship(back_populates="project", cascade="all, delete-orphan", order_by="AssistantMessage.id")
+    media_assets: Mapped[list[MediaAsset]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    library_assets: Mapped[list[LibraryAsset]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    asset_reviews: Mapped[list[AssetReview]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
 class StyleProfile(Base):
@@ -313,6 +316,8 @@ class MediaAsset(Base):
     version: Mapped[int] = mapped_column(default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    project: Mapped[Project] = relationship(back_populates="media_assets")
+
 
 class LibraryAsset(Base):
     __tablename__ = "library_assets"
@@ -334,6 +339,8 @@ class LibraryAsset(Base):
     version: Mapped[int] = mapped_column(default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    project: Mapped[Project] = relationship(back_populates="library_assets")
+
 
 class AssetReview(Base):
     __tablename__ = "asset_reviews"
@@ -348,6 +355,8 @@ class AssetReview(Base):
     selected: Mapped[bool] = mapped_column(default=False)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    project: Mapped[Project] = relationship(back_populates="asset_reviews")
 
 
 class RenderWorker(Base):
@@ -390,6 +399,7 @@ class WorldLocation(Base):
 
     project: Mapped[Project] = relationship(back_populates="locations")
     design: Mapped[LocationDesign | None] = relationship(back_populates="location", cascade="all, delete-orphan", uselist=False)
+    background_assets: Mapped[list[BackgroundAsset]] = relationship(back_populates="location", cascade="all, delete-orphan")
 
 
 class LocationDesign(Base):
@@ -436,6 +446,8 @@ class BackgroundAsset(Base):
     version: Mapped[int] = mapped_column(default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    location: Mapped[WorldLocation] = relationship(back_populates="background_assets")
+
 
 class StoryboardJob(Base):
     __tablename__ = "storyboard_jobs"
@@ -464,6 +476,8 @@ class StoryboardAsset(Base):
     asset_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     version: Mapped[int] = mapped_column(default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    shot: Mapped[Shot] = relationship(back_populates="storyboard_assets")
 
 
 class Scene(Base):
@@ -497,6 +511,7 @@ class Shot(Base):
     scene: Mapped[Scene] = relationship(back_populates="shots")
     plan: Mapped[ShotPlan | None] = relationship(back_populates="shot", cascade="all, delete-orphan", uselist=False)
     composition: Mapped[ShotComposition | None] = relationship(back_populates="shot", cascade="all, delete-orphan", uselist=False)
+    storyboard_assets: Mapped[list[StoryboardAsset]] = relationship(back_populates="shot", cascade="all, delete-orphan")
 
 
 class ShotPlan(Base):
@@ -531,6 +546,7 @@ class Timeline(Base):
     project: Mapped[Project] = relationship(back_populates="timeline")
     clips: Mapped[list[TimelineClip]] = relationship(back_populates="timeline", cascade="all, delete-orphan", order_by="TimelineClip.position")
     renders: Mapped[list[AnimaticRender]] = relationship(back_populates="timeline", cascade="all, delete-orphan")
+    audio_tracks: Mapped[list[AudioTrack]] = relationship(back_populates="timeline", cascade="all, delete-orphan", order_by="AudioTrack.position")
 
 
 class TimelineClip(Base):
@@ -596,6 +612,7 @@ class AudioTrack(Base):
     volume: Mapped[float] = mapped_column(default=1.0)
     muted: Mapped[bool] = mapped_column(default=False)
 
+    timeline: Mapped[Timeline] = relationship(back_populates="audio_tracks")
     cues: Mapped[list[AudioCue]] = relationship(back_populates="track", cascade="all, delete-orphan", order_by="AudioCue.start_seconds")
 
 

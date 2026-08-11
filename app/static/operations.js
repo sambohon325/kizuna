@@ -15,6 +15,8 @@
     if (Number.isFinite(details.expanded_bytes)) rows.push(['Rehearsed data', `${(details.expanded_bytes / 1048576).toFixed(1)} MB`]);
     if (Number.isFinite(details.recovered_assets)) rows.push(['Recovered media', String(details.recovered_assets)]);
     if (Number.isFinite(details.duration_seconds)) rows.push(['Drill time', `${details.duration_seconds.toFixed(1)}s`]);
+    if (Array.isArray(details.channels) && details.channels.length) rows.push(['Channels', details.channels.map(item => `${item.key}${item.ready ? '' : ' · setup incomplete'}`).join(' · ')]);
+    if (Array.isArray(details.history) && details.history.length) rows.push(['Last delivery', `${details.history[0].status} · ${details.history[0].channel}`]);
     return rows.length ? `<dl>${rows.map(([name, value]) => `<div><dt>${safe(name)}</dt><dd>${safe(value)}</dd></div>`).join('')}</dl>` : '';
   }
 
@@ -22,9 +24,10 @@
     if (!data) return '<section class="operational-readiness"><div class="settings-loading">Checking studio operations...</div></section>';
     const backup = data.checks.find(item => item.key === 'backups');
     const drill = data.checks.find(item => item.key === 'restore-drill');
+    const externalAlerts = data.checks.find(item => item.key === 'external-alerts');
     const heading = data.status === 'ready' ? 'The production engine is ready' : data.status === 'error' ? 'The studio needs attention' : 'The studio is running with advisories';
     const alerts = data.alerts || [];
-    return `<section class="operational-readiness ${safe(data.status)}"><header><div><p class="eyebrow">STUDIO OPERATIONS</p><h3>${heading}</h3><p>Live, production-safe checks for persistence, service heartbeats, job recovery, storage capacity, and backups.</p></div><span><i></i>${safe(labels[data.status] || data.status)}</span></header>${alerts.length ? `<section class="operations-alerts"><header><div><b>${alerts.length} operating notice${alerts.length===1?'':'s'}</b><span>Errors need action; advisories explain the current tradeoff.</span></div></header>${alerts.map(alert => `<article class="${safe(alert.severity)}"><div><b>${safe(alert.title)}</b><span>${safe(alert.message)}</span></div><p>${safe(alert.action)}</p></article>`).join('')}</section>` : ''}<div class="operations-check-grid">${data.checks.map(check => `<article class="${safe(check.state)}"><header><i>${icons[check.state] || '?'}</i><span><b>${safe(check.label)}</b><small>${safe(labels[check.state] || check.state)}</small></span></header><p>${safe(check.summary)}</p>${detailRows(check.details || {})}</article>`).join('')}</div><div class="operations-actions"><div><b>Last checked</b><span>${new Date(data.checked_at).toLocaleString()} · ${safe(data.environment)}</span></div><button type="button" id="refresh-operations">Run checks again</button>${backup?.details?.deep_verification_available ? '<button type="button" id="verify-latest-backup">Verify latest backup</button>' : ''}${backup?.details?.restore_drill_available && !['queued','running'].includes(drill?.details?.status) ? '<button type="button" class="primary" id="run-restore-drill">Run recovery drill</button>' : ''}</div><div id="operations-result" aria-live="polite"></div><details class="operations-explanation"><summary>What these checks prove</summary><p>Readiness confirms that Kizuna can query its database, observe its core services, wake or poll workers, write to production disks, recover durable jobs, reach its compliance scanner, and locate the newest backup. A recovery drill reads every archived byte, rebuilds and reopens a temporary recovery catalog, validates the production structure and media count, and then removes its temporary files. It never overwrites the active production.</p></details></section>`;
+    return `<section class="operational-readiness ${safe(data.status)}"><header><div><p class="eyebrow">STUDIO OPERATIONS</p><h3>${heading}</h3><p>Live, production-safe checks for persistence, service heartbeats, job recovery, storage capacity, backups, and outside notifications.</p></div><span><i></i>${safe(labels[data.status] || data.status)}</span></header>${alerts.length ? `<section class="operations-alerts"><header><div><b>${alerts.length} operating notice${alerts.length===1?'':'s'}</b><span>Errors need action; advisories explain the current tradeoff.</span></div></header>${alerts.map(alert => `<article class="${safe(alert.severity)}"><div><b>${safe(alert.title)}</b><span>${safe(alert.message)}</span></div><p>${safe(alert.action)}</p></article>`).join('')}</section>` : ''}<div class="operations-check-grid">${data.checks.map(check => `<article class="${safe(check.state)}"><header><i>${icons[check.state] || '?'}</i><span><b>${safe(check.label)}</b><small>${safe(labels[check.state] || check.state)}</small></span></header><p>${safe(check.summary)}</p>${detailRows(check.details || {})}</article>`).join('')}</div><div class="operations-actions"><div><b>Last checked</b><span>${new Date(data.checked_at).toLocaleString()} · ${safe(data.environment)}</span></div><button type="button" id="refresh-operations">Run checks again</button>${externalAlerts?.details?.configured ? '<button type="button" id="test-operations-alert">Send test alert</button>' : ''}${backup?.details?.deep_verification_available ? '<button type="button" id="verify-latest-backup">Verify latest backup</button>' : ''}${backup?.details?.restore_drill_available && !['queued','running'].includes(drill?.details?.status) ? '<button type="button" class="primary" id="run-restore-drill">Run recovery drill</button>' : ''}</div><div id="operations-result" aria-live="polite"></div><details class="operations-explanation"><summary>What these checks prove</summary><p>Readiness confirms that Kizuna can query its database, observe its core services, wake or poll workers, write to production disks, recover durable jobs, reach its compliance scanner, locate the newest backup, and report external delivery history. Alerts are deduplicated during the configured cooldown. A recovery drill reads every archived byte and rebuilds a temporary recovery catalog without overwriting active work.</p></details></section>`;
   }
 
   function wire() {
@@ -49,6 +52,19 @@
       tabs.querySelectorAll('button:not([data-settings-view="operations"])').forEach(item => item.addEventListener('click', () => { pane.hidden = true; }));
     }
     document.querySelector('#refresh-operations')?.addEventListener('click', () => window.reloadOperationalSettings?.());
+    document.querySelector('#test-operations-alert')?.addEventListener('click', async event => {
+      const button = event.currentTarget, result = document.querySelector('#operations-result');
+      button.disabled = true;
+      result.innerHTML = '<div class="operations-running">Sending a test alert to every configured channel...</div>';
+      try {
+        const delivery = await api('/api/settings/operations/test-alert', {method: 'POST'});
+        result.innerHTML = `<div class="operations-verified"><b>Test alert delivered</b><span>${delivery.delivered} channel${delivery.delivered === 1 ? '' : 's'} confirmed delivery.</span></div>`;
+        await window.reloadOperationalSettings?.();
+      } catch (error) {
+        result.innerHTML = `<div class="job-error">${safe(error.message)}</div>`;
+        button.disabled = false;
+      }
+    });
     document.querySelector('#run-restore-drill')?.addEventListener('click', async event => {
       const button = event.currentTarget, result = document.querySelector('#operations-result');
       button.disabled = true;

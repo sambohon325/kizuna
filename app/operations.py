@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.job_queue import redis_client
 from app.models import DurableJob, ProjectBackup, ServiceHeartbeat
+from app.operational_alerts import alert_delivery_status
 from app.schema_migrations import database_revision
 
 
@@ -103,6 +104,7 @@ def _alerts(checks: list[dict]) -> list[dict]:
         "service-job-worker": "Inspect job-worker logs; queued renders will wait until the worker returns.",
         "service-backup-scheduler": "Inspect backup-scheduler logs and manually confirm the next scheduled backup.",
         "service-compliance-scanner": "Connect the self-hosted scanner before testing corpus-backed originality checks." if local else "Inspect the compliance-scanner container and its corpus health endpoint.",
+        "external-alerts": "Add an operations email or webhook in Coolify, then send a test alert from this page.",
     }
     alerts = []
     for check in checks:
@@ -157,6 +159,18 @@ def operational_readiness(db: Session, storage_root: Path, render_root: Path, *,
 
     checks.extend(_service_checks(db, now))
     checks.append(_scanner_check())
+
+    delivery = alert_delivery_status(db)
+    if not delivery["configured"]:
+        checks.append(_check("external-alerts", "External alerts", "warning", "External alert delivery is not configured.", delivery))
+    elif any(not channel["ready"] for channel in delivery["channels"]):
+        checks.append(_check("external-alerts", "External alerts", "error", "An external alert channel is configured but not ready.", delivery))
+    elif delivery["history"] and delivery["history"][0]["status"] == "failed":
+        checks.append(_check("external-alerts", "External alerts", "error", "The latest external alert delivery failed.", delivery))
+    else:
+        labels = " and ".join(channel["key"] for channel in delivery["channels"])
+        summary = f"{labels.capitalize()} alert delivery is configured."
+        checks.append(_check("external-alerts", "External alerts", "ready", summary, delivery))
 
     drill = db.scalar(select(DurableJob).where(DurableJob.kind == "maintenance.restore-drill").order_by(DurableJob.created_at.desc(), DurableJob.id.desc()))
     drill_result = (drill.result or {}) if drill else {}

@@ -22,6 +22,8 @@ The health response reports the active `database_revision`. To confirm the model
 python -m alembic check
 ```
 
+Startup also validates that a database marked at the current revision still contains every required table and column. A revision marker cannot silently hide a partially removed schema.
+
 ## Existing Kizuna databases
 
 The first migration-aware startup recognizes an existing database with Kizuna's `projects` table but no Alembic version record. It creates only currently missing tables, verifies that every existing table contains all required baseline columns, preserves data, and then stamps the baseline revision.
@@ -51,3 +53,9 @@ Before deploying a new migration:
 - keep the previous application image available for application rollback.
 
 Application rollback does not imply database downgrade. Prefer forward fixes; run a downgrade only after reviewing its data-loss implications.
+
+## PostgreSQL CI proof
+
+GitHub Actions migrates a fresh PostgreSQL service, runs Alembic structural drift detection, and executes `python -m app.database_verification` before and after the full test suite. The verifier requires PostgreSQL, confirms the current revision and complete table set, performs a nested JSON write/read transaction, and rolls that transaction back. SQLite remains the fast local-development and compatibility test path.
+
+Alembic compares tables, columns, types, constraints, and indexes. Database bootstrap defaults are intentionally excluded because many Kizuna models use Python-side defaults while migrations retain database-side defaults for safe historical upgrades.

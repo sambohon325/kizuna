@@ -26,6 +26,8 @@ def test_operational_readiness_reports_safe_service_diagnostics(client):
     assert checks["service-web"]["state"] == "ready"
     assert checks["service-web"]["details"]["instances"] == 1
     assert checks["service-compliance-scanner"]["state"] == "warning"
+    assert checks["external-alerts"]["state"] == "warning"
+    assert checks["external-alerts"]["details"]["configured"] is False
     assert {item["key"] for item in readiness["alerts"]} >= {"redis", "backups", "service-compliance-scanner"}
     assert "password" not in response.text.casefold()
 
@@ -56,6 +58,67 @@ def test_operational_readiness_flags_stale_or_missing_production_services(client
     assert checks["service-backup-scheduler"]["state"] == "error"
     assert checks["service-compliance-scanner"]["state"] == "error"
     assert "Coolify" in alerts["service-job-worker"]["action"] or "job-worker" in alerts["service-job-worker"]["action"]
+
+
+def test_external_operational_alerts_deliver_dedupe_and_record_safe_history(client, monkeypatch):
+    from app.config import settings
+    from app.database import SessionLocal
+    from app.operational_alerts import dispatch_operational_alerts
+
+    delivered = []
+    monkeypatch.setattr(settings, "operations_alert_email", "operations@example.com")
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
+    monkeypatch.setattr(settings, "smtp_from_email", "studio@example.com")
+    monkeypatch.setattr(settings, "operations_alert_webhook_secret", "never-return-this-secret")
+    monkeypatch.setattr("app.operational_alerts.send_email", lambda to, subject, body: delivered.append((to, subject, body)))
+
+    test_delivery = client.post("/api/settings/operations/test-alert")
+    assert test_delivery.status_code == 200
+    assert test_delivery.json()["delivered"] == 1
+    assert delivered and delivered[0][0] == "operations@example.com"
+
+    readiness = {"alerts": [{"key": "jobs", "severity": "error", "title": "Durable jobs", "message": "A worker lease expired.", "action": "Inspect the failed job."}]}
+    with SessionLocal() as db:
+        first = dispatch_operational_alerts(db, readiness)
+        db.commit()
+        second = dispatch_operational_alerts(db, readiness)
+        db.commit()
+    assert first["delivered"] == 1
+    assert second["attempted"] == 0 and second["skipped"] == 1
+
+    operations = client.get("/api/settings/operations")
+    check = next(item for item in operations.json()["checks"] if item["key"] == "external-alerts")
+    assert check["state"] == "ready"
+    assert check["details"]["channels"] == [{"key": "email", "ready": True, "target_hint": "o***@example.com"}]
+    assert check["details"]["history"][0]["status"] == "delivered"
+    assert "never-return-this-secret" not in operations.text
+
+
+def test_operational_webhook_signs_the_exact_json_body(monkeypatch):
+    import hashlib
+    import hmac
+    from app.config import settings
+    from app.operational_alerts import _send_webhook
+
+    captured = {}
+    class Response:
+        status = 204
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+    def fake_open(request, timeout):
+        captured["body"] = request.data
+        captured["signature"] = request.headers["X-kizuna-signature"]
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(settings, "operations_alert_webhook_url", "https://alerts.example.com/kizuna")
+    monkeypatch.setattr(settings, "operations_alert_webhook_secret", "signing-secret")
+    monkeypatch.setattr("app.operational_alerts.urllib.request.urlopen", fake_open)
+    payload = {"event": "kizuna.operations.alert", "message": "Worker unavailable"}
+    assert _send_webhook(payload) == 204
+    expected = hmac.new(b"signing-secret", captured["body"], hashlib.sha256).hexdigest()
+    assert captured["signature"] == f"sha256={expected}"
+    assert captured["timeout"] == 10
 
 
 def test_local_team_settings_explains_collaboration_mode(client):

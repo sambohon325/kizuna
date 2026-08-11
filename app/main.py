@@ -40,6 +40,7 @@ from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text,
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
 from app.storage import LocalProductionStorage, S3ProductionStorage
 from app.operations import operational_readiness, verify_local_backup
+from app.operational_alerts import dispatch_operational_alerts
 from app.observability import log_event, record_service_heartbeat, service_instance_id, service_logger
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
@@ -379,6 +380,22 @@ def studio_operations(db: Session = Depends(get_db)):
     record_service_heartbeat(db, "web", web_instance_id, details={"environment": settings.environment})
     db.commit()
     return operational_readiness(db, production_storage.root, render_dir, s3_configured=s3_production_storage.configured)
+
+
+def dispatch_current_operational_alerts(db: Session, *, force: bool = False, test: bool = False) -> dict:
+    readiness = operational_readiness(db, production_storage.root, render_dir, s3_configured=s3_production_storage.configured)
+    return dispatch_operational_alerts(db, readiness, force=force, test=test)
+
+
+@app.post("/api/settings/operations/test-alert")
+def test_operational_alert(db: Session = Depends(get_db)):
+    result = dispatch_current_operational_alerts(db, force=True, test=True)
+    db.commit()
+    if not result["configured"]:
+        raise HTTPException(409, "Configure an operations email or webhook before sending a test alert.")
+    if result["failed"]:
+        raise HTTPException(502, "The test alert could not be delivered. Check Operations and the Coolify service logs.")
+    return result
 
 
 @app.post("/api/settings/operations/verify-latest-backup")

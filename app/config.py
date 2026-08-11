@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     backup_max_copies: int = 10
     backup_scheduler_interval_seconds: int = 60
     restore_drill_interval_hours: int = 168
+    operations_alert_email: str = ""
+    operations_alert_webhook_url: str = ""
+    operations_alert_webhook_secret: str = ""
+    operations_alert_min_severity: str = "error"
+    operations_alert_cooldown_minutes: int = 360
+    operations_alert_retry_minutes: int = 15
+    operations_alert_retention_days: int = 90
     cleanup_verification_hours: int = 24
     redis_url: str = ""
     job_stream_key: str = "kizuna:jobs"

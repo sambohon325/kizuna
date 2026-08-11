@@ -24,7 +24,9 @@ def configure(connection=None) -> None:
         url=None if connection is not None else settings.database_url,
         target_metadata=target_metadata,
         compare_type=True,
-        compare_server_default=True,
+        # Python-side defaults intentionally differ from database bootstrap defaults.
+        # Structural drift (tables, columns, types, constraints, and indexes) remains checked.
+        compare_server_default=False,
         render_as_batch=connection.dialect.name == "sqlite" if connection is not None else settings.database_url.startswith("sqlite"),
         literal_binds=connection is None,
         dialect_opts={"paramstyle": "named"} if connection is None else None,

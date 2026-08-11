@@ -65,3 +65,15 @@ def test_incomplete_legacy_database_is_not_silently_stamped(migration_db_path):
         assert database_revision(engine) == "legacy"
     finally:
         engine.dispose()
+
+
+def test_current_revision_does_not_hide_a_missing_table(migration_db_path):
+    engine = sqlite_engine(migration_db_path)
+    try:
+        assert migrate_database(engine) == expected_revision()
+        with engine.begin() as connection:
+            connection.execute(text("DROP TABLE operational_alert_deliveries"))
+        with pytest.raises(RuntimeError, match="revision is current.*operational_alert_deliveries"):
+            migrate_database(engine)
+    finally:
+        engine.dispose()

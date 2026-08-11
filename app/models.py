@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -32,7 +32,7 @@ class UserSession(Base):
     __tablename__ = "user_sessions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     csrf_hash: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime)
@@ -42,6 +42,7 @@ class UserSession(Base):
 
 class AccountToken(Base):
     __tablename__ = "account_tokens"
+    __table_args__ = (Index("ix_account_tokens_user_purpose", "user_id", "purpose"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
@@ -54,6 +55,7 @@ class AccountToken(Base):
 
 class AccountSecurityEvent(Base):
     __tablename__ = "account_security_events"
+    __table_args__ = (Index("ix_account_security_events_network_time", "network_hash", "created_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -65,6 +67,7 @@ class AccountSecurityEvent(Base):
 
 class SignupAttempt(Base):
     __tablename__ = "signup_attempts"
+    __table_args__ = (Index("ix_signup_attempts_network_time", "network_hash", "created_at"), Index("ix_signup_attempts_email_time", "email_hash", "created_at"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     network_hash: Mapped[str] = mapped_column(String(64))
@@ -219,6 +222,7 @@ class StoryBrief(Base):
 
 class ProductionSourceNote(Base):
     __tablename__ = "production_source_notes"
+    __table_args__ = (Index("ix_production_source_notes_project_stage", "project_id", "stage"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
@@ -340,6 +344,7 @@ class MediaAsset(Base):
 
 class LibraryAsset(Base):
     __tablename__ = "library_assets"
+    __table_args__ = (Index("ix_library_assets_project_category", "project_id", "category"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
@@ -1014,7 +1019,7 @@ class DurableJobEvent(Base):
 
 class ServiceHeartbeat(Base):
     __tablename__ = "service_heartbeats"
-    __table_args__ = (UniqueConstraint("service_key", "instance_id", name="uq_service_heartbeat_instance"),)
+    __table_args__ = (UniqueConstraint("service_key", "instance_id", name="uq_service_heartbeat_instance"), Index("ix_service_heartbeats_service_last_seen", "service_key", "last_seen"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     service_key: Mapped[str] = mapped_column(String(64))
@@ -1024,6 +1029,24 @@ class ServiceHeartbeat(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class OperationalAlertDelivery(Base):
+    __tablename__ = "operational_alert_deliveries"
+    __table_args__ = (Index("ix_operational_alert_delivery_lookup", "channel", "fingerprint", "created_at"), Index("ix_operational_alert_delivery_created", "created_at"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel: Mapped[str] = mapped_column(String(24))
+    alert_key: Mapped[str] = mapped_column(String(80))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    severity: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    target_hint: Mapped[str] = mapped_column(String(160), default="")
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    response_code: Mapped[int | None] = mapped_column(nullable=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class CompliancePolicy(Base):

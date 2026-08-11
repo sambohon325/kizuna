@@ -599,6 +599,7 @@ class MasterSegmentRead(BaseModel):
 class MasterExportRead(BaseModel):
     id: int
     timeline_id: int
+    durable_job_id: int | None = None
     profile: str
     fps: int
     width: int
@@ -822,6 +823,7 @@ class CompositeRenderRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     composition_id: int
+    durable_job_id: int | None = None
     status: str
     filename: str
     uri: str

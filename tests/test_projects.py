@@ -996,6 +996,7 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client, monke
     rendered = client.post(f"/api/compositions/{composition['id']}/render")
     assert rendered.status_code == 201
     assert rendered.json()["status"] == "completed", rendered.json().get("error")
+    assert rendered.json()["durable_job_id"] is not None
     preview = client.get(rendered.json()["uri"])
     assert preview.status_code == 200
     assert preview.headers["content-type"] == "image/png"
@@ -1016,11 +1017,18 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client, monke
     assert refreshed["latest_motion_uri"] == motion.json()["uri"]
 
     monkeypatch.setattr(main_module.settings, "job_inline_fallback", False)
+    queued_composite = client.post(f"/api/compositions/{composition['id']}/render").json()
+    assert queued_composite["status"] == "queued" and queued_composite["durable_job_id"] is not None
+    assert client.post(f"/api/jobs/{queued_composite['durable_job_id']}/cancel").json()["status"] == "cancelled"
+    assert client.post(f"/api/jobs/{queued_composite['durable_job_id']}/retry").json()["status"] == "queued"
+    from app.job_worker import run_job_once
+    assert run_job_once("test:composite-worker") is True
+    completed_composite_job = client.get(f"/api/jobs/{queued_composite['durable_job_id']}").json()["job"]
+    assert completed_composite_job["kind"] == "render.composite" and completed_composite_job["status"] == "completed"
     queued_motion = client.post(f"/api/compositions/{composition['id']}/render-video", json={"quality": "proxy", "fps": 8}).json()
     assert queued_motion["status"] == "queued" and queued_motion["durable_job_id"] is not None
     assert client.post(f"/api/jobs/{queued_motion['durable_job_id']}/cancel").json()["status"] == "cancelled"
     assert client.post(f"/api/jobs/{queued_motion['durable_job_id']}/retry").json()["status"] == "queued"
-    from app.job_worker import run_job_once
     assert run_job_once("test:motion-worker") is True
     finished_motion_job = client.get(f"/api/jobs/{queued_motion['durable_job_id']}").json()["job"]
     assert finished_motion_job["kind"] == "render.shot-motion" and finished_motion_job["status"] == "completed"
@@ -1061,6 +1069,12 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client, monke
     finished = client.post(f"/api/master-exports/{export['id']}/run-all").json()
     assert finished["status"] == "segments-ready"
     assembled = client.post(f"/api/master-exports/{export['id']}/assemble")
+    assert assembled.json()["status"] == "assembly-queued" and assembled.json()["durable_job_id"] is not None
+    assembly_job_id = assembled.json()["durable_job_id"]
+    assert client.post(f"/api/jobs/{assembly_job_id}/cancel").json()["status"] == "cancelled"
+    assert client.post(f"/api/jobs/{assembly_job_id}/retry").json()["status"] == "queued"
+    assert run_job_once("test:assembly-worker") is True
+    assembled = client.get(f"/api/master-exports/{export['id']}")
     assert assembled.json()["status"] == "completed", assembled.json().get("error")
     assert client.get(assembled.json()["final_uri"]).headers["content-type"] == "video/mp4"
 
@@ -1086,6 +1100,9 @@ def test_scene_compositor_builds_layers_renders_and_feeds_timeline(client, monke
     uploaded = client.put(f"/api/workers/{worker['id']}/master-segments/{segment_id}/artifact", headers={**headers, "Content-Type": "video/mp4"}, content=artifact)
     assert uploaded.json()["status"] == "completed"
     assert len(uploaded.json()["checksum_sha256"]) == 64
+    queued_farm = client.get(f"/api/master-exports/{farm_plan['id']}").json()
+    assert queued_farm["status"] == "assembly-queued" and queued_farm["durable_job_id"] is not None
+    assert run_job_once("test:farm-assembly-worker") is True
     completed_farm = client.get(f"/api/master-exports/{farm_plan['id']}").json()
     assert completed_farm["status"] == "completed", completed_farm.get("error")
     assert client.get(completed_farm["final_uri"]).headers["content-type"] == "video/mp4"

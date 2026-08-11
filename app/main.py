@@ -2801,6 +2801,12 @@ def cancel_durable_job(job_id: int, db: Session = Depends(get_db)):
     elif job.kind in {"render.animatic", "render.master"}:
         render = db.scalar(select(AnimaticRender).where(AnimaticRender.durable_job_id == job.id))
         if render and job.status == "cancelled": render.status = "cancelled"
+    elif job.kind == "render.composite":
+        render = db.scalar(select(CompositeRender).where(CompositeRender.durable_job_id == job.id))
+        if render and job.status == "cancelled": render.status = "cancelled"
+    elif job.kind == "render.master-assembly":
+        export = db.scalar(select(MasterExportJob).where(MasterExportJob.durable_job_id == job.id))
+        if export and job.status == "cancelled": export.status = "assembly-cancelled"
     db.commit(); db.refresh(job)
     return job
 
@@ -2828,6 +2834,12 @@ def retry_durable_job(job_id: int, db: Session = Depends(get_db)):
     elif job.kind in {"render.animatic", "render.master"}:
         render = db.scalar(select(AnimaticRender).where(AnimaticRender.durable_job_id == job.id))
         if render: render.status, render.error = "queued", ""
+    elif job.kind == "render.composite":
+        render = db.scalar(select(CompositeRender).where(CompositeRender.durable_job_id == job.id))
+        if render: render.status, render.error = "queued", ""
+    elif job.kind == "render.master-assembly":
+        export = db.scalar(select(MasterExportJob).where(MasterExportJob.durable_job_id == job.id))
+        if export: export.status, export.error = "assembly-queued", ""
     db.commit(); db.refresh(job)
     return job
 
@@ -3301,27 +3313,74 @@ def update_composition_layer(layer_id: int, payload: CompositionLayerInput, db: 
     return layer
 
 
+def execute_composite_render_job(db: Session, job: DurableJob) -> dict:
+    render = db.get(CompositeRender, int(job.payload["composite_render_id"]))
+    if render is None: raise RuntimeError("The queued composite render no longer exists")
+    if render.status == "completed" and render.uri:
+        return {"composite_render_id": render.id, "composition_id": render.composition_id, "uri": render.uri}
+    composition = db.get(ShotComposition, render.composition_id)
+    if composition is None: raise RuntimeError("The source composition no longer exists")
+    shot = db.get(Shot, composition.shot_id)
+    scene = db.get(Scene, shot.scene_id) if shot else None
+    if scene is None: raise RuntimeError("The source shot no longer exists")
+    frozen = job.payload.get("manifest") or {}
+    render.status, render.error = "rendering", ""
+    update_progress(db, job, 15, "Preparing frozen compositor layers")
+    db.commit()
+    prepared = [{**layer, "source": render_dir / Path(layer["source_uri"]).name if layer.get("source_uri") else None} for layer in frozen.get("layers", [])]
+
+    def report_progress(layer: int, total: int) -> bool:
+        db.refresh(job)
+        if job.cancellation_requested:
+            return False
+        update_progress(db, job, 25 + round(60 * layer / max(1, total)), f"Composited {layer} of {total} layers")
+        db.commit()
+        return True
+
+    render.filename = f"composite-{composition.id}-v{render.render_settings['version']}-{render.id}.png"
+    render_composite(prepared, render_dir / render.filename, render.render_settings["width"], render.render_settings["height"], frozen.get("color_grade", {}), report_progress)
+    render.uri, render.status = f"/renders/{render.filename}", "completed"
+    composition.status = "preview-ready"
+    update_progress(db, job, 92, "Registering the composite preview")
+    db.commit(); db.refresh(render)
+    refresh_media_lifecycle(scene.project_id, db)
+    return {"composite_render_id": render.id, "composition_id": render.composition_id, "uri": render.uri}
+
+
+def mark_composite_render_job_failed(db: Session, job: DurableJob, error: str) -> None:
+    render = db.get(CompositeRender, int(job.payload.get("composite_render_id") or 0))
+    if render:
+        render.status = "queued" if job.status == "queued" else "cancelled" if job.status == "cancelled" else "failed"
+        render.error = error[:4000]
+
+
+def queue_composite_render(composition: ShotComposition, project_id: int, db: Session) -> CompositeRender:
+    render = CompositeRender(composition_id=composition.id, status="queued", render_settings={"width": composition.width, "height": composition.height, "version": composition.version})
+    db.add(render); db.flush()
+    layers = db.scalars(select(CompositionLayer).where(CompositionLayer.composition_id == composition.id).order_by(CompositionLayer.z_index)).all()
+    manifest = {"color_grade": composition.color_grade, "layers": [{"name": layer.name, "kind": layer.kind, "source_uri": layer.source_uri, "z_index": layer.z_index, "visible": layer.visible, "opacity": layer.opacity, "blend_mode": layer.blend_mode, "transform": layer.transform} for layer in layers]}
+    job = enqueue_job(db, "render.composite", {"composite_render_id": render.id, "composition_id": composition.id, "version": composition.version, "manifest": manifest}, project_id=project_id, queue="render", priority=70, max_attempts=3, idempotency_key=f"composite-render:{render.id}")
+    render.durable_job_id = job.id
+    if settings.job_inline_fallback and job.status == "queued":
+        try:
+            start_job(db, job, "web:inline")
+            update_progress(db, job, 5, "Preparing composite render")
+            complete_job(db, job, execute_composite_render_job(db, job))
+        except Exception as exc:
+            fail_job(db, job, str(exc))
+            mark_composite_render_job_failed(db, job, str(exc))
+    db.commit(); db.refresh(render)
+    return render
+
+
 @app.post("/api/compositions/{composition_id}/render", response_model=CompositeRenderRead, status_code=status.HTTP_201_CREATED)
 def render_shot_composition(composition_id: int, db: Session = Depends(get_db)):
     composition = db.get(ShotComposition, composition_id)
-    if not composition:
-        raise HTTPException(404, "Composition not found")
-    render = CompositeRender(composition_id=composition_id, status="rendering", render_settings={"width": composition.width, "height": composition.height, "version": composition.version})
-    db.add(render); db.commit(); db.refresh(render)
-    try:
-        layers = db.scalars(select(CompositionLayer).where(CompositionLayer.composition_id == composition_id).order_by(CompositionLayer.z_index)).all()
-        prepared = [{"name": layer.name, "kind": layer.kind, "source": render_dir / Path(layer.source_uri).name if layer.source_uri else None, "z_index": layer.z_index, "visible": layer.visible, "opacity": layer.opacity, "blend_mode": layer.blend_mode, "transform": layer.transform} for layer in layers]
-        render.filename = f"composite-{composition.id}-v{composition.version}-{render.id}.png"
-        render_composite(prepared, render_dir / render.filename, composition.width, composition.height, composition.color_grade)
-        render.uri, render.status = f"/renders/{render.filename}", "completed"
-        composition.status = "preview-ready"
-    except Exception as exc:
-        render.status, render.error = "failed", str(exc)
-    db.commit(); db.refresh(render)
-    if render.status == "completed":
-        shot = db.get(Shot, composition.shot_id); scene = db.get(Scene, shot.scene_id) if shot else None
-        if scene: refresh_media_lifecycle(scene.project_id, db)
-    return render
+    if not composition: raise HTTPException(404, "Composition not found")
+    shot = db.get(Shot, composition.shot_id)
+    scene = db.get(Scene, shot.scene_id) if shot else None
+    if scene is None: raise HTTPException(404, "Source shot not found")
+    return queue_composite_render(composition, scene.project_id, db)
 
 
 def execute_shot_motion_render_job(db: Session, job: DurableJob) -> dict:
@@ -4662,7 +4721,7 @@ def export_job_response(job: MasterExportJob, db: Session):
     segments = db.scalars(select(MasterSegment).where(MasterSegment.export_id == job.id).order_by(MasterSegment.position)).all()
     completed = sum(segment.status == "completed" for segment in segments)
     total = len(segments)
-    return {"id": job.id, "timeline_id": job.timeline_id, "profile": job.profile, "fps": job.fps, "width": job.width, "height": job.height, "status": job.status, "final_filename": job.final_filename, "final_uri": job.final_uri, "error": job.error, "watermarked": job.watermarked, "max_duration_seconds": job.max_duration_seconds, "completed_segments": completed, "total_segments": total, "progress_percent": round(completed / total * 100, 1) if total else 0, "segments": segments}
+    return {"id": job.id, "timeline_id": job.timeline_id, "durable_job_id": job.durable_job_id, "profile": job.profile, "fps": job.fps, "width": job.width, "height": job.height, "status": job.status, "final_filename": job.final_filename, "final_uri": job.final_uri, "error": job.error, "watermarked": job.watermarked, "max_duration_seconds": job.max_duration_seconds, "completed_segments": completed, "total_segments": total, "progress_percent": round(completed / total * 100, 1) if total else 0, "segments": segments}
 
 
 def master_dimensions(timeline: Timeline, profile: str):
@@ -4790,14 +4849,18 @@ def resume_master_export(export_id: int, db: Session = Depends(get_db)):
     job = db.get(MasterExportJob, export_id)
     if not job:
         raise HTTPException(404, "Master export not found")
+    invalidated = False
     for segment in db.scalars(select(MasterSegment).where(MasterSegment.export_id == export_id)).all():
         if segment.status == "completed":
             path = render_dir / segment.filename
             if not path.exists() or sha256_file(path) != segment.checksum_sha256:
                 segment.status, segment.error, segment.checksum_sha256 = "queued", "Output missing or checksum mismatch; queued for recovery", ""
+                invalidated = True
         elif segment.status in {"rendering", "leased", "failed"}:
             segment.status = "queued"
     job.status, job.error = "planned", ""
+    if invalidated:
+        job.final_filename, job.final_uri = "", ""
     db.commit()
     return export_job_response(job, db)
 
@@ -4813,7 +4876,7 @@ def dispatch_master_export(export_id: int, db: Session = Depends(get_db)):
     if not segments:
         raise HTTPException(409, "Export has no segments")
     if all(segment.status == "completed" for segment in segments):
-        assemble_master_export_job(job, db)
+        queue_master_assembly(job, db)
         return export_job_response(job, db)
     for segment in segments:
         if segment.status == "failed":
@@ -4824,42 +4887,96 @@ def dispatch_master_export(export_id: int, db: Session = Depends(get_db)):
     return export_job_response(job, db)
 
 
-def assemble_master_export_job(job: MasterExportJob, db: Session, strict: bool = True) -> None:
-    segments = db.scalars(select(MasterSegment).where(MasterSegment.export_id == job.id).order_by(MasterSegment.position)).all()
+def master_assembly_inputs(export: MasterExportJob, db: Session) -> tuple[list[MasterSegment], list[Path]]:
+    segments = db.scalars(select(MasterSegment).where(MasterSegment.export_id == export.id).order_by(MasterSegment.position)).all()
     if not segments or any(segment.status != "completed" for segment in segments):
-        message = "All segments must complete before assembly"
-        if strict:
-            raise HTTPException(409, message)
-        job.status, job.error = "needs-attention", message
-        db.commit()
-        return
+        raise RuntimeError("All segments must complete before assembly")
     files = [render_dir / segment.filename for segment in segments]
     if any(not path.exists() for path in files):
-        message = "One or more segment files are missing; verify and resume the export"
-        if strict:
-            raise HTTPException(409, message)
-        job.status, job.error = "needs-attention", message
-        db.commit()
-        return
-    work_dir = render_dir / f"assembly-work-{job.id}"
-    job.status, job.error = "assembling", ""
+        raise RuntimeError("One or more segment files are missing; verify and resume the export")
+    return segments, files
+
+
+def execute_master_assembly_job(db: Session, durable: DurableJob) -> dict:
+    export = db.get(MasterExportJob, int(durable.payload["master_export_id"]))
+    if export is None: raise RuntimeError("The queued master export no longer exists")
+    if export.status == "completed" and export.final_uri:
+        return {"master_export_id": export.id, "uri": export.final_uri, "profile": export.profile}
+    segments, files = master_assembly_inputs(export, db)
+    export.status, export.error = "assembling", ""
+    update_progress(db, durable, 12, "Verifying rendered segment integrity")
     db.commit()
+    for index, (segment, path) in enumerate(zip(segments, files), start=1):
+        db.refresh(durable)
+        if durable.cancellation_requested: raise RuntimeError("Master assembly cancelled")
+        if not segment.checksum_sha256 or sha256_file(path) != segment.checksum_sha256:
+            raise RuntimeError(f"Segment {segment.position} failed checksum verification")
+        update_progress(db, durable, 12 + round(38 * index / len(segments)), f"Verified segment {index} of {len(segments)}")
+        db.commit()
+
+    progress = 50
+    def heartbeat() -> bool:
+        nonlocal progress
+        db.refresh(durable)
+        if durable.cancellation_requested: return False
+        progress = min(90, progress + 4)
+        update_progress(db, durable, progress, "Stitching verified master segments")
+        db.commit()
+        return True
+
+    work_dir = render_dir / f"assembly-work-{export.id}"
     try:
-        job.final_filename = f"master-export-{job.id}-{job.profile}.mp4"
-        watermark_text = segments[0].manifest.get("watermark_text", settings.trial_watermark) if job.watermarked else ""
-        assemble_segments(files, render_dir / job.final_filename, work_dir, watermark_text, job.max_duration_seconds)
-        job.final_uri, job.status = f"/renders/{job.final_filename}", "completed"
-        timeline = db.get(Timeline, job.timeline_id)
-        if timeline:
-            timeline.status = "master-ready"
-    except Exception as exc:
-        job.status, job.error = "needs-attention", str(exc)
+        export.final_filename = f"master-export-{export.id}-{export.profile}.mp4"
+        watermark_text = segments[0].manifest.get("watermark_text", settings.trial_watermark) if export.watermarked else ""
+        assemble_segments(files, render_dir / export.final_filename, work_dir, watermark_text, export.max_duration_seconds, heartbeat)
+        export.final_uri, export.status = f"/renders/{export.final_filename}", "completed"
+        timeline = db.get(Timeline, export.timeline_id)
+        if timeline: timeline.status = "master-ready"
+        update_progress(db, durable, 94, "Registering the assembled master")
+        db.commit()
+        if timeline: refresh_media_lifecycle(timeline.project_id, db)
+        return {"master_export_id": export.id, "uri": export.final_uri, "profile": export.profile}
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
-    db.commit()
-    if job.status == "completed":
-        timeline = db.get(Timeline, job.timeline_id)
-        if timeline: refresh_media_lifecycle(timeline.project_id, db)
+
+
+def mark_master_assembly_job_failed(db: Session, durable: DurableJob, error: str) -> None:
+    export = db.get(MasterExportJob, int(durable.payload.get("master_export_id") or 0))
+    if export:
+        export.status = "assembly-queued" if durable.status == "queued" else "assembly-cancelled" if durable.status == "cancelled" else "needs-attention"
+        export.error = error[:4000]
+
+
+def queue_master_assembly(export: MasterExportJob, db: Session, strict: bool = True) -> MasterExportJob:
+    try:
+        master_assembly_inputs(export, db)
+    except RuntimeError as exc:
+        if strict: raise HTTPException(409, str(exc)) from exc
+        export.status, export.error = "needs-attention", str(exc); db.commit()
+        return export
+    timeline = db.get(Timeline, export.timeline_id)
+    durable = db.get(DurableJob, export.durable_job_id) if export.durable_job_id else None
+    if durable and durable.status == "completed":
+        if export.status == "completed": return export
+        export.durable_job_id = None
+        db.flush()
+        durable = None
+    if durable is None:
+        durable = enqueue_job(db, "render.master-assembly", {"master_export_id": export.id, "timeline_id": export.timeline_id}, project_id=timeline.project_id if timeline else None, queue="render", priority=95, max_attempts=3, idempotency_key=f"master-assembly:{export.id}:{uuid4().hex}")
+        export.durable_job_id = durable.id
+    elif durable.status in {"failed", "cancelled"}:
+        retry_job(db, durable)
+    export.status, export.error = "assembly-queued", ""
+    if settings.job_inline_fallback and durable.status == "queued":
+        try:
+            start_job(db, durable, "web:inline")
+            update_progress(db, durable, 5, "Preparing master assembly")
+            complete_job(db, durable, execute_master_assembly_job(db, durable))
+        except Exception as exc:
+            fail_job(db, durable, str(exc))
+            mark_master_assembly_job_failed(db, durable, str(exc))
+    db.commit(); db.refresh(export)
+    return export
 
 
 @app.post("/api/master-exports/{export_id}/assemble", response_model=MasterExportRead)
@@ -4867,7 +4984,7 @@ def assemble_master_export(export_id: int, db: Session = Depends(get_db)):
     job = db.get(MasterExportJob, export_id)
     if not job:
         raise HTTPException(404, "Master export not found")
-    assemble_master_export_job(job, db)
+    queue_master_assembly(job, db)
     return export_job_response(job, db)
 
 
@@ -4958,7 +5075,7 @@ async def upload_master_segment(worker_id: int, segment_id: int, request: Reques
     db.flush()
     if not db.scalar(select(MasterSegment).where(MasterSegment.export_id == segment.export_id, MasterSegment.status != "completed")):
         if distributed:
-            assemble_master_export_job(job, db, strict=False)
+            queue_master_assembly(job, db, strict=False)
         else:
             job.status = "segments-ready"
     db.commit(); db.refresh(segment)

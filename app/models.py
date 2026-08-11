@@ -742,6 +742,7 @@ class CompositeRender(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     composition_id: Mapped[int] = mapped_column(ForeignKey("shot_compositions.id"))
+    durable_job_id: Mapped[int | None] = mapped_column(ForeignKey("durable_jobs.id"), nullable=True, unique=True)
     status: Mapped[str] = mapped_column(String(32), default="queued")
     filename: Mapped[str] = mapped_column(String(255), default="")
     uri: Mapped[str] = mapped_column(Text, default="")
@@ -775,6 +776,7 @@ class MasterExportJob(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     timeline_id: Mapped[int] = mapped_column(ForeignKey("timelines.id"))
+    durable_job_id: Mapped[int | None] = mapped_column(ForeignKey("durable_jobs.id"), nullable=True, unique=True)
     profile: Mapped[str] = mapped_column(String(32), default="preview")
     fps: Mapped[int] = mapped_column(default=24)
     width: Mapped[int] = mapped_column(default=1280)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFont, ImageOps
 
@@ -67,9 +68,12 @@ def _blend(base: Image.Image, layer: Image.Image, mode: str) -> Image.Image:
     return Image.alpha_composite(base, layer)
 
 
-def compose_frame(layers: list[dict], width: int, height: int, color_grade: dict) -> Image.Image:
+def compose_frame(layers: list[dict], width: int, height: int, color_grade: dict, status_callback: Callable[[int, int], bool | None] | None = None) -> Image.Image:
     canvas = Image.new("RGBA", (width, height), "#11131a")
-    for layer in sorted((item for item in layers if item.get("visible", True)), key=lambda item: item["z_index"]):
+    visible_layers = sorted((item for item in layers if item.get("visible", True)), key=lambda item: item["z_index"])
+    for index, layer in enumerate(visible_layers):
+        if status_callback and status_callback(index, len(visible_layers)) is False:
+            raise RuntimeError("Composite render cancelled")
         rendered = _load_layer(layer.get("source"), width, height, layer)
         rotation = float(layer["transform"].get("rotation", 0))
         if rotation:
@@ -85,7 +89,9 @@ def compose_frame(layers: list[dict], width: int, height: int, color_grade: dict
     return result
 
 
-def render_composite(layers: list[dict], output: Path, width: int, height: int, color_grade: dict) -> None:
-    result = compose_frame(layers, width, height, color_grade)
+def render_composite(layers: list[dict], output: Path, width: int, height: int, color_grade: dict, status_callback: Callable[[int, int], bool | None] | None = None) -> None:
+    result = compose_frame(layers, width, height, color_grade, status_callback)
+    if status_callback and status_callback(len(layers), len(layers)) is False:
+        raise RuntimeError("Composite render cancelled")
     output.parent.mkdir(parents=True, exist_ok=True)
     result.save(output, "PNG", optimize=True)

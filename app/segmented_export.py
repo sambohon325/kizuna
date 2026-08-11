@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-import subprocess
 from pathlib import Path
+from typing import Callable
 
-from app.animatic import ffmpeg_executable
+from app.animatic import ffmpeg_executable, run_ffmpeg
 
 
 def segment_clip_ranges(clips: list[dict], target_size: int) -> list[tuple[int, int]]:
@@ -41,7 +41,7 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def assemble_segments(segment_files: list[Path], output: Path, work_dir: Path, watermark_text: str = "", max_duration_seconds: float | None = None) -> None:
+def assemble_segments(segment_files: list[Path], output: Path, work_dir: Path, watermark_text: str = "", max_duration_seconds: float | None = None, status_callback: Callable[[], bool | None] | None = None) -> None:
     if not segment_files:
         raise ValueError("No completed segments to assemble")
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -57,6 +57,4 @@ def assemble_segments(segment_files: list[Path], output: Path, work_dir: Path, w
     if max_duration_seconds:
         command += ["-t", f"{max_duration_seconds:.3f}"]
     command += ["-movflags", "+faststart", str(output)]
-    completed = subprocess.run(command, capture_output=True, text=True, timeout=300)
-    if completed.returncode:
-        raise RuntimeError(completed.stderr[-3000:] or "Segment assembly failed")
+    run_ffmpeg(command, 300, "Segment assembly failed", status_callback)

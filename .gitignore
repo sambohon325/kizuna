@@ -12,3 +12,4 @@ storage/
 scanner-corpus/
 node_modules/
 work/
+tmp/

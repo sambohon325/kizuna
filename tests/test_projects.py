@@ -8,6 +8,17 @@ def test_anime_craft_compass_guides_without_becoming_a_compliance_gate(client):
     catalog = client.get("/api/anime-craft/catalog").json()
     assert catalog["stance"]["title"] == "Tradition is a living practice, not a purity test"
     assert {"kishotenketsu", "jo-ha-kyu", "ma", "sound-ma"}.issubset({item["id"] for item in catalog["traditions"]})
+    glossary = {item["id"]: item for item in catalog["glossary"]}
+    assert glossary["genga"]["term"] == "原画" and glossary["genga"]["reading"] == "genga"
+    assert glossary["douga"]["reading"] == "dōga" and "video" in glossary["douga"]["caution"]
+    assert glossary["kishotenketsu"]["term"] == "起承転結"
+    assert len(catalog["reading_paths"]) >= 3
+    assert all(item["source_ids"] for item in catalog["glossary"])
+    selective = next(item for item in catalog["traditions"] if item["id"] == "selective-animation")
+    assert selective["japanese"] == "" and "teaching label" in selective["reading"]
+    from app.anime_craft import craft_prompt_context
+    prompt_context = craft_prompt_context({"intent": "Make waiting emotionally legible.", "tradition_ids": ["ma"], "anchors": ["Silence carries information"]}, "cross-craft")
+    assert "間 (ma)" in prompt_context and "It does not simply mean emptiness" in prompt_context
 
     project = client.post("/api/projects", json={"title": "Quiet Circuit", "logline": "A repair apprentice learns to hear a city's failing public memory."}).json()
     project_id = project["id"]
@@ -18,6 +29,9 @@ def test_anime_craft_compass_guides_without_becoming_a_compliance_gate(client):
     saved = client.put(f"/api/projects/{project_id}/craft-compass", json={"intent": "Find restoration in careful attention to a shared place.", "cultural_context": "Research everyday maintenance practices and avoid using sacred imagery as atmosphere.", "primary_genre": "iyashikei", "genre_lenses": ["iyashikei"], "tradition_ids": ["ma", "sound-ma", "environment-as-agent"], "anchors": ["Silence carries story information"], "flexible": ["Beat count"]})
     assert saved.status_code == 200
     assert saved.json()["compass"]["tradition_ids"] == ["ma", "sound-ma", "environment-as-agent"]
+    assert saved.json()["catalog"]["state"] == "current"
+    assert saved.json()["catalog"]["pinned_version"] == catalog["version"]
+    assert saved.json()["catalog"]["snapshot_counts"]["glossary"] >= 2
 
     style = client.get("/api/projects").json()[0]["style_profile"]
     style["direction"]["editing"] = "rapid impact"
@@ -31,6 +45,50 @@ def test_anime_craft_compass_guides_without_becoming_a_compliance_gate(client):
     assert resolved["level"] == "intentional"
     assert decision["blocking"] is False
     assert client.get(f"/api/projects/{project_id}/compliance").status_code == 200
+
+
+def test_craft_catalog_updates_are_deliberate_snapshot_backed_and_audited(client):
+    from app.anime_craft import craft_prompt_context
+    from app.database import SessionLocal
+    from app.models import StyleProfile
+
+    project_id = client.post("/api/projects", json={"title": "Pinned Tradition"}).json()["id"]
+    payload = {"intent": "Make waiting reveal how a public place remembers labor.", "cultural_context": "Research maintenance work.", "primary_genre": "iyashikei", "genre_lenses": ["iyashikei"], "tradition_ids": ["ma", "sound-ma"], "anchors": ["Silence carries information"], "flexible": ["Beat count"]}
+    current = client.put(f"/api/projects/{project_id}/craft-compass", json=payload).json()
+    current_version = current["catalog"]["current_version"]
+
+    with SessionLocal() as db:
+        profile = db.query(StyleProfile).filter(StyleProfile.project_id == project_id).one()
+        legacy = dict(profile.craft)
+        for key in ("catalog_version", "catalog_adopted_at", "catalog_snapshot"):
+            legacy.pop(key, None)
+        profile.craft = legacy
+        db.commit()
+
+    available = client.get(f"/api/projects/{project_id}/craft-compass").json()
+    assert available["catalog"]["state"] == "update_available"
+    assert available["catalog"]["pinned_version"] == "2026.08"
+    assert available["catalog"]["current_version"] == current_version
+
+    legacy_saved = client.put(f"/api/projects/{project_id}/craft-compass", json=payload).json()
+    assert legacy_saved["catalog"]["pinned_version"] == "2026.08"
+    assert legacy_saved["catalog"]["snapshot_counts"]["glossary"] == 0
+    legacy_prompt = craft_prompt_context(legacy_saved["compass"], "cross-craft")
+    assert "Pinned craft catalog: 2026.08" in legacy_prompt and "間 (ma)" not in legacy_prompt
+
+    assert client.post(f"/api/projects/{project_id}/craft-catalog/migrate", json={"target_version": "2099.01", "rationale": "Use a catalog that is not available."}).status_code == 422
+    migrated = client.post(f"/api/projects/{project_id}/craft-catalog/migrate", json={"target_version": current_version, "rationale": "The bilingual terminology and provenance improve this production's shared vocabulary."})
+    assert migrated.status_code == 200
+    result = migrated.json()
+    assert result["catalog"]["state"] == "current"
+    assert result["catalog"]["snapshot_counts"]["glossary"] >= 2
+    assert "間 (ma)" in craft_prompt_context(result["compass"], "cross-craft")
+    assert client.post(f"/api/projects/{project_id}/craft-catalog/migrate", json={"target_version": current_version, "rationale": "Trying to adopt the same catalog twice."}).status_code == 409
+    events = client.get(f"/api/projects/{project_id}/audit-ledger").json()["events"]
+    migrated_event = next(event for event in events if event["action"] == "catalog_migrated")
+    assert migrated_event["details"]["from_version"] == "2026.08"
+    assert migrated_event["details"]["to_version"] == current_version
+    assert len(migrated_event["details"]["framework_hash"]) == 64
 
 
 def test_character_craft_review_cites_saved_story_relationship_and_design_evidence(client):

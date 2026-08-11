@@ -41,6 +41,11 @@ class CraftDecisionInput(BaseModel):
     rationale: str = Field(min_length=10, max_length=2000)
 
 
+class CraftCatalogMigrationInput(BaseModel):
+    target_version: str = Field(min_length=3, max_length=40)
+    rationale: str = Field(min_length=10, max_length=2000)
+
+
 class ProductionSourceNoteInput(BaseModel):
     stage: str = Field(pattern="^(story|characters|worlds|shots|edit|sound)$")
     source_type: str = Field(pattern="^(research|observation|consultation|creative_reference|invention)$")

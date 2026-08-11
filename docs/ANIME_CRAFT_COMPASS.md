@@ -27,6 +27,10 @@ The guides are useful orientation material, but several formulations are too abs
 
 The catalog also references the Association of Japanese Animations' archival work through Anime TAIZEN, Japanese public cultural material about inheritance and continued creation, and National Theatre material on jo-ha-kyu. Future catalog releases should add Japanese-language scholarship, practitioner interviews, production texts, and paid cultural review.
 
+Style Lab now includes a searchable bilingual craft library. Recognized Japanese production, literary, and aesthetic terms show their Japanese form, romanized reading, plain-language meaning, practical production use, caution, and catalog sources. English teaching labels that do not have an honest one-to-one Japanese equivalent are explicitly identified instead of receiving invented translations. Guided paths introduce foundations, story rhythm, and the studio pipeline without hiding the deeper catalog from professional users.
+
+Every saved Craft Compass pins a catalog version and a compact snapshot of the production's selected traditions, genre lenses, related glossary entries, and sources. A later catalog release never silently changes the production's AI context. Style Lab shows the pinned and current versions, explains the reviewed changes, and requires a written rationale before adoption. Migration preserves creative intent and selections, refreshes their framework snapshot, and records hashed rationale and framework evidence in the audit ledger.
+
 ## Stored production intent
 
 The `style_profiles.craft` document stores:
@@ -68,6 +72,6 @@ This engine should grow through reviewed craft rules, not opaque similarity scor
 ## Next research and product work
 
 1. Commission Japanese animation historians, working animators, writers, sound professionals, and cultural advisors to review the catalog.
-2. Add bilingual terminology, pronunciation, provenance, contested interpretations, and reading lists.
-3. Build learning paths for beginners and compact professional controls for experienced crews.
-4. Version the catalog so an existing production can keep or deliberately migrate its creative framework.
+2. Add reviewed pronunciation audio, contested interpretations, and Japanese-language reading recommendations.
+3. Expand beginner learning paths while preserving compact professional controls.
+4. Add side-by-side framework diffs and an administrator rollback path before the second catalog release.

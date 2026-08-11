@@ -16,8 +16,45 @@ SOURCES = [
 ]
 
 
+GLOSSARY = [
+    {"id": "anime", "term": "アニメ", "reading": "anime", "english": "animation / anime", "department": "history", "meaning": "In Japanese, a general abbreviation for animation. Outside Japan, anime commonly names animation associated with Japanese production and its many evolving lineages.", "production_use": "Use the term for a broad medium and production ecology, not a single drawing style or genre.", "caution": "Do not imply that every anime shares one visual language, audience, structure, or cultural position.", "source_ids": ["provided-history", "aja-archive"]},
+    {"id": "e-conte", "term": "絵コンテ", "reading": "e-konte", "english": "storyboard / continuity board", "department": "shots", "meaning": "A production blueprint that communicates shot order, framing, action, dialogue, timing, and audiovisual intent.", "production_use": "Connect story beats to camera-ready shots and make timing decisions before expensive animation begins.", "caution": "It is more than an illustration gallery; timing and continuity are part of the document.", "source_ids": ["provided-visual"]},
+    {"id": "layout", "term": "レイアウト", "reading": "reiauto", "english": "layout", "department": "visual", "meaning": "The shot-level plan for composition, perspective, character placement, camera, and the relationship between animation and background.", "production_use": "Use layouts to lock staging and spatial clarity before separating the shot into production layers.", "caution": "The English loanword has a specific animation-production use and should not be reduced to page arrangement.", "source_ids": ["provided-visual"]},
+    {"id": "genga", "term": "原画", "reading": "genga", "english": "key animation", "department": "motion", "meaning": "Key drawings that establish major poses, movement, and acting decisions for a cut.", "production_use": "Concentrate the clearest performance and motion decisions in the drawings that define the action.", "caution": "Production responsibilities vary; do not use the term as a generic label for any polished frame.", "source_ids": ["provided-visual"]},
+    {"id": "douga", "term": "動画", "reading": "dōga", "english": "in-between / clean-up animation", "department": "motion", "meaning": "In the animation pipeline, drawings that clean and connect key animation according to timing and movement instructions.", "production_use": "Plan how key poses become consistent, readable motion across the cut.", "caution": "In everyday Japanese the word can also mean video; production context changes its meaning.", "source_ids": ["provided-visual"]},
+    {"id": "sakuga", "term": "作画", "reading": "sakuga", "english": "drawing / animation work", "department": "motion", "meaning": "A broad production term for the drawing and animation work; international fandom also uses it for especially notable passages of animation.", "production_use": "Discuss the specific acting, timing, draftsmanship, effects, or motion choices that make a passage effective.", "caution": "Do not treat sakuga as a synonym for high frame count, expense, or spectacle alone.", "source_ids": ["provided-visual"]},
+    {"id": "satsuei", "term": "撮影", "reading": "satsuei", "english": "compositing / photography", "department": "finish", "meaning": "The production stage that combines animation, backgrounds, effects, camera treatment, and color into the finished image.", "production_use": "Use it to reason about depth, atmosphere, focus, motion treatment, and the unity of final layers.", "caution": "Although the word can mean photography, in a digital anime pipeline it commonly includes compositing work.", "source_ids": ["provided-visual"]},
+    {"id": "bijutsu-kantoku", "term": "美術監督", "reading": "bijutsu kantoku", "english": "art director", "department": "worlds", "meaning": "A role responsible for the visual direction and consistency of environments and background art.", "production_use": "Translate story and geography into a repeatable world language for locations, lighting, color, and atmosphere.", "caution": "Role boundaries and credits differ by production; never use the title to justify imitating an individual professional's body of work.", "source_ids": ["provided-visual"]},
+    {"id": "iro-shitei", "term": "色指定", "reading": "iro shitei", "english": "color designation", "department": "visual", "meaning": "The specification of approved colors for characters and elements so they remain consistent across cuts and conditions.", "production_use": "Build reusable palettes and controlled variations for lighting, emotion, time, and continuity.", "caution": "Color scripts and final compositing can alter appearance; a swatch alone is not the entire color system.", "source_ids": ["provided-visual"]},
+    {"id": "seiyuu", "term": "声優", "reading": "seiyū", "english": "voice performer", "department": "sound", "meaning": "A professional voice performer working across animation and other media.", "production_use": "Direct intention, breath, timing, relationship, and subtext rather than treating voice as interchangeable audio.", "caution": "Voice identity, consent, contracts, and disclosure remain rights matters, including for synthetic voices.", "source_ids": ["provided-audio"]},
+    {"id": "gekiban", "term": "劇伴", "reading": "gekiban", "english": "dramatic underscore", "department": "sound", "meaning": "Music composed or selected to accompany dramatic action and shape the audience's reading of a scene.", "production_use": "Design score around perspective, structure, transformation, and meaningful absence.", "caution": "Underscore should serve the production's dramatic system, not reproduce the musical identity of a known work or composer.", "source_ids": ["provided-audio"]},
+    {"id": "ma", "term": "間", "reading": "ma", "english": "shaped interval / relational space", "department": "cross-craft", "meaning": "Meaning created through the relationship between events, sounds, bodies, or spaces—including pause, silence, and negative space.", "production_use": "Ask what attention, anticipation, tenderness, discomfort, or clarity becomes possible because an interval is shaped.", "caution": "It does not simply mean emptiness, slowness, or inserting a static shot.", "source_ids": ["provided-writing", "provided-visual", "provided-audio"]},
+    {"id": "jo-ha-kyu", "term": "序破急", "reading": "jo-ha-kyū", "english": "opening, break/development, rapid close", "department": "edit", "meaning": "A rhythmic concept associated with court music and developed across Japanese performing arts: introduction, development or breaking-open, and acceleration toward a close.", "production_use": "Use it to inspect how energy gathers and releases within a gesture, scene, episode, or larger work.", "caution": "It is a flexible rhythmic lens, not a compulsory three-act screenplay formula.", "source_ids": ["provided-writing", "noh-johakyu"]},
+    {"id": "kishotenketsu", "term": "起承転結", "reading": "kishōtenketsu", "english": "introduction, development, turn, integration", "department": "story", "meaning": "A four-part compositional pattern found in multiple East Asian traditions, often emphasizing development and a recontextualizing turn.", "production_use": "Map what is established, deepened, reframed, and newly understood without requiring confrontation to be the sole engine.", "caution": "It is neither universal to anime nor exclusively Japanese, and it need not produce exactly four scene cards.", "source_ids": ["provided-writing"]},
+    {"id": "mono-no-aware", "term": "もののあはれ", "reading": "mono no aware", "english": "sensitivity to transience", "department": "story", "meaning": "An aesthetic and literary idea concerning an attentive emotional response to impermanence and the inseparability of beauty and loss.", "production_use": "Let ordinary details change meaning as time passes, relationships shift, or something cannot be preserved.", "caution": "Do not reduce it to sadness, cherry-blossom imagery, or a vague claim about a timeless national character.", "source_ids": ["provided-history"]},
+    {"id": "cel-ga", "term": "セル画", "reading": "seru-ga", "english": "animation cel", "department": "visual", "meaning": "A painted transparent sheet used in photographed cel-animation workflows; the term also names surviving physical production artwork.", "production_use": "Study economical color grouping, repeatable shapes, and designed shadow boundaries without faking material artifacts.", "caution": "Digital anime does not become more authentic by superficially adding dust, weave, or cel damage.", "source_ids": ["provided-history", "provided-visual", "aja-archive"]},
+]
+
+
+READING_PATHS = [
+    {"id": "foundations", "name": "Foundations without shortcuts", "level": "beginner", "purpose": "Learn the medium, production vocabulary, and the difference between studying craft and copying surface style.", "term_ids": ["anime", "e-conte", "layout", "genga", "douga", "satsuei"], "tradition_ids": ["selective-animation", "graphic-cel-clarity"]},
+    {"id": "story-rhythm", "name": "Story, rhythm, and attention", "level": "all levels", "purpose": "Explore several ways anime can shape meaning through structure, interval, impermanence, performance, and place.", "term_ids": ["kishotenketsu", "jo-ha-kyu", "ma", "mono-no-aware"], "tradition_ids": ["kishotenketsu", "jo-ha-kyu", "ma", "mono-no-aware", "ensemble-performance", "environment-as-agent"]},
+    {"id": "studio-pipeline", "name": "From board to finished cut", "level": "production", "purpose": "Follow how a visual idea travels through storyboard, layout, drawing, color, art direction, voice, score, and compositing.", "term_ids": ["e-conte", "layout", "genga", "douga", "iro-shitei", "bijutsu-kantoku", "seiyuu", "gekiban", "satsuei"], "tradition_ids": ["selective-animation", "graphic-cel-clarity", "sound-ma", "leitmotif-transformation"]},
+]
+
+
 CRAFT_CATALOG: dict[str, Any] = {
-    "version": "2026.08",
+    "version": "2026.08.1",
+    "release": {
+        "published": "2026-08-11",
+        "title": "Bilingual craft foundations",
+        "summary": "Adds reviewed Japanese terminology, transparent Kizuna teaching labels, provenance, and guided learning paths without changing a production automatically.",
+        "changes": [
+            "Bilingual production, story, visual, motion, and audio terminology",
+            "Per-entry production use, caution, and source provenance",
+            "Beginner, story-rhythm, and studio-pipeline learning paths",
+        ],
+    },
     "stance": {
         "title": "Tradition is a living practice, not a purity test",
         "summary": "Kizuna teaches historical context and transferable craft without declaring one visual language, genre, or production method to be the only authentic anime.",
@@ -56,7 +93,28 @@ CRAFT_CATALOG: dict[str, Any] = {
         {"id": "cyberpunk-social", "name": "Cyberpunk social lens", "promise": "Technology, bodies, labor, architecture, and power reshape one another.", "watch": "Neon and grime without a social argument.", "suggested_traditions": ["environment-as-agent", "diegetic-bridge", "graphic-cel-clarity"]},
     ],
     "sources": SOURCES,
+    "glossary": GLOSSARY,
+    "reading_paths": READING_PATHS,
+    "language_notice": "Japanese terms are shown where a recognized production, literary, or aesthetic term exists. English teaching labels are not given invented Japanese equivalents.",
 }
+
+
+TRADITION_METADATA = {
+    "kishotenketsu": {"japanese": "起承転結", "reading": "kishōtenketsu", "term_ids": ["kishotenketsu"], "source_ids": ["provided-writing"]},
+    "jo-ha-kyu": {"japanese": "序破急", "reading": "jo-ha-kyū", "term_ids": ["jo-ha-kyu"], "source_ids": ["provided-writing", "noh-johakyu"]},
+    "ma": {"japanese": "間", "reading": "ma", "term_ids": ["ma"], "source_ids": ["provided-writing", "provided-visual", "provided-audio"]},
+    "mono-no-aware": {"japanese": "もののあはれ", "reading": "mono no aware", "term_ids": ["mono-no-aware"], "source_ids": ["provided-history"]},
+    "selective-animation": {"japanese": "", "reading": "selective animation (Kizuna teaching label)", "term_ids": ["genga", "douga", "sakuga"], "source_ids": ["provided-history", "provided-visual", "aja-archive"]},
+    "graphic-cel-clarity": {"japanese": "", "reading": "graphic cel clarity (Kizuna teaching label)", "term_ids": ["cel-ga", "iro-shitei"], "source_ids": ["provided-visual", "aja-archive"]},
+    "environment-as-agent": {"japanese": "", "reading": "environment as agent (Kizuna teaching label)", "term_ids": ["bijutsu-kantoku", "layout"], "source_ids": ["provided-writing", "provided-visual"]},
+    "ensemble-performance": {"japanese": "", "reading": "ensemble performance (Kizuna teaching label)", "term_ids": ["seiyuu"], "source_ids": ["provided-writing", "provided-audio"]},
+    "leitmotif-transformation": {"japanese": "", "reading": "leitmotif transformation", "term_ids": ["gekiban"], "source_ids": ["provided-audio"]},
+    "sound-ma": {"japanese": "間", "reading": "ma applied to sound", "term_ids": ["ma", "gekiban"], "source_ids": ["provided-audio"]},
+    "diegetic-bridge": {"japanese": "", "reading": "diegetic score bridge", "term_ids": ["gekiban"], "source_ids": ["provided-audio"]},
+}
+
+for tradition in CRAFT_CATALOG["traditions"]:
+    tradition.update(TRADITION_METADATA.get(tradition["id"], {"japanese": "", "reading": tradition["name"], "term_ids": [], "source_ids": []}))
 
 
 DEFAULT_COMPASS = {
@@ -68,13 +126,78 @@ DEFAULT_COMPASS = {
     "anchors": [],
     "flexible": [],
     "departures": [],
+    "catalog_version": "",
+    "catalog_adopted_at": "",
+    "catalog_snapshot": {},
 }
+
+LEGACY_CATALOG_VERSION = "2026.08"
+
+
+def compass_has_framework(value: dict[str, Any]) -> bool:
+    return bool(value.get("intent") or value.get("tradition_ids") or value.get("genre_lenses") or value.get("anchors"))
+
+
+def catalog_snapshot(tradition_ids: list[str], genre_lenses: list[str], primary_genre: str = "", version: str | None = None) -> dict[str, Any]:
+    snapshot_version = version or CRAFT_CATALOG["version"]
+    tradition_map = {item["id"]: item for item in CRAFT_CATALOG["traditions"]}
+    genre_map = {item["id"]: item for item in CRAFT_CATALOG["genre_lenses"]}
+    selected_traditions = [tradition_map[item] for item in tradition_ids if item in tradition_map]
+    selected_genre_ids = list(dict.fromkeys([primary_genre, *genre_lenses]))
+    selected_genres = [genre_map[item] for item in selected_genre_ids if item in genre_map]
+    if snapshot_version == LEGACY_CATALOG_VERSION:
+        selected_traditions = [{key: item[key] for key in ("id", "name", "department", "context", "questions", "caution")} | {"japanese": "", "reading": item["name"], "term_ids": [], "source_ids": []} for item in selected_traditions]
+    term_ids = list(dict.fromkeys(term_id for item in selected_traditions for term_id in item.get("term_ids", [])))
+    glossary_map = {item["id"]: item for item in CRAFT_CATALOG["glossary"]}
+    selected_terms = [glossary_map[item] for item in term_ids if item in glossary_map]
+    source_ids = list(dict.fromkeys(source_id for item in [*selected_traditions, *selected_terms] for source_id in item.get("source_ids", [])))
+    source_map = {item["id"]: item for item in CRAFT_CATALOG["sources"]}
+    return {
+        "version": snapshot_version,
+        "review_rules_version": snapshot_version,
+        "traditions": selected_traditions,
+        "genre_lenses": selected_genres,
+        "glossary": selected_terms,
+        "sources": [source_map[item] for item in source_ids if item in source_map],
+    }
+
+
+def pinned_catalog_status(value: dict[str, Any] | None) -> dict[str, Any]:
+    compass = normalize_compass(value)
+    explicit_version = compass.get("catalog_version", "")
+    pinned_version = explicit_version or (LEGACY_CATALOG_VERSION if compass_has_framework(compass) else "")
+    update_available = bool(pinned_version and pinned_version != CRAFT_CATALOG["version"])
+    if not pinned_version:
+        state = "not_adopted"
+        notice = "Save the Craft Compass to adopt the current reviewed catalog."
+    elif update_available:
+        state = "update_available"
+        notice = f"This production remains on catalog {pinned_version}. Review the changes before adopting {CRAFT_CATALOG['version']}."
+    else:
+        state = "current"
+        notice = f"This production is pinned to catalog {pinned_version}."
+    return {
+        "state": state,
+        "pinned_version": pinned_version or None,
+        "current_version": CRAFT_CATALOG["version"],
+        "adopted_at": compass.get("catalog_adopted_at") or None,
+        "update_available": update_available,
+        "notice": notice,
+        "release": CRAFT_CATALOG["release"],
+        "snapshot_counts": {
+            "traditions": len((compass.get("catalog_snapshot") or {}).get("traditions", [])),
+            "genre_lenses": len((compass.get("catalog_snapshot") or {}).get("genre_lenses", [])),
+            "glossary": len((compass.get("catalog_snapshot") or {}).get("glossary", [])),
+            "sources": len((compass.get("catalog_snapshot") or {}).get("sources", [])),
+        },
+    }
 
 
 def normalize_compass(value: dict[str, Any] | None) -> dict[str, Any]:
     result = {**DEFAULT_COMPASS, **(value or {})}
     for key in ("genre_lenses", "tradition_ids", "anchors", "flexible", "departures"):
         result[key] = result.get(key) if isinstance(result.get(key), list) else []
+    result["catalog_snapshot"] = result.get("catalog_snapshot") if isinstance(result.get("catalog_snapshot"), dict) else {}
     return result
 
 
@@ -82,13 +205,20 @@ def craft_prompt_context(value: dict[str, Any] | None, department: str) -> str:
     compass = normalize_compass(value)
     if not compass["intent"] and not compass["tradition_ids"]:
         return ""
-    tradition_map = {item["id"]: item for item in CRAFT_CATALOG["traditions"]}
+    snapshot = compass.get("catalog_snapshot") or {}
+    framework_traditions = snapshot.get("traditions") or CRAFT_CATALOG["traditions"]
+    framework_glossary = snapshot.get("glossary") or CRAFT_CATALOG["glossary"]
+    tradition_map = {item["id"]: item for item in framework_traditions}
     selected = [tradition_map[item] for item in compass["tradition_ids"] if item in tradition_map and tradition_map[item]["department"] in {department, "cross-craft"}]
     if not selected:
         selected = [tradition_map[item] for item in compass["tradition_ids"] if item in tradition_map]
-    lenses = "; ".join(f"{item['name']}: {item['context']}" for item in selected[:4])
+    lenses = "; ".join(f"{item.get('japanese') + ' (' + item.get('reading', item['name']) + ')' if item.get('japanese') else item.get('reading', item['name'])}: {item['context']}" for item in selected[:4])
+    term_ids = list(dict.fromkeys(term_id for item in selected for term_id in item.get("term_ids", [])))
+    term_map = {item["id"]: item for item in framework_glossary}
+    vocabulary = "; ".join(f"{term_map[term_id]['term']} ({term_map[term_id]['reading']}): {term_map[term_id]['production_use']} Caution: {term_map[term_id]['caution']}" for term_id in term_ids[:5] if term_id in term_map)
     anchors = "; ".join(compass["anchors"][:6])
-    return f"Creative intent: {compass['intent'] or 'still being discovered'}. Craft lenses: {lenses or 'none selected for this department'}. Anchors: {anchors or 'none declared'}. Use these as questions and transferable practices, not as permission to imitate a title, studio, or artist."
+    pinned_version = compass.get("catalog_version") or (LEGACY_CATALOG_VERSION if compass_has_framework(compass) else CRAFT_CATALOG["version"])
+    return f"Pinned craft catalog: {pinned_version}. Creative intent: {compass['intent'] or 'still being discovered'}. Craft lenses: {lenses or 'none selected for this department'}. Relevant vocabulary: {vocabulary or 'none selected for this department'}. Anchors: {anchors or 'none declared'}. Use these as questions and transferable practices, not as permission to imitate a title, studio, or artist. Do not invent Japanese equivalents for Kizuna teaching labels."
 
 
 def _finding(code: str, stage: str, title: str, why: str, continue_prompt: str, realign_prompt: str, level: str = "notice", evidence: list[str] | None = None) -> dict[str, Any]:
@@ -199,4 +329,4 @@ def review_project_craft(project: Any, stage: str = "all") -> dict[str, Any]:
     relevant = findings if stage == "all" else [item for item in findings if item["stage"] in {stage, "compass"}]
     unresolved = [item for item in relevant if not item["resolved"]]
     digest = hashlib.sha256(json.dumps({"compass": compass, "findings": relevant}, sort_keys=True, default=str).encode()).hexdigest()
-    return {"status": "needs_intent" if unresolved else "aligned_or_intentional", "advisory": True, "blocking": False, "summary": f"{len(unresolved)} open craft conversation{'s' if len(unresolved) != 1 else ''}", "findings": relevant, "compass": compass, "review_hash": digest, "distinction": "Craft guidance is advisory. Originality, rights, consent, and release compliance remain separate enforceable gates."}
+    return {"status": "needs_intent" if unresolved else "aligned_or_intentional", "advisory": True, "blocking": False, "summary": f"{len(unresolved)} open craft conversation{'s' if len(unresolved) != 1 else ''}", "findings": relevant, "compass": compass, "catalog": pinned_catalog_status(compass), "review_hash": digest, "distinction": "Craft guidance is advisory. Originality, rights, consent, and release compliance remain separate enforceable gates."}

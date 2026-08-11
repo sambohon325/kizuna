@@ -38,8 +38,8 @@ from app.usage_monitor import record_ai_usage, usage_savings_suggestions
 from app.storage import LocalProductionStorage, S3ProductionStorage
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
-from app.anime_craft import CRAFT_CATALOG, normalize_compass, review_project_craft
-from app.schemas import CraftCompassInput, CraftDecisionInput, CraftReviewRequest, ProductionSourceNoteInput, ProductionSourceNoteRead
+from app.anime_craft import CRAFT_CATALOG, LEGACY_CATALOG_VERSION, catalog_snapshot, compass_has_framework, normalize_compass, review_project_craft
+from app.schemas import CraftCatalogMigrationInput, CraftCompassInput, CraftDecisionInput, CraftReviewRequest, ProductionSourceNoteInput, ProductionSourceNoteRead
 from app.story_development import develop_story
 from app.world_development import compile_background_brief
 from app.voice import VoiceProviderError, generate_voice
@@ -838,8 +838,41 @@ def update_craft_compass(project_id: int, payload: CraftCompassInput, db: Sessio
     if unknown_traditions or unknown_genres:
         raise HTTPException(422, {"unknown_traditions": sorted(unknown_traditions), "unknown_genres": sorted(unknown_genres)})
     previous = normalize_compass(profile.craft)
-    profile.craft = {**payload.model_dump(), "departures": previous["departures"]}
-    append_audit_event(db, project_id, "craft", "compass_updated", subject_type="craft_compass", subject_key=str(project_id), details={"traditions": profile.craft["tradition_ids"], "genre_lenses": profile.craft["genre_lenses"]})
+    if previous.get("catalog_version"):
+        pinned_version = previous["catalog_version"]
+        adopted_at = previous.get("catalog_adopted_at", "")
+    elif compass_has_framework(previous):
+        pinned_version = LEGACY_CATALOG_VERSION
+        adopted_at = ""
+    else:
+        pinned_version = CRAFT_CATALOG["version"]
+        adopted_at = datetime.now(timezone.utc).isoformat()
+    framework = catalog_snapshot(payload.tradition_ids, payload.genre_lenses, payload.primary_genre, pinned_version)
+    profile.craft = {**payload.model_dump(), "departures": previous["departures"], "catalog_version": pinned_version, "catalog_adopted_at": adopted_at, "catalog_snapshot": framework}
+    append_audit_event(db, project_id, "craft", "compass_updated", subject_type="craft_compass", subject_key=str(project_id), details={"traditions": profile.craft["tradition_ids"], "genre_lenses": profile.craft["genre_lenses"], "catalog_version": pinned_version})
+    db.commit()
+    return review_project_craft(craft_project(project_id, db))
+
+
+@app.post("/api/projects/{project_id}/craft-catalog/migrate")
+def migrate_craft_catalog(project_id: int, payload: CraftCatalogMigrationInput, db: Session = Depends(get_db)):
+    project = craft_project(project_id, db)
+    profile = project.style_profile
+    if profile is None or not compass_has_framework(normalize_compass(profile.craft)):
+        raise HTTPException(409, "Set up the Craft Compass before migrating its catalog")
+    if payload.target_version != CRAFT_CATALOG["version"]:
+        raise HTTPException(422, {"available_target": CRAFT_CATALOG["version"]})
+    compass = normalize_compass(profile.craft)
+    from_version = compass.get("catalog_version") or LEGACY_CATALOG_VERSION
+    if from_version == payload.target_version:
+        raise HTTPException(409, "This production already uses the current craft catalog")
+    framework = catalog_snapshot(compass["tradition_ids"], compass["genre_lenses"], compass["primary_genre"])
+    compass["catalog_version"] = payload.target_version
+    compass["catalog_adopted_at"] = datetime.now(timezone.utc).isoformat()
+    compass["catalog_snapshot"] = framework
+    profile.craft = compass
+    framework_hash = hashlib.sha256(json.dumps(framework, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    append_audit_event(db, project_id, "craft", "catalog_migrated", subject_type="craft_catalog", subject_key=payload.target_version, details={"from_version": from_version, "to_version": payload.target_version, "rationale_hash": hashlib.sha256(payload.rationale.strip().encode()).hexdigest(), "framework_hash": framework_hash})
     db.commit()
     return review_project_craft(craft_project(project_id, db))
 

@@ -123,7 +123,7 @@ const productionStatusCache=new Map(),productionStatusRequests=new Map();
 
 async function refreshProductionStatus(projectId,force=false) {
   if(!projectId)return;if(force)productionStatusCache.delete(projectId);if(productionStatusRequests.has(projectId))return productionStatusRequests.get(projectId);
-  const request=api(`/api/projects/${projectId}/production-status`).then(status=>{productionStatusCache.set(projectId,status);productionStatusRequests.delete(projectId);if(currentFlowProject()?.id===projectId)renderProductionFlow();return status;}).catch(()=>{productionStatusRequests.delete(projectId);});productionStatusRequests.set(projectId,request);return request;
+  const request=api(`/api/projects/${projectId}/production-status`).then(status=>{productionStatusCache.set(projectId,status);productionStatusRequests.delete(projectId);if(currentFlowProject()?.id===projectId){renderProductionFlow();window.renderGuidedWorkspace?.();}return status;}).catch(()=>{productionStatusRequests.delete(projectId);});productionStatusRequests.set(projectId,request);return request;
 }
 
 function renderProductionFlow() {

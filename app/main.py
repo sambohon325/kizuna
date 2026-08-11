@@ -3,6 +3,8 @@ import json
 import os
 import secrets
 import shutil
+import logging
+import time
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -37,6 +39,7 @@ from app.ai_router import AI_TASKS, AIRouterError, GeneratedText, generate_text,
 from app.usage_monitor import record_ai_usage, usage_savings_suggestions
 from app.storage import LocalProductionStorage, S3ProductionStorage
 from app.operations import operational_readiness, verify_local_backup
+from app.observability import log_event, record_service_heartbeat, service_instance_id, service_logger
 from app.shot_development import compile_storyboard_prompt
 from app.style_catalog import STYLE_CATALOG
 from app.anime_craft import CRAFT_CATALOG, LEGACY_CATALOG_VERSION, catalog_snapshot, compass_has_framework, normalize_compass, review_project_craft
@@ -58,6 +61,36 @@ from sqlalchemy.exc import IntegrityError
 
 migrate_database()
 app = FastAPI(title=settings.app_name, version="0.1.0")
+web_logger = service_logger("web")
+web_instance_id = service_instance_id("web")
+
+
+def request_log_path(request: Request) -> str:
+    route = request.scope.get("route")
+    template = getattr(route, "path", "")
+    if template:
+        return template
+    path = request.url.path
+    sensitive_prefixes = ("/delivery/", "/invite/", "/reset-password/", "/verify-email/", "/api/auth/invitations/", "/api/auth/password/reset/", "/api/auth/verify/")
+    for prefix in sensitive_prefixes:
+        if path.startswith(prefix):
+            return prefix + "[redacted]"
+    return path
+
+
+@app.middleware("http")
+async def structured_request_log(request: Request, call_next):
+    request_id = uuid4().hex
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        log_event(web_logger, logging.ERROR, "http_request_failed", "Unhandled request failure", request_id=request_id, method=request.method, path=request_log_path(request), duration_ms=round((time.perf_counter() - started) * 1000, 2), exc_info=True)
+        raise
+    response.headers["X-Kizuna-Request-ID"] = request_id
+    if request.url.path != "/api/health" or response.status_code >= 400:
+        log_event(web_logger, logging.INFO if response.status_code < 500 else logging.ERROR, "http_request", "Request completed", request_id=request_id, method=request.method, path=request_log_path(request), status_code=response.status_code, duration_ms=round((time.perf_counter() - started) * 1000, 2))
+    return response
 
 
 class AuthSetupInput(BaseModel):
@@ -334,12 +367,16 @@ def timeline_response(timeline: Timeline, db: Session):
 
 
 @app.get("/api/health")
-def health():
+def health(db: Session = Depends(get_db)):
+    record_service_heartbeat(db, "web", web_instance_id, details={"environment": settings.environment})
+    db.commit()
     return {"status": "ok", "environment": settings.environment, "database_revision": database_revision()}
 
 
 @app.get("/api/settings/operations")
 def studio_operations(db: Session = Depends(get_db)):
+    record_service_heartbeat(db, "web", web_instance_id, details={"environment": settings.environment})
+    db.commit()
     return operational_readiness(db, production_storage.root, render_dir, s3_configured=s3_production_storage.configured)
 
 

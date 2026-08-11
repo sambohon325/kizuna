@@ -1012,6 +1012,20 @@ class DurableJobEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class ServiceHeartbeat(Base):
+    __tablename__ = "service_heartbeats"
+    __table_args__ = (UniqueConstraint("service_key", "instance_id", name="uq_service_heartbeat_instance"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    service_key: Mapped[str] = mapped_column(String(64))
+    instance_id: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(24), default="ready")
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class CompliancePolicy(Base):
     __tablename__ = "compliance_policies"
 

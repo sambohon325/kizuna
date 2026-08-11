@@ -1,20 +1,32 @@
 """Small single-purpose scheduler process for Coolify and Docker Compose."""
 
+import logging
 import time
 
 from app.config import settings
 from app.database import SessionLocal
 from app.main import run_due_backups
+from app.observability import ServiceHeartbeatLoop, log_event, service_logger
+
+
+logger = service_logger("backup-scheduler")
 
 
 def main() -> None:
     interval = max(15, settings.backup_scheduler_interval_seconds)
-    while True:
-        with SessionLocal() as db:
-            result = run_due_backups(db)
-            if result["due"]:
-                print(f"Backup schedule: {result}", flush=True)
-        time.sleep(interval)
+    heartbeat = ServiceHeartbeatLoop("backup-scheduler", details={"interval_seconds": interval})
+    heartbeat.start()
+    log_event(logger, logging.INFO, "service_started", "Backup scheduler started", interval_seconds=interval)
+    try:
+        while True:
+            with SessionLocal() as db:
+                result = run_due_backups(db)
+                if result["due"]:
+                    log_event(logger, logging.INFO, "backup_schedule_checked", "Due backup schedules were queued", **result)
+            time.sleep(interval)
+    finally:
+        heartbeat.stop()
+        log_event(logger, logging.INFO, "service_stopped", "Backup scheduler stopped")
 
 
 if __name__ == "__main__":

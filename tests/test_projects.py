@@ -2,6 +2,15 @@ def test_health(client):
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert len(response.headers["X-Kizuna-Request-ID"]) == 32
+
+
+def test_structured_request_logs_redact_one_time_tokens():
+    from starlette.requests import Request
+    from app.main import request_log_path
+
+    scope = {"type": "http", "http_version": "1.1", "method": "GET", "scheme": "http", "path": "/api/auth/password/reset/super-secret-token", "raw_path": b"/api/auth/password/reset/super-secret-token", "query_string": b"", "headers": [], "client": ("127.0.0.1", 1234), "server": ("testserver", 80)}
+    assert request_log_path(Request(scope)) == "/api/auth/password/reset/[redacted]"
 
 
 def test_operational_readiness_reports_safe_service_diagnostics(client):
@@ -14,7 +23,39 @@ def test_operational_readiness_reports_safe_service_diagnostics(client):
     assert checks["database"]["details"]["revision"]
     assert checks["jobs"]["details"]["expired_leases"] == 0
     assert checks["disk-production"]["details"]["writable"] is True
+    assert checks["service-web"]["state"] == "ready"
+    assert checks["service-web"]["details"]["instances"] == 1
+    assert checks["service-compliance-scanner"]["state"] == "warning"
+    assert {item["key"] for item in readiness["alerts"]} >= {"redis", "backups", "service-compliance-scanner"}
     assert "password" not in response.text.casefold()
+
+
+def test_operational_readiness_flags_stale_or_missing_production_services(client, monkeypatch):
+    from datetime import timedelta
+    from app.config import settings
+    from app.database import SessionLocal
+    from app.models import ServiceHeartbeat
+    from app.observability import record_service_heartbeat, utcnow
+
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "job_inline_fallback", False)
+    monkeypatch.setattr(settings, "service_stale_seconds", 60)
+    monkeypatch.setattr(settings, "scanner_health_url", "")
+    with SessionLocal() as db:
+        worker = record_service_heartbeat(db, "job-worker", "worker:test")
+        worker.last_seen = utcnow() - timedelta(minutes=5)
+        db.commit()
+
+    readiness = client.get("/api/settings/operations").json()
+    checks = {item["key"]: item for item in readiness["checks"]}
+    alerts = {item["key"]: item for item in readiness["alerts"]}
+    assert readiness["status"] == "error"
+    assert checks["service-web"]["state"] == "ready"
+    assert checks["service-job-worker"]["state"] == "error"
+    assert checks["service-job-worker"]["details"]["instances"] == 0
+    assert checks["service-backup-scheduler"]["state"] == "error"
+    assert checks["service-compliance-scanner"]["state"] == "error"
+    assert "Coolify" in alerts["service-job-worker"]["action"] or "job-worker" in alerts["service-job-worker"]["action"]
 
 
 def test_local_team_settings_explains_collaboration_mode(client):

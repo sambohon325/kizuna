@@ -4,6 +4,8 @@ import hashlib
 import json
 import shutil
 import tempfile
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
@@ -13,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.job_queue import redis_client
-from app.models import DurableJob, ProjectBackup
+from app.models import DurableJob, ProjectBackup, ServiceHeartbeat
 from app.schema_migrations import database_revision
 
 
@@ -41,6 +43,75 @@ def _disk_check(label: str, root: Path) -> dict:
         return _check(f"disk-{label.casefold()}", f"{label} storage", state, summary, {"free_bytes": usage.free, "total_bytes": usage.total, "writable": True})
     except Exception:
         return _check(f"disk-{label.casefold()}", f"{label} storage", "error", "Storage is unavailable or not writable.", {"writable": False})
+
+
+def _service_checks(db: Session, now: datetime) -> list[dict]:
+    rows = db.scalars(select(ServiceHeartbeat).order_by(ServiceHeartbeat.last_seen.desc())).all()
+    latest: dict[str, ServiceHeartbeat] = {}
+    instances: dict[str, int] = {}
+    stale_after = max(15, settings.service_stale_seconds)
+    for row in rows:
+        if max(0, int((now - row.last_seen).total_seconds())) <= stale_after:
+            instances[row.service_key] = instances.get(row.service_key, 0) + 1
+        latest.setdefault(row.service_key, row)
+    required = ["web"]
+    if not settings.job_inline_fallback:
+        required.append("job-worker")
+    if settings.environment.casefold() == "production":
+        required.append("backup-scheduler")
+    labels = {"web": "Web application", "job-worker": "Background job worker", "backup-scheduler": "Backup scheduler"}
+    checks = []
+    for service_key in dict.fromkeys(required + sorted(latest)):
+        row = latest.get(service_key)
+        if row is None:
+            state = "error" if settings.environment.casefold() == "production" else "warning"
+            checks.append(_check(f"service-{service_key}", labels.get(service_key, service_key), state, "No service heartbeat has been recorded.", {"instances": 0, "last_seen_seconds": None}))
+            continue
+        age = max(0, int((now - row.last_seen).total_seconds()))
+        stale = age > stale_after
+        state = "error" if stale or row.status == "error" else "warning" if row.status not in {"ready", "online"} else "ready"
+        active_instances = instances.get(service_key, 0)
+        summary = f"Heartbeat received {age} seconds ago from {active_instances} instance{'s' if active_instances != 1 else ''}."
+        if stale:
+            summary = f"Last heartbeat was {age} seconds ago. Restart or inspect this service in Coolify."
+        checks.append(_check(f"service-{service_key}", labels.get(service_key, service_key), state, summary, {"instances": active_instances, "last_seen_seconds": age, "instance_id": row.instance_id, "service_status": row.status}))
+    return checks
+
+
+def _scanner_check() -> dict:
+    if not settings.scanner_health_url:
+        state = "error" if settings.environment.casefold() == "production" else "warning"
+        return _check("service-compliance-scanner", "Compliance scanner", state, "No scanner health address is configured.", {"configured": False})
+    try:
+        with urllib.request.urlopen(settings.scanner_health_url, timeout=2) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if response.status != 200 or payload.get("status") != "ok":
+            raise ValueError("Scanner health response was not ready")
+        return _check("service-compliance-scanner", "Compliance scanner", "ready", "The originality reference scanner is responding.", {"configured": True, "records": payload.get("records", 0), "corpus_revision": payload.get("revision", "")})
+    except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError):
+        return _check("service-compliance-scanner", "Compliance scanner", "error", "The configured scanner did not answer its health check.", {"configured": True})
+
+
+def _alerts(checks: list[dict]) -> list[dict]:
+    local = settings.environment.casefold() != "production"
+    actions = {
+        "redis": "No action is required for simple local use; enable Redis before testing the distributed production stack." if local else "Inspect Redis in Coolify; database polling remains available while it recovers.",
+        "jobs": "Open Activity, inspect the failed or expired jobs, then retry only after resolving the cause.",
+        "backups": "Create and verify a production backup before relying on disaster recovery.",
+        "service-web": "Inspect the web service logs and restart the container if its heartbeat remains stale.",
+        "service-job-worker": "Inspect job-worker logs; queued renders will wait until the worker returns.",
+        "service-backup-scheduler": "Inspect backup-scheduler logs and manually confirm the next scheduled backup.",
+        "service-compliance-scanner": "Connect the self-hosted scanner before testing corpus-backed originality checks." if local else "Inspect the compliance-scanner container and its corpus health endpoint.",
+    }
+    alerts = []
+    for check in checks:
+        if check["state"] == "ready":
+            continue
+        action = actions.get(check["key"], "Review this check before starting a long render or export.")
+        if check["key"].startswith("disk-"):
+            action = "Free space or expand this volume before starting large renders and backups."
+        alerts.append({"key": check["key"], "severity": check["state"], "title": check["label"], "message": check["summary"], "action": action})
+    return alerts
 
 
 def operational_readiness(db: Session, storage_root: Path, render_root: Path, *, s3_configured: bool) -> dict:
@@ -83,6 +154,9 @@ def operational_readiness(db: Session, storage_root: Path, render_root: Path, *,
         job_summary = "The durable queue has no current recovery warnings."
     checks.append(_check("jobs", "Durable jobs", job_state, job_summary, {"queued": counts.get("queued", 0), "running": counts.get("running", 0), "completed": counts.get("completed", 0), "failed": counts.get("failed", 0), "cancelled": counts.get("cancelled", 0), "expired_leases": expired, "oldest_queued_seconds": queued_age}))
 
+    checks.extend(_service_checks(db, now))
+    checks.append(_scanner_check())
+
     latest = db.scalar(select(ProjectBackup).where(ProjectBackup.status == "completed").order_by(ProjectBackup.created_at.desc(), ProjectBackup.id.desc()))
     if latest is None:
         checks.append(_check("backups", "Production backups", "warning", "No completed production backup exists yet.", {"s3_configured": s3_configured}))
@@ -99,7 +173,7 @@ def operational_readiness(db: Session, storage_root: Path, render_root: Path, *,
 
     states = {item["state"] for item in checks}
     status = "error" if "error" in states else "warning" if "warning" in states else "ready"
-    return {"status": status, "checked_at": utcnow().isoformat() + "Z", "environment": settings.environment, "checks": checks}
+    return {"status": status, "checked_at": utcnow().isoformat() + "Z", "environment": settings.environment, "checks": checks, "alerts": _alerts(checks)}
 
 
 def verify_local_backup(backup: ProjectBackup, storage_root: Path) -> dict:

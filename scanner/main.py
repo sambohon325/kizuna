@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import secrets
+import json
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from scanner.config import settings
@@ -13,6 +17,21 @@ from scanner.matching import scan
 
 app = FastAPI(title="Kizuna Reference Scanner", version="0.1.0")
 corpus = Corpus(Path(settings.corpus_directory))
+
+
+@app.middleware("http")
+async def structured_request_log(request: Request, call_next):
+    request_id = uuid4().hex
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        print(json.dumps({"timestamp": datetime.now(timezone.utc).isoformat(), "level": "error", "service": "compliance-scanner", "event": "http_request_failed", "message": "Unhandled scanner request failure", "request_id": request_id, "method": request.method, "path": request.url.path, "duration_ms": round((time.perf_counter() - started) * 1000, 2), "error_type": type(exc).__name__}, separators=(",", ":")), flush=True)
+        raise
+    response.headers["X-Kizuna-Request-ID"] = request_id
+    if request.url.path != "/health" or response.status_code >= 400:
+        print(json.dumps({"timestamp": datetime.now(timezone.utc).isoformat(), "level": "info" if response.status_code < 500 else "error", "service": "compliance-scanner", "event": "http_request", "message": "Scanner request completed", "request_id": request_id, "method": request.method, "path": request.url.path, "status_code": response.status_code, "duration_ms": round((time.perf_counter() - started) * 1000, 2)}, separators=(",", ":")), flush=True)
+    return response
 
 
 class ScanRequest(BaseModel):

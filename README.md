@@ -37,7 +37,8 @@ pytest
 - Production vault with local or S3-compatible destinations, automatic off-server schedules, configurable retention, media-inclusive project ZIPs, SHA-256 verification, backup pruning, and revocable download-limited delivery links
 - Automatic metadata-first media lifecycle with independent image/video/audio working proxies, checksum-verified Hive replication, freshness-gated cleanup eligibility, and creator approval that never silently deletes an original
 - A durable database-backed job ledger with idempotency, progress history, cancellation, bounded retries, expired-lease recovery, optional Redis dispatch, and a separate production worker; local development can execute working-media jobs inline
-- An administrator-only Operations dashboard with database revision checks, Redis fallback visibility, writable-disk and capacity checks, durable queue diagnostics, expired-lease warnings, latest-backup state, and non-destructive archive verification
+- An administrator-only Operations dashboard with database revision checks, Redis fallback visibility, writable-disk and capacity checks, durable queue diagnostics, core-service heartbeats, scanner health, actionable operating notices, latest-backup state, and non-destructive archive verification
+- Structured JSON application, worker, scheduler, scanner, and job-lifecycle logs designed for Coolify log search
 - A stage-aware Compliance Center with preliminary checks, provider-neutral text/trademark/visual/audio scanners, fail-closed outages, evidence-backed finding resolution, an asset rights register, stale-scan invalidation, strict release gates, and hash-chained audit events
 - An enforced original-work-only charter that rejects fan-fiction and unofficial derivative requests, plus independently reviewable professional identities and exact prior-work claims for creators working with their own catalog
 - Local ComfyUI adapter using API-format workflows; safe simulation provider by default
@@ -69,7 +70,7 @@ pytest
 ## Next milestones
 
 1. Add PostgreSQL migration verification in CI while retaining SQLite for local development
-2. Add structured application logs, service heartbeat monitoring, and automated capacity alerts around the new Operations dashboard
+2. Add external alert delivery and retention/export controls around the implemented structured logs, service heartbeats, and in-app operating notices
 3. Exercise backup verification in a recurring restore drill and document disaster recovery ownership
 4. Finish provider-neutral execution for every AI Crew department and begin repeatable Character and World Identity Packs
 

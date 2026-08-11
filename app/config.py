@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     storage_directory: str = "storage"
     storage_warning_free_gb: float = 10.0
     storage_warning_free_percent: float = 10.0
+    log_level: str = "INFO"
+    service_heartbeat_seconds: int = 15
+    service_stale_seconds: int = 60
+    scanner_health_url: str = ""
     s3_bucket: str = ""
     s3_endpoint_url: str = ""
     s3_region: str = ""

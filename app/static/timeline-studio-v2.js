@@ -39,7 +39,7 @@
 
   const inspector = document.createElement('aside');
   inspector.className = 'timeline-inspector-v2';
-  inspector.innerHTML = '<nav aria-label="Editor inspector"><button type="button" class="active" data-timeline-inspector="clip">Clip</button><button type="button" data-timeline-inspector="ai">AI Editor</button></nav><section data-timeline-inspector-panel="clip" class="timeline-inspector-panel-v2"></section><section data-timeline-inspector-panel="ai" class="timeline-inspector-panel-v2" hidden></section>';
+  inspector.innerHTML = '<nav aria-label="Editor inspector"><button type="button" class="active" data-timeline-inspector="clip">Clip timing</button><button type="button" data-timeline-inspector="ai">Ask AI Editor</button></nav><section data-timeline-inspector-panel="clip" class="timeline-inspector-panel-v2"></section><section data-timeline-inspector-panel="ai" class="timeline-inspector-panel-v2" hidden></section>';
   inspector.querySelector('[data-timeline-inspector-panel="clip"]').append(empty, form);
   inspector.querySelector('[data-timeline-inspector-panel="ai"]').appendChild(agent);
   upper.append(source, viewer, inspector);
@@ -130,9 +130,12 @@ function decorateEditorV2(agent) {
 }
 
 function setTimelineInspectorV2(view) {
-  document.querySelectorAll('[data-timeline-inspector]').forEach(button => button.classList.toggle('active', button.dataset.timelineInspector === view));
+  document.querySelectorAll('[data-timeline-inspector]').forEach(button => {const active=button.dataset.timelineInspector === view;button.classList.toggle('active',active);button.setAttribute('aria-current',active?'step':'false');});
   document.querySelectorAll('[data-timeline-inspector-panel]').forEach(panel => panel.hidden = panel.dataset.timelineInspectorPanel !== view);
 }
+
+function syncTimelineExperienceV2(){if(window.kizunaExperience?.getMode()==='guided')setTimelineInspectorV2('clip');}
+document.addEventListener('kizuna:workspace-depth',syncTimelineExperienceV2);
 
 function timelineClipStartV2(clipId) {
   let elapsed = 0;

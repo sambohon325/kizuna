@@ -46,6 +46,13 @@ Kizuna uses one shared interface foundation across every creative department. Cr
 - Intermediate and Advanced restore the denser three-column library/canvas/inspector layout. Changing levels never discards field values or changes the selected stage.
 - Visual libraries scroll horizontally in Beginner and return to compact grids in deeper modes.
 
+## Directing and editing workspaces
+
+- In Beginner, **Storyboard & Shot Planner** presents scenes as a horizontal story shelf, the active shot board as the main canvas, and a focused **Story & action** inspector beside it. Camera, continuity, and batch-coverage controls return in Intermediate and Advanced.
+- In Beginner, **Timeline & Animatic** presents source clips as a horizontal media shelf, then keeps the program monitor, quick clip timing, and magnetic sequence in a clear top-to-bottom flow. Detailed edit tools, transition timing, and advanced export controls return in deeper modes.
+- Switching back to Beginner restores the primary inspector for each craft without changing a shot, clip, approval, or saved production decision.
+- Horizontal shelves hide their browser scrollbars while remaining scrollable by wheel, trackpad, touch, and keyboard focus.
+
 ## Interaction hierarchy
 
 - Primary: the next meaningful creative or production action

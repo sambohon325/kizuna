@@ -42,6 +42,33 @@ html[data-workspace-depth="guided"] :is(.character-v2-tabs,.world-v2-tabs) butto
 
 @media(max-width:1250px){html[data-workspace-depth="guided"] .style-v2-workspace{grid-template-columns:1fr}html[data-workspace-depth="guided"] .style-v2-board{position:relative;top:auto;border-left:0;border-top:1px solid rgba(255,255,255,.08)}html[data-workspace-depth="guided"] :is(.character-v2-shell,.world-v2-shell){grid-template-columns:1fr}html[data-workspace-depth="guided"] :is(.character-v2-copilot,.world-v2-copilot){position:relative;top:auto}}
 
+/* Directing and editing: visual shelves first, specialist controls on demand. */
+html[data-workspace-depth="guided"] .shot-v2-shell{grid-template-columns:minmax(0,1fr) 300px}
+html[data-workspace-depth="guided"] .shot-v2-scenes{position:relative;top:auto;grid-column:1/-1}
+html[data-workspace-depth="guided"] .shot-v2 .shot-tree{display:flex;gap:8px;overflow-x:auto!important;padding-bottom:3px!important}
+html[data-workspace-depth="guided"] .scene-card-v2{flex:0 0 230px}
+html[data-workspace-depth="guided"] .shot-inspector-tabs-v2{display:none}
+html[data-workspace-depth="guided"] .shot-director-v2{position:sticky;top:14px}
+html[data-workspace-depth="guided"] .shot-v2-header #shots-per-beat{display:none}
+html[data-workspace-depth="guided"] :is(.shot-v2-header,.timeline-v2-header){display:grid!important;grid-template-columns:minmax(0,1fr);align-items:start;gap:16px;min-height:0!important}
+html[data-workspace-depth="guided"] :is(.shot-v2-header,.timeline-v2-header)>div{min-width:0}
+html[data-workspace-depth="guided"] :is(.shot-project-control,.timeline-project-control){justify-content:flex-start!important}
+html[data-workspace-depth="guided"] :is(.shot-v2 .shot-tree,.timeline-source-list-v2){scrollbar-width:none}
+html[data-workspace-depth="guided"] :is(.shot-v2 .shot-tree,.timeline-source-list-v2)::-webkit-scrollbar{display:none}
+
+html[data-workspace-depth="guided"] .timeline-v2-upper{grid-template-columns:minmax(0,1fr) 320px}
+html[data-workspace-depth="guided"] .timeline-source-v2{grid-column:1/-1}
+html[data-workspace-depth="guided"] .timeline-source-list-v2{display:flex;max-height:none;overflow-x:auto;padding-bottom:10px}
+html[data-workspace-depth="guided"] .timeline-source-card-v2{flex:0 0 245px}
+html[data-workspace-depth="guided"] .timeline-v2 .timeline-edit-toolbar{display:none}
+html[data-workspace-depth="guided"] .timeline-v2-header .header-advanced{display:none}
+html[data-workspace-depth="guided"] .timeline-inspector-v2 label:has([name="clip_transition_duration"]),
+html[data-workspace-depth="guided"] .timeline-inspector-v2 :is(#clip-earlier,#clip-later){display:none}
+html[data-workspace-depth="guided"] .timeline-inspector-v2 .clip-actions{grid-template-columns:1fr}
+html[data-workspace-depth="guided"] .timeline-inspector-v2 .clip-actions .primary{grid-column:auto}
+
+@media(max-width:1100px){html[data-workspace-depth="guided"] :is(.shot-v2-shell,.timeline-v2-upper){grid-template-columns:1fr}html[data-workspace-depth="guided"] :is(.shot-director-v2,.timeline-inspector-v2){position:relative;top:auto;grid-column:auto}html[data-workspace-depth="guided"] :is(.shot-v2-header,.timeline-v2-header){grid-template-columns:1fr}html[data-workspace-depth="guided"] :is(.shot-v2-header,.timeline-v2-header) :is(.shot-project-control,.timeline-project-control){justify-content:flex-start}}
+
 html[data-workspace-depth="studio"] .form-intro{max-width:900px}
 html[data-workspace-depth="studio"] .craft-learning details:not([open]){display:none}
 

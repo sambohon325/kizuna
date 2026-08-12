@@ -42,8 +42,11 @@ function decorateDirectorV2(director){
 }
 
 function setShotInspectorViewV2(view){
-  shotInspectorViewV2=view;const form=document.querySelector('#shot-form');if(!form)return;form.querySelectorAll('[data-shot-view]').forEach(button=>button.classList.toggle('active',button.dataset.shotView===view));form.querySelectorAll('[data-shot-panel]').forEach(panel=>panel.hidden=panel.dataset.shotPanel!==view);
+  shotInspectorViewV2=view;const form=document.querySelector('#shot-form');if(!form)return;form.querySelectorAll('[data-shot-view]').forEach(button=>{const active=button.dataset.shotView===view;button.classList.toggle('active',active);button.setAttribute('aria-current',active?'step':'false');});form.querySelectorAll('[data-shot-panel]').forEach(panel=>panel.hidden=panel.dataset.shotPanel!==view);
 }
+
+function syncShotPlannerExperienceV2(){if(window.kizunaExperience?.getMode()==='guided'&&shotInspectorViewV2!=='story')setShotInspectorViewV2('story');}
+document.addEventListener('kizuna:workspace-depth',syncShotPlannerExperienceV2);
 
 async function refreshShotAssetsV2(projectId){
   if(!projectId){shotPlannerAssetsV2=[];return;}const library=await api(`/api/projects/${projectId}/asset-reviews`).catch(()=>({assets:[]}));shotPlannerAssetsV2=(library.assets||[]).filter(item=>item.asset_type==='storyboard');

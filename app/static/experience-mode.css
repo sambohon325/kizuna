@@ -111,6 +111,31 @@ html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] .farm
 
 @media(max-width:720px){html[data-workspace-depth="guided"] .farm-tabs-v2{grid-template-columns:1fr 1fr}html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] .farm-summary,html[data-workspace-depth="guided"] .farm-capacity-v2{grid-template-columns:1fr}html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] .render-panel>.close{position:relative;inset:auto!important;margin:0 0 14px!important}html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] .render-panel>.workspace-popout{display:none!important}}
 
+/* Studio operations: browsing, attention, and configuration without infrastructure overload. */
+html[data-workspace-depth="guided"] :is(.asset-library-title,.activity-title){display:grid;grid-template-columns:minmax(0,1fr);align-items:start}
+html[data-workspace-depth="guided"] :is(.asset-library-project,.activity-title>div:last-child){justify-content:flex-start}
+html[data-workspace-depth="guided"] .asset-library-workspace{grid-template-columns:minmax(0,1fr) 320px}
+html[data-workspace-depth="guided"] .asset-categories{grid-column:1/-1;display:flex;gap:7px;position:static;overflow-x:auto;padding:7px;scrollbar-width:none}
+html[data-workspace-depth="guided"] .asset-categories::-webkit-scrollbar{display:none}
+html[data-workspace-depth="guided"] .asset-categories button{width:auto;min-width:max-content;gap:10px}
+html[data-workspace-depth="guided"] .asset-toolbar #asset-review-filter{display:none}
+html[data-workspace-depth="guided"] .asset-inspector :is(#asset-metadata-form,.asset-managed-note,.asset-versions){display:none}
+html[data-workspace-depth="guided"] .asset-inspector:has(.asset-inspector-empty){display:none}
+html[data-workspace-depth="guided"] .asset-library-workspace:has(.asset-inspector-empty){grid-template-columns:1fr}
+html[data-workspace-depth="guided"] .activity-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+html[data-workspace-depth="guided"] .activity-summary>article:nth-child(4),html[data-workspace-depth="guided"] #activity-kind-filter,html[data-workspace-depth="guided"] [data-activity-status="complete"]{display:none}
+html[data-workspace-depth="guided"] .activity-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));flex:1;overflow:visible}
+html[data-workspace-depth="guided"] .activity-filters button{justify-content:center;white-space:normal}
+html[data-workspace-depth="guided"] .activity-inspector :is(dl,.activity-history){display:none}
+html[data-workspace-depth="guided"] .activity-inspector:has(.activity-empty){display:none}
+html[data-workspace-depth="guided"] .activity-workspace:has(.activity-inspector .activity-empty){grid-template-columns:1fr}
+html[data-workspace-depth="guided"] .settings-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));position:static;gap:8px;padding:8px;margin:14px 0 22px;border:1px solid rgba(255,255,255,.09);border-radius:16px;background:rgba(10,14,19,.7)}
+html[data-workspace-depth="guided"] .settings-tabs button{min-height:48px;justify-content:center;text-align:center;border:1px solid transparent;border-radius:10px;background:transparent}
+html[data-workspace-depth="guided"] .settings-tabs button.active{border-color:rgba(103,216,255,.45);background:linear-gradient(145deg,rgba(68,190,229,.14),rgba(152,105,229,.08))}
+html[data-workspace-depth="guided"] .settings-tabs [data-settings-view="operations"]{display:none}
+@media(max-width:1000px){html[data-workspace-depth="guided"] :is(.asset-library-workspace,.activity-workspace){grid-template-columns:1fr}html[data-workspace-depth="guided"] :is(.asset-inspector,.activity-inspector){position:static;max-height:none}}
+@media(max-width:700px){html[data-workspace-depth="guided"] :is(.asset-library-project,.activity-title>div:last-child){align-items:stretch;flex-direction:column}html[data-workspace-depth="guided"] .activity-summary{grid-template-columns:1fr}html[data-workspace-depth="guided"] .activity-filters,html[data-workspace-depth="guided"] .settings-tabs{grid-template-columns:1fr 1fr}}
+
 html[data-workspace-depth="studio"] .form-intro{max-width:900px}
 html[data-workspace-depth="studio"] .craft-learning details:not([open]){display:none}
 

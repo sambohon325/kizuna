@@ -67,6 +67,12 @@ Kizuna uses one shared interface foundation across every creative department. Cr
 - In Beginner, **Render & Hive** answers three questions first: whether the studio is ready, what is rendering, and what needs attention. Slot counts, worker services, schedules, throttles, and task routing remain available in deeper views.
 - Switching to Beginner returns Render & Hive to **Status** without stopping, reassigning, or changing any active job.
 
+## Studio operations
+
+- **Asset Library** begins as a visual shelf: browse, select, approve, and use. Metadata and version management appear in Intermediate and Advanced modes.
+- **Production Activity** begins with work that is active or needs attention. Queue names, worker details, and event history remain available at deeper levels.
+- **Settings** uses six stable Beginner destinations in creator language: Workspace, AI & tools, Computers & costs, Storage & backups, Team & access, and Identity & rights. Server Operations appears in Intermediate and Advanced.
+
 ## Interaction hierarchy
 
 - Primary: the next meaningful creative or production action

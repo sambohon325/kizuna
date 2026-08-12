@@ -28,6 +28,8 @@ You can change levels at any time. Experience level and AI automation are separa
 
 See productions, their current state, and the next real milestone. Change a production's release scope when its intended format, platform, orientation, length, or episode plan changes.
 
+Home remembers the production you most recently opened. Its current-production card shows the release scope, factual milestone count, and next useful step. Select **Continue** to open that craft directly. Continue on another production card makes that production current without marking any unfinished work complete.
+
 ### Imagine
 
 - **AI Crew:** choose which creative partners help, how they work, and what requires approval.

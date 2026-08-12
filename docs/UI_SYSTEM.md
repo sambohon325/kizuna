@@ -30,6 +30,13 @@ Kizuna uses one shared interface foundation across every creative department. Cr
 5. Main creative canvas
 6. Contextual inspector or AI collaborator
 
+## Home command center
+
+- Home remembers the production most recently opened in a craft workspace.
+- The hero keeps Kizuna's creative identity on the left and shows the active production, factual milestone count, release scope, and next saved step on the right.
+- Every production card states its own next real milestone and offers **Continue**. Decorative workflow lights never imply completion.
+- Selecting a different production updates Home, Right now, and the production flow without changing that production's saved work.
+
 ## Production chapters and environment
 
 - Global navigation is horizontal and grouped into **Home**, **Imagine**, **Direct**, **Finish**, and **Studio**. The first row selects a chapter; the second row contains only that chapter's workspaces.

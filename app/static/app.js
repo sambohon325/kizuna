@@ -60,6 +60,7 @@ function openWorkspace(dialog) {
   workspaceMain.classList.add('tool-open');
   workspaceMain.classList.toggle('settings-open',dialog===settingsDialog||dialog===accountDialog);
   workspaceMain.appendChild(dialog);
+  const selectedProject=Number(dialog.querySelector('select[id$="-project"]')?.value);if(selectedProject)localStorage.setItem('kizuna-active-project-id',String(selectedProject));
   dialog.classList.add('workspace-view');
   dialog.setAttribute('open', '');
   dialog.setAttribute('role', 'region');
@@ -93,6 +94,7 @@ async function openRequestedWorkspace() {
 
 function showDashboard() {
   stopMasterExportPolling();
+  const lastProject=currentFlowProject();if(lastProject)localStorage.setItem('kizuna-active-project-id',String(lastProject.id));
   workspaceDialogs.forEach(dialog => {
     dialog.removeAttribute('open');
     dialog.classList.remove('workspace-view');
@@ -101,6 +103,7 @@ function showDashboard() {
   workspaceMain.classList.remove('tool-open');
   workspaceMain.classList.remove('settings-open');
   setActiveNavigation();
+  renderHomeCommandCenter();
   renderProductionFlow();
   refreshAssistantContext();
   document.dispatchEvent(new CustomEvent('kizuna:workspace-opened',{detail:{workspace:'productions'}}));
@@ -122,7 +125,8 @@ const productionStages = [
 function currentFlowProject() {
   const openDialog=workspaceDialogs.find(dialog=>dialog.hasAttribute('open'));
   const selected=openDialog?.querySelector('select[id$="-project"]')?.value;
-  return projects.find(project=>project.id===Number(selected))||projects[0]||null;
+  const remembered=Number(localStorage.getItem('kizuna-active-project-id'));
+  return projects.find(project=>project.id===Number(selected))||projects.find(project=>project.id===remembered)||projects[0]||null;
 }
 
 function currentFlowStage() {
@@ -135,7 +139,7 @@ const productionStatusCache=new Map(),productionStatusRequests=new Map();
 
 async function refreshProductionStatus(projectId,force=false) {
   if(!projectId)return;if(force)productionStatusCache.delete(projectId);if(productionStatusRequests.has(projectId))return productionStatusRequests.get(projectId);
-  const request=api(`/api/projects/${projectId}/production-status`).then(status=>{productionStatusCache.set(projectId,status);productionStatusRequests.delete(projectId);if(currentFlowProject()?.id===projectId){renderProductionFlow();window.renderGuidedWorkspace?.();}return status;}).catch(()=>{productionStatusRequests.delete(projectId);});productionStatusRequests.set(projectId,request);return request;
+  const request=api(`/api/projects/${projectId}/production-status`).then(status=>{productionStatusCache.set(projectId,status);productionStatusRequests.delete(projectId);renderHomeCommandCenter();if(currentFlowProject()?.id===projectId){renderProductionFlow();window.renderGuidedWorkspace?.();}return status;}).catch(()=>{productionStatusRequests.delete(projectId);});productionStatusRequests.set(projectId,request);return request;
 }
 
 function renderProductionFlow() {
@@ -254,18 +258,54 @@ function aspectDimensions(ratio) {
   return {'16:9':[1920,1080],'9:16':[1080,1920],'1:1':[1080,1080],'4:3':[1440,1080],'2.39:1':[3840,1608]}[ratio]||[1920,1080];
 }
 
+function rememberActiveProject(projectId) {
+  const id=Number(projectId);if(!id)return;localStorage.setItem('kizuna-active-project-id',String(id));renderHomeCommandCenter();renderProductionFlow();window.renderGuidedWorkspace?.();
+}
+
+function nextProjectStage(projectId) {
+  const status=productionStatusCache.get(Number(projectId));
+  return status?.stages.find(stage=>stage.key===status.next_key)||null;
+}
+
+async function openProductionStage(projectId,stageKey) {
+  const id=Number(projectId);rememberActiveProject(id);
+  const openers={story:openWriterRoom,style:openStyleLab,characters:openCharacterStudio,worlds:openWorldStudio,shots:openShotPlanner,timeline:openTimeline,audio:openAudioStudio,composite:openCompositor,render:openRenderFarm};
+  await (openers[stageKey]||openWriterRoom)(id);
+}
+
+function projectNextMarkup(project) {
+  const status=productionStatusCache.get(project.id),next=nextProjectStage(project.id);
+  if(!status)return`<div data-project-next="${project.id}" class="project-next checking"><span>Checking next step…</span></div>`;
+  if(!next)return`<div data-project-next="${project.id}" class="project-next complete"><span>Production milestones current</span><small>${status.complete_count}/${status.total_count} complete</small></div>`;
+  return`<div data-project-next="${project.id}" class="project-next ${safe(next.state)}"><span>Next · ${safe(next.label)}</span><small>${safe(next.summary)}</small></div>`;
+}
+
+function renderHomeCommandCenter() {
+  const host=document.querySelector('#home-current-production');if(!host)return;const project=currentFlowProject();
+  document.querySelectorAll('.project').forEach(card=>card.classList.toggle('current',Number(card.dataset.id)===project?.id));
+  projects.forEach(item=>{const statusHost=document.querySelector(`[data-project-next="${item.id}"]`);if(statusHost)statusHost.outerHTML=projectNextMarkup(item);});
+  if(!project){host.innerHTML='<span class="home-current-label">YOUR FIRST PRODUCTION</span><h2>Start with the story you want to tell.</h2><p>Choose the format, audience, screen shape, and length. Kizuna will shape the workflow around it.</p><button class="primary" type="button" data-home-new>Create a production</button>';host.querySelector('[data-home-new]').onclick=()=>document.querySelector('#new-project').click();return;}
+  const status=productionStatusCache.get(project.id),next=nextProjectStage(project.id),progress=status?Math.round((status.complete_count/status.total_count)*100):0;
+  const nextSummary=next?.summary||(status?'Every milestone reflects saved work and current compliance scans.':'Kizuna is reading the saved production.');
+  host.innerHTML=`<span class="home-current-label">CURRENT PRODUCTION</span><h2>${safe(project.title)}</h2><p>${safe(project.logline||'Your story is waiting for its first scene.')}</p><div class="home-current-scope">${safe(scopeDisplay(project.scope))}</div><div class="home-current-progress"><span><i style="width:${progress}%"></i></span><small>${status?`${status.complete_count} of ${status.total_count} milestones current`:'Checking production status…'}</small></div><div class="home-current-next"><b>${next?`Next · ${safe(next.label)}`:status?'Production milestones current':'Finding the next step…'}</b><small>${safe(nextSummary)}</small></div><div class="home-current-actions"><button class="primary" type="button" data-home-continue>${next?`Continue ${safe(next.label)}`:'Open production'}</button><button type="button" data-home-scope>Release plan</button></div>`;
+  host.querySelector('[data-home-continue]').onclick=()=>next?openProductionStage(project.id,next.key):openProject(project.id);host.querySelector('[data-home-scope]').onclick=()=>openWriterRoom(project.id);
+}
+
 async function loadProjects() {
   projects = await api('/api/projects');
   productionStatusCache.clear();
   document.querySelector('#project-count').textContent = `${projects.length} production${projects.length === 1 ? '' : 's'}`;
   projectsEl.innerHTML = projects.length ? projects.map(project => `
-    <article class="project" data-id="${project.id}"><span class="tag">${safe(project.status)}</span><h3>${safe(project.title)}</h3><p>${safe(project.logline || 'Your story is waiting for its first scene.')}</p><div class="project-scope-summary">${safe(scopeDisplay(project.scope))}</div><footer><span class="era">${safe(project.style_profile?.era_primary || 'Style open')}</span><span>${project.scenes.length} scenes</span><button type="button" data-project-scope="${project.id}">Change scope</button></footer></article>`).join('') : '<div class="empty">No productions yet. Start with a title and release plan—everything else can evolve.</div>';
-  document.querySelectorAll('.project').forEach(el => el.onclick = () => openProject(el.dataset.id));
+    <article class="project" data-id="${project.id}"><header><span class="tag">${safe(project.status)}</span><span class="project-current-label">Current</span></header><h3>${safe(project.title)}</h3><p>${safe(project.logline || 'Your story is waiting for its first scene.')}</p><div class="project-scope-summary">${safe(scopeDisplay(project.scope))}</div><div data-project-next="${project.id}" class="project-next checking"><span>Checking next step…</span></div><footer><span>${project.scenes.length} scenes</span><button type="button" data-project-scope="${project.id}">Release plan</button><button class="primary" type="button" data-project-continue="${project.id}">Continue</button></footer></article>`).join('') : '<div class="empty">No productions yet. Start with a title and release plan—everything else can evolve.</div>';
+  document.querySelectorAll('.project').forEach(el => el.onclick = () => {rememberActiveProject(el.dataset.id);openProject(el.dataset.id);});
   document.querySelectorAll('[data-project-scope]').forEach(button=>button.onclick=event=>{event.stopPropagation();openWriterRoom(Number(button.dataset.projectScope));});
+  document.querySelectorAll('[data-project-continue]').forEach(button=>button.onclick=event=>{event.stopPropagation();const id=Number(button.dataset.projectContinue),next=nextProjectStage(id);openProductionStage(id,next?.key||'story');});
+  renderHomeCommandCenter();projects.forEach(project=>refreshProductionStatus(project.id));
   renderProductionFlow();
 }
 
 async function openProject(id) {
+  rememberActiveProject(id);
   const project = await api(`/api/projects/${id}`);
   const style = project.style_profile;
   document.querySelector('#detail').innerHTML = `
@@ -1498,7 +1538,7 @@ document.querySelector('#render-master').onclick = async () => { if(!activeTimel
 document.querySelector('#plan-segmented-export').onclick = async () => { if(!activeTimeline)return;const button=document.querySelector('#plan-segmented-export');button.disabled=true;button.textContent='Starting farm…';try{renderSegmentedExport(await api(`/api/timelines/${activeTimeline.id}/master-exports/distributed`,{method:'POST',body:JSON.stringify({profile:document.querySelector('#master-profile').value,segment_size:Number(document.querySelector('#segment-size').value)})}));}catch(error){document.querySelector('#segmented-export-result').innerHTML=`<div class="job-error">${safe(error.message)}</div>`;}finally{button.disabled=false;button.textContent='Start farm export';} };
 document.querySelector('#expand-story').onclick = async () => { const projectId = Number(document.querySelector('#shot-project').value); try { await api(`/api/projects/${projectId}/expand-story`, {method:'POST',body:JSON.stringify({shots_per_beat:Number(document.querySelector('#shots-per-beat').value)})}); await loadProjects(); renderShotTree(projectId); } catch(error) { document.querySelector('#shot-tree').innerHTML = `<div class="job-error">${safe(error.message)}</div>`; } };
 document.querySelector('#refresh-farm').onclick = () => refreshRenderFarm();
-document.querySelector('#project-form').onsubmit = async event => { event.preventDefault();const policy=event.target.querySelector('.original-work-policy'),message=policy.querySelector('span'),original=message.textContent;message.style.color='';try{await api('/api/projects', {method:'POST', body:JSON.stringify(collectNewProduction(event.target))});event.target.reset();projectDialog.close();await loadProjects();showDashboard();}catch(error){message.textContent=error.message;message.style.color='#f1a08e';setTimeout(()=>{message.textContent=original;message.style.color='';},8000);} };
+document.querySelector('#project-form').onsubmit = async event => { event.preventDefault();const policy=event.target.querySelector('.original-work-policy'),message=policy.querySelector('span'),original=message.textContent;message.style.color='';try{const created=await api('/api/projects', {method:'POST', body:JSON.stringify(collectNewProduction(event.target))});localStorage.setItem('kizuna-active-project-id',String(created.id));event.target.reset();projectDialog.close();await loadProjects();showDashboard();}catch(error){message.textContent=error.message;message.style.color='#f1a08e';setTimeout(()=>{message.textContent=original;message.style.color='';},8000);} };
 document.querySelector('#style-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#style-project').value); await api(`/api/projects/${projectId}/style`, {method:'PUT', body:JSON.stringify(collectStyle(event.target))}); styleDialog.close(); await loadProjects(); openProject(projectId); };
 document.querySelector('#writer-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#writer-project').value); const brief = await api(`/api/projects/${projectId}/story`, {method:'PUT', body:JSON.stringify(collectStory(event.target))}); await loadProjects(); renderStory(brief); };
 document.querySelector('#character-form').onsubmit = async event => { event.preventDefault(); const projectId = Number(document.querySelector('#character-project').value); const character = activeCharacterId ? await api(`/api/characters/${activeCharacterId}`, {method:'PUT', body:JSON.stringify(collectCharacter(event.target))}) : await api(`/api/projects/${projectId}/characters`, {method:'POST', body:JSON.stringify(collectCharacter(event.target))}); activeCharacterId = character.id; const design = await api(`/api/characters/${character.id}/design`, {method:'PUT', body:JSON.stringify(collectCharacterDesign(event.target))}); await loadProjects(); renderCharacterRoster(projectId); renderCharacterDesign(character, design); loadCharacterStory(projectId,character.id); };

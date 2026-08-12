@@ -200,6 +200,18 @@ dialog.workspace-view[open] {
 .hero-flow span:last-child { border-bottom: 0; }
 .hero-flow b { color: #666671; font-size: 10px; }
 .orb { display: none; }
+.hero-copy{position:relative;z-index:1;flex:1;min-width:0}
+.home-current-production{position:relative;z-index:1;width:min(410px,40%);padding:22px;color:#e9edf2;background:linear-gradient(145deg,rgba(14,19,24,.82),rgba(21,18,29,.74));border:1px solid rgba(255,255,255,.11);border-radius:15px;box-shadow:0 18px 46px rgba(0,0,0,.22);backdrop-filter:blur(18px)}
+.home-current-label{display:block;margin-bottom:8px;color:#7edff8;font-size:10px;font-weight:800;letter-spacing:.14em}
+.home-current-production h2{margin:0;font-size:clamp(23px,2.4vw,31px)}
+.home-current-production>p{display:-webkit-box;overflow:hidden;margin:8px 0;color:#a5aab3;font-size:13px;line-height:1.5;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.home-current-scope{margin:12px 0;color:#c5cad2;font-size:12px}
+.home-current-progress>span{display:block;height:5px;overflow:hidden;background:#292f36;border-radius:999px}
+.home-current-progress i{display:block;height:100%;background:linear-gradient(90deg,#69daf7,#a986f4);border-radius:inherit}
+.home-current-progress small{display:block;margin-top:6px;color:#7f8995;font-size:10px}
+.home-current-next{margin-top:14px;padding-top:13px;border-top:1px solid rgba(255,255,255,.08)}
+.home-current-next b,.home-current-next small{display:block}.home-current-next b{font-size:13px}.home-current-next small{margin-top:4px;color:#929aa6;font-size:11px;line-height:1.45}
+.home-current-actions{display:flex;gap:8px;margin-top:15px}.home-current-actions button{flex:1;min-height:42px}
 
 .section-head { margin: 38px 0 16px; }
 .section-head .eyebrow { color: var(--cyan); }
@@ -215,8 +227,12 @@ h2 { letter-spacing: -.025em; }
   border-radius: 12px;
 }
 .project:hover { transform: translateY(-2px); border-color: #484850; box-shadow: 0 16px 42px rgba(0,0,0,.28), 0 0 28px rgba(100,216,255,.035); }
+.project.current{border-color:rgba(100,216,255,.48);box-shadow:inset 0 1px rgba(100,216,255,.08),0 16px 42px rgba(0,0,0,.2)}
+.project>header{display:flex;align-items:center;justify-content:space-between;gap:10px}.project-current-label{display:none;padding:4px 7px;color:#8be3fa;background:#15252b;border:1px solid #31515d;border-radius:999px;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.project.current .project-current-label{display:inline-block}
 .project .tag { color: #7edcff; }
 .project p { color: #9999a2; }
+.project-next{min-height:54px;margin-top:14px;padding:11px 12px;background:#11151a;border:1px solid #2a323a;border-radius:9px}.project-next span,.project-next small{display:block}.project-next span{color:#dce2e7;font-size:12px;font-weight:750}.project-next small{margin-top:4px;color:#858f9a;font-size:11px;line-height:1.35}.project-next.in_progress{border-color:#4d432d}.project-next.complete{border-color:#2f503f}.project-next.blocked{border-color:#523a34}
+.project footer{align-items:center;gap:7px}.project footer>span{margin-right:auto}.project footer button{min-height:34px;padding:6px 9px;font-size:11px}
 .era { color: #c5c5cd; background: #26262b; }
 .empty { color: #777781; background: rgba(17,17,20,.6); border-color: #3a3a40; }
 
@@ -322,7 +338,8 @@ fieldset, .trait-section, .character-section, .world-section, .camera-section { 
   .shell { grid-template-columns: 78px minmax(0,1fr); }
   .rail button { display: block; text-align: center; }
   .rail button span { display: block; margin-top: 4px; font-size: 9px; }
-  .hero { align-items: flex-start; gap: 32px; }
+  .hero { align-items: flex-start; flex-direction:column;gap:32px; }
+  .home-current-production{width:100%}
   .hero-flow { min-width: 150px; }
 }
 
@@ -347,6 +364,7 @@ fieldset, .trait-section, .character-section, .world-section, .camera-section { 
   .workspace-view .close { position: relative; inset: auto; margin: 0 0 20px; }
   .workspace-view h2 { padding-right: 0; }
   .hero { min-height: 380px; padding: 30px 24px; flex-direction: column; }
+  .home-current-actions{flex-direction:column}
   .hero-flow { width: 100%; grid-template-columns: 1fr 1fr; }
   .hero-flow span:nth-child(2) { border-right: 0; }
   .projects { grid-template-columns: 1fr; }

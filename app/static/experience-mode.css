@@ -4,7 +4,6 @@
 .experience-options span em{display:inline-block;margin-left:8px;padding:4px 7px;color:#a8eaff;background:#15242b;border:1px solid #31515d;border-radius:999px;font-size:9px;font-style:normal;letter-spacing:.08em;text-transform:uppercase;vertical-align:2px}
 
 /* Beginner is the default: one task, one canvas, deeper controls on demand. */
-html[data-workspace-depth="guided"] .production-flow{display:none!important}
 html[data-workspace-depth="guided"] .writer-v2-stages{display:none}
 html[data-workspace-depth="guided"] .writer-v2-workspace{grid-template-columns:minmax(0,1fr)}
 html[data-workspace-depth="guided"] .writer-v2-navigator{display:none}

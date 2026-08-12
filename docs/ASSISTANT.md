@@ -1,6 +1,6 @@
 # Kizuna Assistant
 
-The floating assistant is available from the lower-left corner of every craft workspace. It sends the current workspace, visible heading or selection, chosen production, production scope, and saved backend progress to the assistant service.
+The assistant is available from the AI button at the right of the fixed bottom production dock. It sends the current workspace, visible heading or selection, chosen production, production scope, and saved backend progress to the assistant service.
 
 Conversations are stored per production so guidance remains available while moving between writing, character, world, shot, edit, audio, compositing, rendering, crew, and settings workspaces. Responses can include direct links to the most relevant Kizuna workspace.
 

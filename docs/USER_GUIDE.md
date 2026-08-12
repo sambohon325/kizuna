@@ -24,6 +24,8 @@ You can change levels at any time. Experience level and AI automation are separa
 
 ## The five chapters
 
+The top bar shows only the five chapters. Select **Imagine**, **Direct**, **Finish**, or **Studio** to open its tools in a dropdown; choosing a tool closes the menu. The bottom dock keeps the saved nine-stage production journey visible and places the contextual **Craft Compass** and **AI** buttons together on the right.
+
 ### Home
 
 See productions, their current state, and the next real milestone. Change a production's release scope when its intended format, platform, orientation, length, or episode plan changes.
@@ -58,7 +60,7 @@ Home remembers the production you most recently opened. Its current-production c
 
 ## Use the Kizuna Assistant
 
-Select the **AI** button in the lower-right corner from any workspace. The Assistant receives the current workspace, selected production, visible context, and saved workflow state.
+Select the **AI** button at the right of the bottom production dock from any workspace. The Assistant receives the current workspace, selected production, visible context, and saved workflow state. The adjacent Compass icon opens craft guidance for the page you are currently using.
 
 Useful requests include:
 
@@ -116,8 +118,8 @@ Large originals and renders can remain on user-controlled storage while Kizuna k
 ## Getting unstuck
 
 - Follow **Right now** for the next meaningful action.
-- Select **More guidance** for the current Beginner tutorial.
-- Open the floating **AI** Assistant for contextual help.
+- Select **Why this?** for a short explanation of why Kizuna recommends that action.
+- Open **AI** from the bottom production dock for contextual help.
 - Open **Studio → Help** to search the full manual.
 - Open **Studio → Activity** when background work is delayed or failed.
 - Move to Intermediate or Advanced only when the current task needs deeper controls.

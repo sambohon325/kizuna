@@ -39,11 +39,13 @@ Kizuna uses one shared interface foundation across every creative department. Cr
 
 ## Production chapters and environment
 
-- Global navigation is horizontal and grouped into **Home**, **Imagine**, **Direct**, **Finish**, and **Studio**. The first row selects a chapter; the second row contains only that chapter's workspaces.
-- The global navigation must never require vertical scrolling. On narrow screens, all five chapter names remain visible and only the contextual tool row may scroll horizontally.
+- Global navigation is one horizontal row grouped into **Home**, **Imagine**, **Direct**, **Finish**, and **Studio**. Selecting a chapter opens its workspaces in a compact dropdown that closes after navigation.
+- The global navigation must never require vertical scrolling. On narrow screens, all five chapter names remain visible and the chapter dropdown fits within the viewport.
 - The environment changes subtly as the production story advances: cool indigo for story, violet/teal for design, warm amber/blue for motion, magenta/indigo for sound, cyan for finishing, green for mastering, and quiet slate for studio operations.
 - Chapter color is atmospheric context, not a status signal. Completion, warnings, compliance, and approvals retain their factual semantic colors.
 - Workspace surfaces, typography, controls, and content contrast do not change between chapters; only the low-contrast page backdrop and navigation accents shift.
+- The factual nine-stage production journey is fixed to the bottom dock. Craft Compass and AI Assistant live at its right edge and open contextual panels above it.
+- Craft guidance must not consume permanent space inside a creative canvas. Its dock panel follows the active workspace, selected production, saved Compass, and current craft findings.
 
 ## Visual-development workspaces
 
@@ -87,5 +89,13 @@ Kizuna uses one shared interface foundation across every creative department. Cr
 - Secondary: safe supporting operations
 - Quiet: optional settings, view changes, and navigation
 - Destructive: removal, rejection, revocation, or deletion
+
+## Contextual next step
+
+- **Right now** is a production-aware action bar, not a second tutorial or a second workflow navigator.
+- It answers three questions only: what needs attention, what the saved milestone state is, and where to go next.
+- **Why this?** may reveal a short explanation plus links to the Assistant and Help. It must not contain a carousel, walkthrough, or controls that imply completion.
+- The primary action opens the exact workspace or focused craft panel needed for the recommendation. When no production exists, it opens production setup.
+- Recommendations are derived from saved milestones and compliance state. Merely visiting a workspace never changes them.
 
 The system must remain recognizable to professional creators without requiring prior knowledge of Kizuna's database or internal pipeline.

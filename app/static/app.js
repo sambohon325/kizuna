@@ -43,7 +43,7 @@ function setActiveNavigation(navId = 'productions-nav') {
     button.classList.toggle('active', active);
     if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   });
-  if(navigation){navigation.dataset.activePhase=phase;navigation.dataset.openPhase=phase;}
+  if(navigation){navigation.dataset.activePhase=phase;navigation.dataset.openPhase=phase;navigation.dataset.menuOpen='false';}
   document.querySelectorAll('[data-phase-target]').forEach(button=>{const selected=button.dataset.phaseTarget===phase;button.classList.toggle('active',selected);button.setAttribute('aria-selected',String(selected));});
   document.body.dataset.productionChapter=chapter;
 }
@@ -1441,7 +1441,7 @@ function refreshAssistantContext() {
 }
 
 async function openAssistant() {
-  const panel=document.querySelector('#assistant-panel'),select=document.querySelector('#assistant-project');panel.hidden=false;document.querySelector('#assistant-launch').setAttribute('aria-expanded','true');if(!projects.length){document.querySelector('#assistant-messages').innerHTML='<div class="assistant-empty">Create a production first so I have story and workflow context to work from.</div>';select.innerHTML='';refreshAssistantContext();return;}const preferred=currentFlowProject()?.id||activeAssistantProjectId||projects[0].id;select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(preferred));activeAssistantProjectId=Number(select.value);select.onchange=()=>{activeAssistantProjectId=Number(select.value);loadAssistantHistory();refreshAssistantContext();};refreshAssistantContext();await loadAssistantHistory();document.querySelector('#assistant-input').focus();
+  window.closeCraftCompassPanel?.();const panel=document.querySelector('#assistant-panel'),select=document.querySelector('#assistant-project');panel.hidden=false;document.querySelector('#assistant-launch').setAttribute('aria-expanded','true');if(!projects.length){document.querySelector('#assistant-messages').innerHTML='<div class="assistant-empty">Create a production first so I have story and workflow context to work from.</div>';select.innerHTML='';refreshAssistantContext();return;}const preferred=currentFlowProject()?.id||activeAssistantProjectId||projects[0].id;select.innerHTML=options(projects.map(project=>({id:String(project.id),label:project.title})),String(preferred));activeAssistantProjectId=Number(select.value);select.onchange=()=>{activeAssistantProjectId=Number(select.value);loadAssistantHistory();refreshAssistantContext();};refreshAssistantContext();await loadAssistantHistory();document.querySelector('#assistant-input').focus();
 }
 
 function closeAssistant() { document.querySelector('#assistant-panel').hidden=true;document.querySelector('#assistant-launch').setAttribute('aria-expanded','false'); }

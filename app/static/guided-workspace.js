@@ -13,8 +13,8 @@
     story: 'writer', style: 'style', characters: 'characters', worlds: 'worlds',
     shots: 'shots', timeline: 'timeline', audio: 'audio', composite: 'compositor', render: 'render'
   };
-  const guideState = new Map();
   let expanded = false;
+  let lastWorkspace = '';
   let renderRequest = 0;
 
   const deepLinkViews = {
@@ -45,7 +45,7 @@
     host.id = 'guided-workspace';
     host.className = 'guided-workspace';
     host.setAttribute('aria-live', 'polite');
-    document.querySelector('#production-flow')?.after(host);
+    document.querySelector('#workspace-main')?.prepend(host);
     return host;
   }
 
@@ -61,7 +61,7 @@
     if (!status) return null;
     if (workspace === 'productions') {
       const next = status.stages.find(item => item.key === status.next_key);
-      return next ? {state: next.state, label: `Next milestone · ${next.label}`, summary: next.summary, target: workspaceByStage[next.key], targetLabel: `Open ${next.label}`} : {state: 'complete', label: 'Production milestones current', summary: 'Every production milestone is complete.', target: null, targetLabel: ''};
+      return next ? {state: next.state, label: `Next milestone · ${next.label}`, summary: next.summary, target: workspaceByStage[next.key], targetLabel: `Open ${next.label}`} : {state: 'complete', label: 'Production milestones current', summary: 'Every production milestone is complete.', target: 'render', targetLabel: 'Open Master'};
     }
     const key = stageByWorkspace[workspace];
     const stage = status.stages.find(item => item.key === key);
@@ -125,6 +125,8 @@
     const requestId = ++renderRequest;
     const host = ensureHost();
     const workspace = currentWorkspace();
+    if (lastWorkspace && lastWorkspace !== workspace) expanded = false;
+    lastWorkspace = workspace;
     const article = currentArticle(workspace);
     if (!article) { host.hidden = true; return; }
     host.hidden = false;
@@ -134,28 +136,21 @@
     if (requestId !== renderRequest) return;
     const production = statusPresentation(workspace, status);
     const stage = production?.stage || null;
-    const stateKey = `${project?.id || 'none'}:${workspace}`;
-    const signature = `${stage?.state || production?.state || 'none'}:${stage?.summary || production?.summary || ''}`;
-    let saved = guideState.get(stateKey);
-    if (!saved || saved.signature !== signature) saved = {step: recommendedStep(stage, article), signature};
-    const step = Math.max(0, Math.min(saved.step, article.steps.length - 1));
+    const step = recommendedStep(stage, article);
     const deepLink = deepLinkFor(workspace, step);
-    guideState.set(stateKey, {...saved, step});
-    const focusText = workspace === 'productions' && production ? production.summary : workspace === 'crew' ? 'Choose how much help you want from the crew.' : article.steps[step];
-    const primaryLabel = production?.target ? production.targetLabel : workspace === 'crew' ? 'Choose crew mode' : deepLink?.[0] || 'Open guide';
+    const needsProject = !project && workspace === 'productions';
+    const focusText = needsProject ? 'Create a production so Kizuna can shape the workflow around your story.' : workspace === 'productions' && production ? production.summary : production?.summary || (workspace === 'crew' ? 'Choose how much help you want from the crew.' : article.steps[step]);
+    const primaryLabel = needsProject ? 'Create a production' : production?.target ? production.targetLabel : workspace === 'crew' ? 'Choose crew mode' : deepLink?.[0] || 'Open workspace';
+    const reason = needsProject ? 'The release format, audience, screen shape, and target length determine the creative path that follows.' : workspace === 'productions' && production ? 'Your release plan is saved. Kizuna now follows the first unfinished production milestone; visiting a page never marks it complete.' : production ? `Kizuna reads saved work—not page visits—to determine this status. ${article.summary}` : article.summary;
     host.classList.toggle('expanded', expanded);
-    host.innerHTML = `<div class="guided-focus"><div class="guided-focus-copy"><span>RIGHT NOW</span><b>${safe(focusText)}</b>${production ? `<small class="${safe(production.state)}"><i></i>${safe(production.label)}</small>` : ''}</div><div class="guided-focus-actions"><button class="primary" type="button" data-guide-primary>${safe(primaryLabel)}<span aria-hidden="true">&rarr;</span></button><button type="button" data-guide-expand aria-expanded="${expanded}">${expanded ? 'Close guidance' : 'More guidance'}</button></div></div><div class="guided-workspace-body"><header><div><span>BEGINNER PATH</span><b>${safe(article.title)}</b></div><button type="button" data-guide-full>Open full manual</button></header><p>${safe(article.summary)}</p>${production ? `<div class="guided-production-status ${safe(production.state)}"><span><i></i><b>${safe(production.label)}</b><small>${safe(production.summary)}</small></span>${production.target ? `<button type="button" data-guide-target="${safe(production.target)}">${safe(production.targetLabel)}</button>` : ''}</div>` : ''}<div class="guided-workspace-step"><span>STEP ${step + 1} OF ${article.steps.length}</span><b>${safe(article.steps[step])}</b></div><footer><div><div class="guided-workspace-dots" aria-label="Guide pages">${article.steps.map((_, index) => `<i class="${index === step ? 'active' : ''}"></i>`).join('')}</div><small>This guide never marks work complete.</small></div><div><button type="button" data-guide-back ${step === 0 ? 'disabled' : ''}>Back</button><button type="button" data-guide-ai>Ask AI</button><button type="button" data-guide-next>${step === article.steps.length - 1 ? 'Start again' : 'Next tip'}</button></div></footer></div>`;
+    host.innerHTML = `<div class="guided-focus"><div class="guided-focus-copy"><span>RIGHT NOW</span><b>${safe(focusText)}</b>${production ? `<small class="${safe(production.state)}"><i></i>${safe(production.label)}</small>` : ''}</div><div class="guided-focus-actions"><button class="primary" type="button" data-guide-primary>${safe(primaryLabel)}<span aria-hidden="true">&rarr;</span></button><button type="button" data-guide-expand aria-expanded="${expanded}">${expanded ? 'Hide why' : 'Why this?'}</button></div></div><div class="guided-workspace-body"><div class="guided-reason"><span>WHY THIS IS NEXT</span><b>${safe(reason)}</b></div><div class="guided-support"><button type="button" data-guide-ai>Ask Assistant</button><button type="button" data-guide-full>Open Help</button></div></div>`;
     host.querySelector('[data-guide-expand]').onclick = () => { expanded = !expanded; render(); };
-    host.querySelector('[data-guide-primary]').onclick = () => production?.target ? openGuideTarget(production.target) : workspace === 'crew' ? document.querySelector('.crew-v2-modes')?.scrollIntoView({behavior: 'smooth', block: 'center'}) : deepLink ? focusDeepLink(workspace, step) : openHelpCenter(article.id);
+    host.querySelector('[data-guide-primary]').onclick = () => needsProject ? document.querySelector('#new-project')?.click() : production?.target ? openGuideTarget(production.target) : workspace === 'crew' ? document.querySelector('.crew-v2-modes')?.scrollIntoView({behavior: 'smooth', block: 'center'}) : deepLink ? focusDeepLink(workspace, step) : openHelpCenter(article.id);
     host.querySelector('[data-guide-full]').onclick = () => openHelpCenter(article.id);
-    host.querySelector('[data-guide-target]')?.addEventListener('click', event => openGuideTarget(event.currentTarget.dataset.guideTarget));
-    host.querySelector('[data-guide-deep-link]')?.addEventListener('click', () => focusDeepLink(workspace, step));
-    host.querySelector('[data-guide-back]')?.addEventListener('click', () => { guideState.set(stateKey, {step: Math.max(0, step - 1), signature}); render(); });
-    host.querySelector('[data-guide-next]').onclick = () => { guideState.set(stateKey, {step: step === article.steps.length - 1 ? 0 : step + 1, signature}); render(); };
     host.querySelector('[data-guide-ai]').onclick = async () => {
       await openAssistant();
       const input = document.querySelector('#assistant-input');
-      input.value = `Walk me through this step in ${article.title}: ${article.steps[step]}`;
+      input.value = `Help me with the next step in ${article.title}: ${focusText}`;
       input.focus();
     };
   }

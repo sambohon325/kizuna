@@ -7,7 +7,7 @@ The primary user manual lives inside Kizuna under **Help & manual** so creators 
 - First-run users receive a seven-step, skippable studio tour.
 - Completion is stored in the browser and the tour can always be restarted from Help.
 - The View selector offers Beginner, Intermediate, and Advanced experience levels without changing production data, compliance, approvals, or AI authority.
-- Beginner is the default. It keeps one compact **Right now** action above the active craft and places longer walkthroughs, craft context, and specialist controls behind clear expansion controls.
+- Beginner is the default. It keeps one compact **Right now** action above the active craft. **Why this?** explains the recommendation; longer walkthroughs live in Help, while craft context and specialist controls remain behind clear expansion controls.
 - Intermediate reveals the complete craft workflow and supporting production context. Advanced opens the full toolset in a denser professional workspace.
 - The Beginner path reads saved production milestones, routes to required earlier work, and never marks work complete simply because a page was visited.
 - Articles are organized around creator tasks rather than implementation details.

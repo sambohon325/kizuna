@@ -2,22 +2,71 @@ let craftGuidanceCatalogPromise = null;
 const craftGuidanceReviewCache = new Map();
 
 const craftGuidanceDepartments = {
+  all: ['story', 'performance', 'world', 'visual', 'motion', 'edit', 'audio'],
+  compass: ['story', 'performance', 'world', 'visual', 'motion', 'edit', 'audio'],
   story: ['story', 'performance'],
   characters: ['performance', 'visual', 'motion'],
   worlds: ['world', 'visual'],
   shots: ['motion', 'visual', 'performance'],
   edit: ['edit', 'motion'],
   sound: ['audio', 'performance'],
+  finish: ['visual', 'motion', 'edit'],
 };
 
 const craftGuidanceLabels = {
+  all: 'Production-wide craft',
+  compass: 'Creative DNA',
   story: 'Story craft',
   characters: 'Character & performance',
   worlds: 'World craft',
   shots: 'Visual storytelling',
   edit: 'Editorial rhythm',
   sound: 'Sound & performance',
+  finish: 'Finishing & delivery',
 };
+
+const craftGuidanceWorkspaceStages = {
+  productions: 'all', crew: 'all', writer: 'story', style: 'compass', characters: 'characters',
+  worlds: 'worlds', shots: 'shots', timeline: 'edit', audio: 'sound', compositor: 'finish',
+  render: 'finish', assets: 'all', activity: 'all', settings: 'all', account: 'all',
+};
+const craftGuidanceSourceStages = new Set(['story', 'characters', 'worlds', 'shots', 'edit', 'sound']);
+
+function closeCraftCompassPanel() {
+  const panel = document.querySelector('#craft-compass-panel');
+  if (panel) panel.hidden = true;
+  document.querySelector('#craft-compass-launch')?.setAttribute('aria-expanded', 'false');
+}
+
+async function setCraftCompassContext(workspace = typeof assistantPage === 'function' ? assistantPage() : 'productions') {
+  const stage = craftGuidanceWorkspaceStages[workspace] || 'all';
+  const label = craftGuidanceLabels[stage] || 'Creative guidance';
+  const heading = document.querySelector('#craft-compass-context');
+  const launch = document.querySelector('#craft-compass-launch');
+  if (heading) heading.textContent = label;
+  if (launch) launch.title = `Craft Compass · ${label}`;
+  const project = typeof currentFlowProject === 'function' ? currentFlowProject() : null;
+  const host = document.querySelector('#craft-compass-panel-body');
+  if (!project) {
+    if (host) host.innerHTML = '<div class="craft-guidance-empty-state"><b>Create a production to use the Craft Compass.</b><span>It will follow the active craft and compare saved work with your chosen creative intent.</span></div>';
+    if (launch) { launch.removeAttribute('data-count'); launch.setAttribute('aria-label', `Open Craft Compass · ${label}`); }
+    return;
+  }
+  await renderCraftGuidance(host, project.id, stage, {label});
+}
+
+async function toggleCraftCompassPanel() {
+  const panel = document.querySelector('#craft-compass-panel');
+  const launch = document.querySelector('#craft-compass-launch');
+  if (!panel || !launch) return;
+  const opening = panel.hidden;
+  if (opening) {
+    if (typeof closeAssistant === 'function') closeAssistant();
+    await setCraftCompassContext();
+  }
+  panel.hidden = !opening;
+  launch.setAttribute('aria-expanded', String(opening));
+}
 
 function craftGuidanceCatalog() {
   if (!craftGuidanceCatalogPromise) craftGuidanceCatalogPromise = api('/api/anime-craft/catalog');
@@ -101,26 +150,39 @@ function craftFindingMarkup(item) {
 
 async function renderCraftGuidance(host, projectId, stage, options = {}) {
   if (typeof host === 'string') host = document.querySelector(host);
+  const requestedHost = host;
+  const dockHost = document.querySelector('#craft-compass-panel-body');
+  if (requestedHost && dockHost && requestedHost !== dockHost) {
+    requestedHost.hidden = true;
+    host = dockHost;
+  }
   if (!host || !projectId) return;
+  if (host === dockHost) host.classList.add('expanded');
   const requestId = `${projectId}:${stage}:${Date.now()}`;
   host.dataset.craftRequest = requestId;
   host.classList.add('craft-guidance');
   host.innerHTML = '<div class="craft-guidance-loading">Reading the production Craft Compass…</div>';
   try {
-    const [catalog, review, sourceNotes] = await Promise.all([craftGuidanceCatalog(), craftGuidanceReview(projectId, stage, options.force), api(`/api/projects/${projectId}/source-notes?stage=${encodeURIComponent(stage)}`)]);
+    const [catalog, review, sourceNotes] = await Promise.all([craftGuidanceCatalog(), craftGuidanceReview(projectId, stage, options.force), craftGuidanceSourceStages.has(stage) ? api(`/api/projects/${projectId}/source-notes?stage=${encodeURIComponent(stage)}`) : Promise.resolve(null)]);
     if (host.dataset.craftRequest !== requestId) return;
     const traditions = craftGuidanceTraditions(catalog, review, stage);
     const findings = review.findings || [];
     const openFindings = findings.filter(item => !item.resolved);
     const intent = review.compass?.intent?.trim();
     const label = options.label || craftGuidanceLabels[stage] || 'Craft guidance';
+    const launch = document.querySelector('#craft-compass-launch');
+    if (launch) {
+      if (openFindings.length) launch.dataset.count = String(openFindings.length); else launch.removeAttribute('data-count');
+      launch.title = `Craft Compass · ${label}${openFindings.length ? ` · ${openFindings.length} open` : ' · aligned'}`;
+      launch.setAttribute('aria-label', launch.title);
+    }
     host.innerHTML = `<header class="craft-guidance-head">
       <div><span>CRAFT COMPASS · ${safe(label.toUpperCase())}</span><h3>${intent ? safe(intent) : 'Set the creative intent for this production'}</h3></div>
       <div class="craft-guidance-actions"><small>Catalog ${safe(review.catalog?.pinned_version||review.catalog?.current_version||'not set')}</small><em class="${openFindings.length ? 'open' : 'aligned'}">${openFindings.length ? `${openFindings.length} open` : 'Aligned'}</em><button type="button" class="craft-guidance-toggle" data-craft-guidance-toggle>Open guidance</button><button type="button" data-open-craft-compass>${intent ? 'Edit compass' : 'Set compass'}</button></div>
     </header>
     ${traditions.length ? `<div class="craft-guidance-lenses">${traditions.map(item => `<span title="${safe(item.context)}">${item.japanese ? `<b lang="ja">${safe(item.japanese)}</b> ` : ''}${safe(item.reading || item.name)}</span>`).join('')}</div>` : '<p class="craft-guidance-empty">Choose traditions for the questions they help the crew ask—not as a recipe or a purity test.</p>'}
     ${findings.length ? `<div class="craft-guidance-findings">${findings.map(craftFindingMarkup).join('')}</div>` : '<p class="craft-guidance-clear">No open craft tension was found for this desk. Keep making specific, intentional choices.</p>'}
-    ${sourceNotesMarkup(sourceNotes)}
+    ${sourceNotes ? sourceNotesMarkup(sourceNotes) : ''}
     <footer>Advisory creative guidance · separate from originality, rights, consent, and release compliance</footer>`;
     host.querySelector('[data-open-craft-compass]').onclick = () => openCraftCompass(projectId);
     host.querySelector('[data-craft-guidance-toggle]').onclick = event => {
@@ -153,6 +215,7 @@ async function renderCraftGuidance(host, projectId, stage, options = {}) {
       }
     });
     const sourceEditor = host.querySelector('[data-source-note-editor]');
+    if (!sourceEditor || !sourceNotes) return;
     const typeSelect = host.querySelector('[data-source-note-type]');
     const sourceTypeMap = new Map((sourceNotes.types || []).map(item => [item.id, item]));
     const describeSourceType = () => { host.querySelector('[data-source-note-description]').textContent = sourceTypeMap.get(typeSelect.value)?.description || ''; };
@@ -192,3 +255,13 @@ async function renderCraftGuidance(host, projectId, stage, options = {}) {
     if (host.dataset.craftRequest === requestId) host.innerHTML = `<div class="craft-guidance-error"><b>Craft guidance is unavailable</b><span>${safe(error.message)}</span></div>`;
   }
 }
+
+document.querySelector('#craft-compass-launch')?.addEventListener('click', toggleCraftCompassPanel);
+document.querySelector('#craft-compass-close')?.addEventListener('click', closeCraftCompassPanel);
+document.addEventListener('kizuna:workspace-opened', event => {
+  closeCraftCompassPanel();
+  setCraftCompassContext(event.detail?.workspace).catch(() => {});
+});
+document.addEventListener('DOMContentLoaded', () => setCraftCompassContext().catch(() => {}));
+window.setCraftCompassContext = setCraftCompassContext;
+window.closeCraftCompassPanel = closeCraftCompassPanel;

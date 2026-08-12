@@ -40,6 +40,7 @@ Kizuna uses one shared interface foundation across every creative department. Cr
 
 ## Visual-development workspaces
 
+- In Beginner, **AI Crew** begins with four plain-language working relationships. Customizing a creative partner is a three-step conversation: choose a craft, shape its name/personality/supervision, then save it. Provider routing, model overrides, and tool permissions appear in Intermediate and Advanced.
 - In Beginner, **Style Lab** begins with the audience's emotional experience and originality guardrails beside a live creative-DNA board. Technique vocabulary and the full six-stage sequence appear when the creator moves to Intermediate.
 - In Beginner, **Character Studio** and **Worlds & Backgrounds** place the visual card library across the top, the active craft canvas beneath it, and a focused AI creative partner beside the work. This makes choosing or creating an asset the obvious first action.
 - Character and world stages remain available as plain-language tabs so a creator can move between story, design, model, staging, lighting, and assets without losing context.

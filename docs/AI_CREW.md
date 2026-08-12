@@ -9,6 +9,8 @@ Kizuna supports two equally important ways to create: direct the production manu
 - **Manual** disables every AI department. The creator keeps full hands-on control.
 - **Custom** lets the creator toggle individual departments. Independence and standing directions live inside each department's Advanced section.
 
+In the browser, Beginner presents Custom as a short creative-partner builder: choose a craft, name the partner, select meaningful traits, choose how closely to supervise it, and save. Intermediate and Advanced reveal provider routing, model overrides, standing direction, and responsibility controls.
+
 The main Crew screen emphasizes three things: how much help is active, the Producer's next step, and decisions waiting for approval. Workflow providers, output profiles, role-level autonomy, standing directions, and completed activity remain available without crowding the default view.
 
 ## Producer workflow

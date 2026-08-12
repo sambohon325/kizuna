@@ -77,6 +77,14 @@ The Assistant can recommend and route work, but it does not silently change prod
 
 Use Beginner to choose the working relationship. Move to Intermediate or Advanced when you need role-specific models, standing directions, or specialist controls.
 
+When you choose **Customize crew** in Beginner:
+
+1. Pick the creative craft you want help with.
+2. Give that partner a name, useful personality traits, and a supervision level.
+3. Tell it what it should always remember, then save it.
+
+AI routes, model overrides, and detailed tool permissions remain available in Intermediate and Advanced without changing the partner you already created.
+
 ## Review and deliver
 
 1. Open **Direct → Timeline**.
@@ -111,4 +119,3 @@ Large originals and renders can remain on user-controlled storage while Kizuna k
 - Open **Studio → Help** to search the full manual.
 - Open **Studio → Activity** when background work is delayed or failed.
 - Move to Intermediate or Advanced only when the current task needs deeper controls.
-

@@ -53,6 +53,13 @@ Kizuna uses one shared interface foundation across every creative department. Cr
 - Switching back to Beginner restores the primary inspector for each craft without changing a shot, clip, approval, or saved production decision.
 - Horizontal shelves hide their browser scrollbars while remaining scrollable by wheel, trackpad, touch, and keyboard focus.
 
+## Sound and finishing workspaces
+
+- In Beginner, **Audio & Voice Studio** keeps the multitrack arrangement central and names its three supporting tasks plainly: **Edit selected sound**, **Create sound**, and **Voice & rights**. Precision split, duplicate, delete, snap, and zoom controls return in Intermediate and Advanced.
+- With no audio region selected, Beginner opens **Create sound** with the AI Sound Producer. Selecting a region opens its focused editor; switching experience levels never changes the arrangement.
+- In Beginner, **Scene Compositor** presents the finishing queue as a horizontal shot shelf above the picture canvas. The inspector offers **Layers** and **AI Animator**, while Camera & Grade returns in deeper modes.
+- Selected-layer properties begin collapsed in Beginner so the picture and layer stack remain the primary decisions. They can still be expanded without changing experience level.
+
 ## Interaction hierarchy
 
 - Primary: the next meaningful creative or production action

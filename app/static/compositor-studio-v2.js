@@ -74,10 +74,23 @@
   dialog.querySelectorAll('[data-comp-view]').forEach(button=>button.onclick=()=>setCompositorViewV2(button.dataset.compView));
 
   function setCompositorViewV2(view){
-    dialog.querySelectorAll('[data-comp-view]').forEach(button=>button.classList.toggle('active',button.dataset.compView===view));
+    dialog.querySelectorAll('[data-comp-view]').forEach(button=>{const active=button.dataset.compView===view;button.classList.toggle('active',active);button.setAttribute('aria-current',active?'page':'false');});
     dialog.querySelectorAll('[data-comp-panel]').forEach(section=>section.classList.toggle('active',section.dataset.compPanel===view));
   }
   window.setCompositorViewV2=setCompositorViewV2;
+  dialog.querySelectorAll('[data-comp-view]').forEach(button=>button.addEventListener('click',event=>{
+    if(document.documentElement.dataset.workspaceDepth!=='guided')return;
+    event.stopImmediatePropagation();
+    setCompositorViewV2(button.dataset.compView);
+  },true));
+
+  function syncCompositorExperienceV2(){
+    if(document.documentElement.dataset.workspaceDepth!=='guided')return;
+    setCompositorViewV2('layers');
+    const properties=dialog.querySelector('.comp-layer-properties');
+    if(properties)properties.open=false;
+  }
+  document.addEventListener('kizuna:workspace-depth',syncCompositorExperienceV2);
 
   function decorateCompositorV2(){
     const studio=typeof activeCompositorStudio==='undefined'?null:activeCompositorStudio;
@@ -128,4 +141,5 @@
   const baseSelectLayer=selectCompositionLayer;
   selectCompositionLayer=function(layerId){const value=baseSelectLayer(layerId);setCompositorViewV2('layers');decorateCompositorV2();return value;};
   decorateCompositorV2();
+  syncCompositorExperienceV2();
 })();

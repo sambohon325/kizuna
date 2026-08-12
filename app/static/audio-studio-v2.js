@@ -36,7 +36,7 @@
 
   const inspector = document.createElement('section');
   inspector.className = 'audio-inspector-v2';
-  inspector.innerHTML = '<nav aria-label="Audio inspector"><button type="button" class="active" data-audio-view="region">Region</button><button type="button" data-audio-view="producer">Sound Producer</button><button type="button" data-audio-view="voice">Voice & rights</button></nav><div class="audio-inspector-panel-v2" data-audio-panel="region"></div><div class="audio-inspector-panel-v2 audio-producer-v2" data-audio-panel="producer" hidden><header><p class="eyebrow">AI SOUND PRODUCER</p><h3>Create or place the performance</h3><p>Select a region, describe what should be heard, then generate a reviewable performance, timing slate, or upload authorized audio.</p></header><div id="audio-producer-guide-v2"><span>DIALOGUE · direct delivery and pronunciation</span><span>MUSIC · brief the composition and upload or connect a generator</span><span>SOUND · place effects and ambience against picture time</span></div></div><div class="audio-inspector-panel-v2 audio-voice-v2" data-audio-panel="voice" hidden><header><p class="eyebrow">VOICE DIRECTION</p><h3>Performance identity & permission</h3><p>Lock the vocal character, provider, pronunciation, consent, and disclosure before generating dialogue.</p></header></div>';
+  inspector.innerHTML = '<nav aria-label="Audio workspace"><button type="button" class="active" data-audio-view="region">Edit selected sound</button><button type="button" data-audio-view="producer">Create sound</button><button type="button" data-audio-view="voice">Voice & rights</button></nav><div class="audio-inspector-panel-v2" data-audio-panel="region"></div><div class="audio-inspector-panel-v2 audio-producer-v2" data-audio-panel="producer" hidden><header><p class="eyebrow">AI SOUND PRODUCER</p><h3>Create or place the performance</h3><p>Select a region, describe what should be heard, then generate a reviewable performance, timing slate, or upload authorized audio.</p></header><div id="audio-producer-guide-v2"><span>DIALOGUE · direct delivery and pronunciation</span><span>MUSIC · brief the composition and upload or connect a generator</span><span>SOUND · place effects and ambience against picture time</span></div></div><div class="audio-inspector-panel-v2 audio-voice-v2" data-audio-panel="voice" hidden><header><p class="eyebrow">VOICE DIRECTION</p><h3>Performance identity & permission</h3><p>Lock the vocal character, provider, pronunciation, consent, and disclosure before generating dialogue.</p></header></div>';
   inspector.querySelector('[data-audio-panel="region"]').append(empty, form);
   inspector.querySelector('[data-audio-panel="producer"]').appendChild(cueResult);
   inspector.querySelector('[data-audio-panel="voice"]').appendChild(voice);
@@ -85,12 +85,25 @@
     originalRenderCueResultV2(cue);
     refreshAudioProducerV2(cue);
   };
+  syncAudioStudioExperienceV2();
 })();
 
 function setAudioStudioViewV2(view) {
-  document.querySelectorAll('[data-audio-view]').forEach(button => button.classList.toggle('active', button.dataset.audioView === view));
+  document.querySelectorAll('[data-audio-view]').forEach(button => {
+    const active = button.dataset.audioView === view;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-current', active ? 'page' : 'false');
+  });
   document.querySelectorAll('[data-audio-panel]').forEach(panel => panel.hidden = panel.dataset.audioPanel !== view);
 }
+
+function syncAudioStudioExperienceV2() {
+  if (document.documentElement.dataset.workspaceDepth !== 'guided') return;
+  const selected = typeof activeAudioCueId !== 'undefined' && activeAudioCueId ? 'region' : 'producer';
+  setAudioStudioViewV2(selected);
+}
+
+document.addEventListener('kizuna:workspace-depth', syncAudioStudioExperienceV2);
 
 function audioTimecodeV2(seconds) {
   const value = Math.max(0, Number(seconds || 0));

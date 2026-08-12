@@ -3,7 +3,7 @@
     productions: 'start', crew: 'ai-help', writer: 'writing', style: 'craft-compass',
     characters: 'characters', worlds: 'worlds', shots: 'storyboard', timeline: 'edit',
     audio: 'audio', compositor: 'compositor', render: 'render', assets: 'assets',
-    activity: 'activity', settings: 'connections', account: 'start'
+    activity: 'activity', settings: 'settings', account: 'start'
   };
   const stageByWorkspace = {
     writer: 'story', style: 'style', characters: 'characters', worlds: 'worlds',

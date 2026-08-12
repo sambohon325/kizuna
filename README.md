@@ -78,6 +78,7 @@ pytest
 
 See [the phased Kizuna roadmap](docs/ROADMAP.md) for how Anime Studio becomes the shared foundation for Express, Paper, Hero, Motion, CineReal, AdForge, collaboration, integrations, and the future creator ecosystem.
 
+See [the Kizuna Studio user guide](docs/USER_GUIDE.md) for experience levels, production chapters, AI collaboration, delivery, rights, Hive usage, and troubleshooting.
 See [AI Crew and voice setup](docs/AI_CREW.md) for autonomy behavior and optional hosted speech configuration.
 See [AI provider routing](docs/AI_PROVIDER_ROUTING.md) for assigning OpenAI, Claude, Gemini, Ollama, or custom engines to studio roles.
 See [Kizuna Node and mixed-platform Hive](docs/KIZUNA_NODE.md) for computer enrollment, privacy, schedules, usage throttles, workload placement, and AI budget monitoring.

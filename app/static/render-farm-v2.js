@@ -11,21 +11,21 @@
   const note=dialog.querySelector('.farm-note');
   let farmData=null,computeData=null,queueFilter='all',activeView='overview';
 
-  title.querySelector('h2').textContent='Render Farm & Hive';
-  title.querySelector('.form-intro').textContent='Run production work across Windows, Mac, Linux, and cloud resources—with clear limits, schedules, and queue visibility.';
+  title.querySelector('h2').textContent='Render & Hive';
+  title.querySelector('.form-intro').textContent='See whether your computers are ready, follow active renders, and add more capacity when you need it.';
   document.querySelector('#refresh-farm').innerHTML='<span aria-hidden="true">↻</span> Refresh status';
 
   const oldHeadings=[...panel.querySelectorAll(':scope > h3')];
   oldHeadings.forEach(heading=>heading.remove());
   note.remove();
-  title.insertAdjacentHTML('afterend','<nav class="farm-tabs-v2" aria-label="Render Farm views"><button type="button" class="active" data-farm-view="overview">Overview</button><button type="button" data-farm-view="computers">Computers</button><button type="button" data-farm-view="queue">Render queue</button><button type="button" data-farm-view="setup">Add a computer</button></nav><div class="farm-statusline-v2"><span><i></i><b id="farm-health-label-v2">Checking Hive…</b></span><small id="farm-updated-v2">Connecting</small></div>');
+  title.insertAdjacentHTML('afterend','<nav class="farm-tabs-v2" aria-label="Render and Hive views"><button type="button" class="active" data-farm-view="overview">Status</button><button type="button" data-farm-view="computers">Computers</button><button type="button" data-farm-view="queue">Jobs</button><button type="button" data-farm-view="setup">Add computer</button></nav><div class="farm-statusline-v2"><span><i></i><b id="farm-health-label-v2">Checking render capacity...</b></span><small id="farm-updated-v2">Connecting</small></div>');
 
   const overview=document.createElement('section');
   overview.className='farm-pane-v2 active';overview.dataset.farmPane='overview';
-  overview.innerHTML='<div class="farm-section-head-v2"><div><p class="eyebrow">STUDIO CAPACITY</p><h3>What the Hive can do right now</h3></div><button type="button" data-farm-jump="computers">Manage computers</button></div><div id="farm-overview-v2"></div><div class="farm-section-head-v2 compact"><div><p class="eyebrow">WORKER SERVICES</p><h3>Render engines checking in</h3></div></div>';
+  overview.innerHTML='<div class="farm-section-head-v2"><div><p class="eyebrow">RENDER STATUS</p><h3>Is the studio ready to render?</h3><p>Kizuna uses available computers automatically and keeps queued work visible.</p></div><button type="button" data-farm-jump="computers">View computers</button></div><div id="farm-overview-v2"></div><div class="farm-section-head-v2 compact farm-worker-heading-v2"><div><p class="eyebrow">RENDER SERVICES</p><h3>Available render engines</h3></div></div>';
   overview.prepend(summary);overview.append(workers);
   const computersPane=document.createElement('section');computersPane.className='farm-pane-v2';computersPane.dataset.farmPane='computers';computersPane.innerHTML='<div class="farm-section-head-v2"><div><p class="eyebrow">HIVE COMPUTERS</p><h3>Schedules, limits, and workload controls</h3><p>Kizuna only assigns new work when a computer is online, inside its schedule, and below every limit.</p></div><button class="primary" type="button" data-farm-jump="setup">+ Add computer</button></div><div id="farm-computers-v2"></div>';
-  const queuePane=document.createElement('section');queuePane.className='farm-pane-v2';queuePane.dataset.farmPane='queue';queuePane.innerHTML='<div class="farm-section-head-v2"><div><p class="eyebrow">RENDER QUEUE</p><h3>Every distributed job in one place</h3></div><div class="farm-queue-filters-v2"><button type="button" class="active" data-queue-filter="all">All</button><button type="button" data-queue-filter="active">Active</button><button type="button" data-queue-filter="attention">Needs attention</button><button type="button" data-queue-filter="complete">Complete</button></div></div><div class="farm-queue-head-v2"><span>Job</span><span>Work</span><span>Computer</span><span>Status</span><span>Attempts / output</span></div>';
+  const queuePane=document.createElement('section');queuePane.className='farm-pane-v2';queuePane.dataset.farmPane='queue';queuePane.innerHTML='<div class="farm-section-head-v2"><div><p class="eyebrow">RENDER JOBS</p><h3>What is rendering now?</h3><p>Anything that stops or needs your attention is called out here.</p></div><div class="farm-queue-filters-v2"><button type="button" class="active" data-queue-filter="all">All</button><button type="button" data-queue-filter="active">Rendering</button><button type="button" data-queue-filter="attention">Needs attention</button><button type="button" data-queue-filter="complete">Finished</button></div></div><div class="farm-queue-head-v2"><span>Job</span><span>Work</span><span>Computer</span><span>Status</span><span>Result</span></div>';
   queuePane.appendChild(jobs);
   const setupPane=document.createElement('section');setupPane.className='farm-pane-v2';setupPane.dataset.farmPane='setup';setupPane.innerHTML='<div class="farm-setup-v2"><div class="farm-setup-copy-v2"><p class="eyebrow">KIZUNA COMPANION</p><h3>Add Windows, Mac, or Linux</h3><p>The companion privately scans the hardware and creative tools you approve. It never searches personal files, passwords, browser history, or license keys.</p><ol><li><b>Download</b><span>One Python companion works across all three platforms.</span></li><li><b>Preview</b><span>See the exact hardware and software details before sharing.</span></li><li><b>Approve</b><span>Connect with a one-time code, then choose schedules and limits here.</span></li></ol><button id="farm-enroll-v2" class="primary" type="button">Create connection code</button></div><aside><span>WHAT IT ENABLES</span><b>Private rendering</b><b>Local AI workflows</b><b>Media replication</b><b>Mixed-platform Hive</b><small>You can pause or disconnect a computer at any time.</small></aside></div><div id="farm-enrollment-v2"></div>';
   panel.append(overview,computersPane,queuePane,setupPane);
@@ -37,9 +37,12 @@
 
   function setFarmViewV2(view){
     activeView=view;
-    dialog.querySelectorAll('[data-farm-view]').forEach(button=>button.classList.toggle('active',button.dataset.farmView===view));
+    dialog.querySelectorAll('[data-farm-view]').forEach(button=>{const active=button.dataset.farmView===view;button.classList.toggle('active',active);button.setAttribute('aria-current',active?'page':'false');});
     dialog.querySelectorAll('[data-farm-pane]').forEach(pane=>pane.classList.toggle('active',pane.dataset.farmPane===view));
   }
+
+  function syncFarmExperienceV2(){if(window.kizunaExperience?.getMode()==='guided')setFarmViewV2('overview');}
+  document.addEventListener('kizuna:workspace-depth',syncFarmExperienceV2);
 
   function taskLabel(task){return({master_segment:'Video rendering',character_reference:'Character images',media_replication:'Media storage'})[task]||String(task).replaceAll('_',' ');}
   function statusClass(status){return ['completed','online','ready'].includes(status)?'complete':['failed','cancelled'].includes(status)?'attention':['queued','leased','rendering','running','busy'].includes(status)?'active':'idle';}
@@ -50,8 +53,8 @@
     const queued=generation.filter(job=>job.status==='queued').length+segments.filter(job=>job.status==='queued').length;
     const active=generation.filter(job=>job.status==='running').length+segments.filter(job=>['leased','rendering'].includes(job.status)).length;
     const online=farmData?.workers?.filter(worker=>['online','busy'].includes(worker.status)).length||0;
-    summary.innerHTML=`<article><i class="online">●</i><span><b>${online}</b><small>workers online</small></span></article><article><i class="active">▶</i><span><b>${active}</b><small>jobs rendering</small></span></article><article><i class="queued">↳</i><span><b>${queued}</b><small>jobs waiting</small></span></article><article><i class="capacity">◇</i><span><b>${hive.active_jobs||0}/${hive.capacity||0}</b><small>Hive slots used</small></span></article>`;
-    const ready=hive.accepting_work||0,total=hive.devices||0,health=online&&ready?'Hive ready':online?'Workers online · limits active':total?'Computers offline':'No computers connected';
+    summary.innerHTML=`<article><i class="online">●</i><span><b>${online}</b><small>computers ready</small></span></article><article><i class="active">▶</i><span><b>${active}</b><small>rendering now</small></span></article><article><i class="queued">↳</i><span><b>${queued}</b><small>waiting to render</small></span></article><article><i class="capacity">◇</i><span><b>${hive.active_jobs||0}/${hive.capacity||0}</b><small>render slots used</small></span></article>`;
+    const ready=hive.accepting_work||0,total=hive.devices||0,health=online&&ready?'Ready to render':online?'Computers online - schedules or limits are active':total?'Computers are offline':'Cloud rendering only - no computers connected';
     document.querySelector('#farm-health-label-v2').textContent=health;
     document.querySelector('.farm-statusline-v2').classList.toggle('ready',Boolean(online&&ready));
     document.querySelector('#farm-updated-v2').textContent=`Updated ${new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`;

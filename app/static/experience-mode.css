@@ -95,6 +95,22 @@ html[data-workspace-depth="guided"] #compositor-dialog[data-compositor-v2="ready
 @media(max-width:1000px){html[data-workspace-depth="guided"] #compositor-dialog[data-compositor-v2="ready"] .compositor-workspace{grid-template-columns:1fr}html[data-workspace-depth="guided"] #compositor-dialog[data-compositor-v2="ready"] .comp-inspector{grid-column:auto}}
 @media(max-width:620px){html[data-workspace-depth="guided"] .audio-inspector-v2>nav{grid-template-columns:1fr}html[data-workspace-depth="guided"] #compositor-dialog[data-compositor-v2="ready"] .compositor-shot{flex-basis:220px}}
 
+/* Delivery and render operations: surface outcomes before infrastructure. */
+html[data-workspace-depth="guided"] .timeline-export-center-v2{grid-template-columns:1fr}
+html[data-workspace-depth="guided"] .timeline-farm-export-v2{margin-top:8px}
+html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] .render-title{display:grid!important;grid-template-columns:minmax(0,1fr);align-items:start;gap:14px;padding:0!important}
+html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] #refresh-farm{width:max-content}
+html[data-workspace-depth="guided"] .farm-tabs-v2{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:visible}
+html[data-workspace-depth="guided"] .farm-tabs-v2 button{min-width:0;width:auto;white-space:normal}
+html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] .farm-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] .farm-summary>article:nth-child(4){display:none}
+html[data-workspace-depth="guided"] .farm-capacity-v2{grid-template-columns:1fr 1fr}
+html[data-workspace-depth="guided"] .farm-capacity-v2>article:nth-child(2),
+html[data-workspace-depth="guided"] .farm-worker-heading-v2,
+html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] .farm-workers{display:none}
+
+@media(max-width:720px){html[data-workspace-depth="guided"] .farm-tabs-v2{grid-template-columns:1fr 1fr}html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] .farm-summary,html[data-workspace-depth="guided"] .farm-capacity-v2{grid-template-columns:1fr}html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] .render-panel>.close{position:relative;inset:auto!important;margin:0 0 14px!important}html[data-workspace-depth="guided"] #render-dialog[data-render-v2="ready"] .render-panel>.workspace-popout{display:none!important}}
+
 html[data-workspace-depth="studio"] .form-intro{max-width:900px}
 html[data-workspace-depth="studio"] .craft-learning details:not([open]){display:none}
 

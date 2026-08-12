@@ -60,6 +60,13 @@ Kizuna uses one shared interface foundation across every creative department. Cr
 - In Beginner, **Scene Compositor** presents the finishing queue as a horizontal shot shelf above the picture canvas. The inspector offers **Layers** and **AI Animator**, while Camera & Grade returns in deeper modes.
 - Selected-layer properties begin collapsed in Beginner so the picture and layer stack remain the primary decisions. They can still be expanded without changing experience level.
 
+## Delivery and render workspaces
+
+- **Timeline & Animatic** always exposes a two-step delivery path: create a lightweight review copy, then export the final video. Beginner mode must never hide the ability to finish a production.
+- Quality choices use audience-facing names such as **Full HD** and **Ultra HD**. Segmented Hive export remains available as an expandable option for long or distributed renders.
+- In Beginner, **Render & Hive** answers three questions first: whether the studio is ready, what is rendering, and what needs attention. Slot counts, worker services, schedules, throttles, and task routing remain available in deeper views.
+- Switching to Beginner returns Render & Hive to **Status** without stopping, reassigning, or changing any active job.
+
 ## Interaction hierarchy
 
 - Primary: the next meaningful creative or production action

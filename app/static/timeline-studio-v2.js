@@ -59,8 +59,26 @@
 
   const deliveries = document.createElement('details');
   deliveries.className = 'timeline-deliveries-v2';
-  deliveries.innerHTML = '<summary><span><b>Reviews & exports</b><small>Proxy playback, masters, and render-farm progress</small></span><em>Open</em></summary><div class="timeline-deliveries-body-v2"></div>';
-  deliveries.querySelector('div').append(segmented, animatic);
+  deliveries.open = true;
+  deliveries.innerHTML = '<summary><span><b>Review & deliver</b><small>Watch a lightweight copy, then export the finished video</small></span><em>Open</em></summary><div class="timeline-deliveries-body-v2"></div>';
+  const deliveryBody = deliveries.querySelector('div');
+  const exportCenter = document.createElement('section');
+  exportCenter.className = 'timeline-export-center-v2';
+  exportCenter.innerHTML = '<article class="timeline-export-step-v2"><span>01</span><div><p class="eyebrow">REVIEW COPY</p><h3>Watch the current cut</h3><small>Fast to make. Use it to check pacing, dialogue, and timing before the final export.</small></div><div class="timeline-review-action-v2"></div></article><article class="timeline-export-step-v2"><span>02</span><div><p class="eyebrow">FINAL VIDEO</p><h3>Export the finished production</h3><small>Choose the delivery quality. Kizuna applies your production shape, duration, trial, watermark, and compliance rules.</small></div><div class="timeline-master-action-v2"></div></article>';
+  const reviewAction = exportCenter.querySelector('.timeline-review-action-v2');
+  const masterAction = exportCenter.querySelector('.timeline-master-action-v2');
+  const masterProfile = panel.querySelector('#master-profile');
+  const renderMaster = panel.querySelector('#render-master');
+  const segmentSize = panel.querySelector('#segment-size');
+  const planSegmented = panel.querySelector('#plan-segmented-export');
+  const farmExport = document.createElement('details');
+  farmExport.className = 'timeline-farm-export-v2 advanced-settings';
+  farmExport.innerHTML = '<summary><span><b>Use the Hive for this export</b><small>Split a long final video across connected computers</small></span></summary><div></div>';
+  reviewAction.appendChild(panel.querySelector('#render-animatic'));
+  masterAction.append(masterProfile, renderMaster);
+  farmExport.querySelector('div').append(segmentSize, planSegmented);
+  deliveryBody.append(exportCenter, farmExport, segmented, animatic);
+  panel.querySelector('.header-advanced')?.remove();
 
   shell.append(upper, sequence, deliveries);
   title.after(guidance, shell);
@@ -167,6 +185,8 @@ function refreshTimelineStudioV2() {
   if (!source || !count || !ruler) return;
 
   const clips = timeline?.clips || [];
+  const deliverySummary = document.querySelector('.timeline-deliveries-v2 summary small');
+  if (deliverySummary) deliverySummary.textContent = clips.length ? `${clips.length} clip${clips.length === 1 ? '' : 's'} ready for review and delivery` : 'Build the sequence before creating review or final files';
   count.textContent = String(clips.length);
   source.innerHTML = clips.length ? clips.map(clip => `<button type="button" class="timeline-source-card-v2 ${clip.id === activeClipId ? 'active' : ''}" data-source-clip-id="${clip.id}">${timelineThumbV2(clip)}<span><small>${safe(clip.scene_title)}</small><b>${safe(clip.shot_title)}</b><em>${Number(clip.duration_seconds).toFixed(1)}s</em></span></button>`).join('') : '<div class="timeline-v2-empty compact"><b>No clips yet</b><span>Build the sequence from approved shots.</span></div>';
   source.querySelectorAll('[data-source-clip-id]').forEach(button => button.onclick = () => selectClip(Number(button.dataset.sourceClipId)));

@@ -24,7 +24,7 @@ You can change levels at any time. Experience level and AI automation are separa
 
 ## The five chapters
 
-The top bar shows only the five chapters. Select **Imagine**, **Direct**, **Finish**, or **Studio** to open its tools in a dropdown; choosing a tool closes the menu. The bottom dock keeps the saved nine-stage production journey visible and places the contextual **Craft Compass** and **AI** buttons together on the right.
+The top bar shows only the five chapters. Select **Imagine**, **Direct**, **Finish**, or **Studio** to open its tools in a dropdown; choosing a tool closes the menu. The bottom dock keeps the saved nine-stage production journey visible. Select any milestone to open that workspace; navigation never marks it complete. The contextual **Craft Compass** and **AI** buttons stay together on the right.
 
 ### Home
 

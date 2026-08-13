@@ -44,7 +44,7 @@ Kizuna uses one shared interface foundation across every creative department. Cr
 - The environment changes subtly as the production story advances: cool indigo for story, violet/teal for design, warm amber/blue for motion, magenta/indigo for sound, cyan for finishing, green for mastering, and quiet slate for studio operations.
 - Chapter color is atmospheric context, not a status signal. Completion, warnings, compliance, and approvals retain their factual semantic colors.
 - Workspace surfaces, typography, controls, and content contrast do not change between chapters; only the low-contrast page backdrop and navigation accents shift.
-- The factual nine-stage production journey is fixed to the bottom dock. Craft Compass and AI Assistant live at its right edge and open contextual panels above it.
+- The factual nine-stage production journey is fixed to the bottom dock. Its stages open their matching workspaces but never change completion merely because they were selected. Craft Compass and AI Assistant live at its right edge and open contextual panels above it.
 - Craft guidance must not consume permanent space inside a creative canvas. Its dock panel follows the active workspace, selected production, saved Compass, and current craft findings.
 
 ## Visual-development workspaces

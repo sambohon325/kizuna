@@ -199,6 +199,23 @@ def schedule_password_reset_email(user: User, raw_token: str, background_tasks: 
     background_tasks.add_task(deliver_account_email, user.id, user.email, "Reset your Kizuna password", body, "password_reset")
 
 
+def deliver_invitation_email(inviter_user_id: int, invitation_id: int, to_email: str, subject: str, body: str) -> None:
+    event_type = "studio_invitation_email_sent"
+    try:
+        send_email(to_email, subject, body)
+    except Exception:
+        event_type = "studio_invitation_email_failed"
+    with SessionLocal() as delivery_db:
+        delivery_db.add(AccountSecurityEvent(user_id=inviter_user_id, event_type=event_type, network_hash="", event_metadata={"invitation_id": invitation_id}))
+        delivery_db.commit()
+
+
+def schedule_invitation_email(invitation: StudioInvitation, inviter: User, acceptance_url: str, project_access: list[dict], background_tasks: BackgroundTasks) -> None:
+    access_lines = "\n".join(f"- {item['project_title']}: {item['role'].title()} access" for item in project_access)
+    body = f"{inviter.display_name} invited you to collaborate in Kizuna Studio.\n\n{access_lines}\n\nCreate your account and join the production within {max(1, settings.invitation_days)} day(s):\n{acceptance_url}\n\nIf you were not expecting this invitation, you can ignore this message."
+    background_tasks.add_task(deliver_invitation_email, inviter.id, invitation.id, invitation.email, f"{inviter.display_name} invited you to Kizuna Studio", body)
+
+
 @app.middleware("http")
 async def authenticate_and_authorize(request: Request, call_next):
     if not settings.auth_required:
@@ -863,7 +880,7 @@ def studio_team(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/api/settings/team/invitations", status_code=status.HTTP_201_CREATED)
-def create_studio_invitation(payload: StudioInvitationInput, request: Request, db: Session = Depends(get_db)):
+def create_studio_invitation(payload: StudioInvitationInput, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     email = normalize_email(payload.email)
     if "@" not in email or db.scalar(select(User.id).where(User.email == email)) is not None:
         raise HTTPException(409, "Use a new, valid email address for an invitation")
@@ -875,7 +892,13 @@ def create_studio_invitation(payload: StudioInvitationInput, request: Request, d
     raw_token = secrets.token_urlsafe(48)
     invitation = StudioInvitation(email=email, display_name=payload.display_name.strip(), token_hash=token_hash(raw_token), project_roles=project_roles, invited_by_user_id=request.state.user.id, expires_at=auth_utcnow() + timedelta(days=max(1, settings.invitation_days)))
     db.add(invitation); db.commit(); db.refresh(invitation)
-    return {**invitation_response(invitation, db), "acceptance_url": f"{settings.public_url.rstrip('/')}/invite/{raw_token}"}
+    response = invitation_response(invitation, db)
+    acceptance_url = f"{settings.public_url.rstrip('/')}/invite/{raw_token}"
+    email_delivery = "not_configured"
+    if smtp_ready():
+        schedule_invitation_email(invitation, request.state.user, acceptance_url, response["project_access"], background_tasks)
+        email_delivery = "queued"
+    return {**response, "acceptance_url": acceptance_url, "email_delivery": email_delivery}
 
 
 @app.delete("/api/settings/team/invitations/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)

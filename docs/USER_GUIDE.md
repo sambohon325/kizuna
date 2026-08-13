@@ -58,6 +58,8 @@ Home remembers the production you most recently opened. Its current-production c
 - **Help:** search tutorials, choose a learning path, or restart the studio tour.
 - **Settings:** manage Workspace, AI & tools, Computers & costs, Storage & backups, Team & access, and Identity & rights. Advanced adds server Operations.
 
+Under **Team & access**, choose one or more productions and assign Viewer, Editor, or Owner access. Kizuna emails the secure invitation when studio email is configured and always shows a copyable link as a fallback. Viewer is the safest role for someone who only needs to explore or review a production.
+
 ## Use the Kizuna Assistant
 
 Select the **AI** button at the right of the bottom production dock from any workspace. The Assistant receives the current workspace, selected production, visible context, and saved workflow state. The adjacent Compass icon opens craft guidance for the page you are currently using.

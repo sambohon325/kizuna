@@ -64,9 +64,22 @@ def test_productions_are_isolated_by_membership(client, monkeypatch):
 
 def test_invitations_roles_and_session_revocation(client, monkeypatch):
     csrf = setup_admin(client, monkeypatch)
+    delivered = []
+    monkeypatch.setattr("app.main.settings.smtp_host", "smtp.example.test")
+    monkeypatch.setattr("app.main.settings.smtp_from_email", "studio@example.test")
+    monkeypatch.setattr("app.main.send_email", lambda to_email, subject, body: delivered.append((to_email, subject, body)))
     project = client.post("/api/projects", headers={"X-Kizuna-CSRF": csrf}, json={"title": "Shared Production", "logline": "Role protected"}).json()
     invited = client.post("/api/settings/team/invitations", headers={"X-Kizuna-CSRF": csrf}, json={"email": "viewer@example.com", "display_name": "Review Partner", "project_access": [{"project_id": project["id"], "role": "viewer"}]})
     assert invited.status_code == 201
+    assert invited.json()["email_delivery"] == "queued"
+    assert delivered and delivered[0][0] == "viewer@example.com"
+    assert "Shared Production: Viewer access" in delivered[0][2]
+    assert invited.json()["acceptance_url"] in delivered[0][2]
+    monkeypatch.setattr("app.main.settings.smtp_host", "")
+    manual = client.post("/api/settings/team/invitations", headers={"X-Kizuna-CSRF": csrf}, json={"email": "manual@example.com", "display_name": "Manual Review", "project_access": [{"project_id": project["id"], "role": "viewer"}]})
+    assert manual.status_code == 201
+    assert manual.json()["email_delivery"] == "not_configured"
+    assert manual.json()["acceptance_url"].startswith("http")
     invite_path = urlparse(invited.json()["acceptance_url"]).path
     viewer = TestClient(app)
     assert viewer.get(invite_path.replace("/invite/", "/api/auth/invitations/")).status_code == 200

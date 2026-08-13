@@ -58,7 +58,7 @@ Home remembers the production you most recently opened. Its current-production c
 - **Help:** search tutorials, choose a learning path, or restart the studio tour.
 - **Settings:** manage Workspace, AI & tools, Computers & costs, Storage & backups, Team & access, and Identity & rights. Advanced adds server Operations.
 
-Under **Team & access**, choose one or more productions and assign Viewer, Editor, or Owner access. Kizuna emails the secure invitation when studio email is configured and always shows a copyable link as a fallback. Viewer is the safest role for someone who only needs to explore or review a production.
+Under **Team & access**, choose one or more productions and assign Viewer, Editor, or Owner access. Kizuna emails the secure invitation when studio email is configured and always shows a copyable link as a fallback. Pending invitations show their expiry date. Select **Send again** to issue a fresh link and email, or **Renew link** after expiry; the older link stops working immediately. Viewer is the safest role for someone who only needs to explore or review a production.
 
 ## Use the Kizuna Assistant
 

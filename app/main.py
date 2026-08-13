@@ -238,7 +238,8 @@ async def authenticate_and_authorize(request: Request, call_next):
                 return JSONResponse(status_code=403, content={"detail": "Security token missing or expired. Refresh the page and try again."})
             if user.account_tier == "trial" and user.trial_ends_at and user.trial_ends_at <= auth_utcnow() and not path.startswith("/api/auth/"):
                 return JSONResponse(status_code=status.HTTP_402_PAYMENT_REQUIRED, content={"detail": "Your 7-day Kizuna trial has ended. Your productions remain available to review; upgrade to continue creating or exporting."})
-        if (path.startswith("/api/settings/") or path == "/api/render-farm/status") and user.role != "admin":
+        admin_settings_path = path.startswith("/api/settings/") and not path.startswith("/api/settings/team")
+        if (admin_settings_path or path == "/api/render-farm/status") and user.role != "admin":
             return JSONResponse(status_code=403, content={"detail": "Studio administrator access required"})
         project_id = project_for_path(db, path)
         if path.startswith("/renders/"):
@@ -811,7 +812,9 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
 def invitation_response(invitation: StudioInvitation, db: Session) -> dict:
     titles = {item.id: item.title for item in db.scalars(select(Project).where(Project.id.in_([entry.get("project_id") for entry in invitation.project_roles]))).all()}
-    return {"id": invitation.id, "email": invitation.email, "display_name": invitation.display_name, "project_access": [{**entry, "project_title": titles.get(entry.get("project_id"), "Production")} for entry in invitation.project_roles], "expires_at": invitation.expires_at, "accepted_at": invitation.accepted_at, "revoked_at": invitation.revoked_at, "created_at": invitation.created_at}
+    now = auth_utcnow()
+    invitation_status = "accepted" if invitation.accepted_at else "revoked" if invitation.revoked_at else "expired" if invitation.expires_at <= now else "pending"
+    return {"id": invitation.id, "email": invitation.email, "display_name": invitation.display_name, "project_access": [{**entry, "project_title": titles.get(entry.get("project_id"), "Production")} for entry in invitation.project_roles], "expires_at": invitation.expires_at, "accepted_at": invitation.accepted_at, "revoked_at": invitation.revoked_at, "created_at": invitation.created_at, "status": invitation_status}
 
 
 @app.get("/api/auth/invitations/{invitation_token}")
@@ -873,10 +876,12 @@ def studio_team(request: Request, db: Session = Depends(get_db)):
             "invitations": [],
         }
     projects = db.execute(select(Project, ProjectMembership).join(ProjectMembership, ProjectMembership.project_id == Project.id).where(ProjectMembership.user_id == request.state.user.id).order_by(Project.title)).all()
-    users = db.scalars(select(User).order_by(User.display_name, User.email)).all()
     memberships = db.execute(select(ProjectMembership, User).join(User, User.id == ProjectMembership.user_id).where(ProjectMembership.project_id.in_([project.id for project, _ in projects]))).all()
-    invitations = db.scalars(select(StudioInvitation).order_by(StudioInvitation.id.desc()).limit(100)).all()
-    return {"local_mode": False, "projects": [{"id": project.id, "title": project.title, "my_role": membership.role} for project, membership in projects], "users": [{"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role, "active": user.active} for user in users], "memberships": [{"id": membership.id, "project_id": membership.project_id, "user_id": user.id, "display_name": user.display_name, "email": user.email, "role": membership.role} for membership, user in memberships], "invitations": [invitation_response(item, db) for item in invitations if not item.accepted_at and not item.revoked_at and item.expires_at > auth_utcnow()]}
+    visible_user_ids = {request.state.user.id}
+    visible_user_ids.update(user.id for _, user in memberships)
+    users = db.scalars(select(User).where(User.id.in_(visible_user_ids)).order_by(User.display_name, User.email)).all()
+    invitations = db.scalars(select(StudioInvitation).where(StudioInvitation.invited_by_user_id == request.state.user.id, StudioInvitation.accepted_at.is_(None), StudioInvitation.revoked_at.is_(None)).order_by(StudioInvitation.id.desc()).limit(100)).all()
+    return {"local_mode": False, "projects": [{"id": project.id, "title": project.title, "my_role": membership.role} for project, membership in projects], "users": [{"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role, "active": user.active} for user in users], "memberships": [{"id": membership.id, "project_id": membership.project_id, "user_id": user.id, "display_name": user.display_name, "email": user.email, "role": membership.role} for membership, user in memberships], "invitations": [invitation_response(item, db) for item in invitations]}
 
 
 @app.post("/api/settings/team/invitations", status_code=status.HTTP_201_CREATED)
@@ -905,7 +910,29 @@ def create_studio_invitation(payload: StudioInvitationInput, request: Request, b
 def revoke_studio_invitation(invitation_id: int, request: Request, db: Session = Depends(get_db)):
     invitation = db.get(StudioInvitation, invitation_id)
     if invitation is None or invitation.accepted_at: raise HTTPException(404, "Pending invitation not found")
-    invitation.revoked_at = auth_utcnow(); db.commit()
+    if invitation.invited_by_user_id != request.state.user.id: raise HTTPException(404, "Pending invitation not found")
+    invitation.revoked_at = auth_utcnow()
+    security_event(db, "studio_invitation_revoked", request, request.state.user.id, {"invitation_id": invitation.id})
+    db.commit()
+
+
+@app.post("/api/settings/team/invitations/{invitation_id}/resend")
+def resend_studio_invitation(invitation_id: int, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    invitation = db.get(StudioInvitation, invitation_id)
+    if invitation is None or invitation.accepted_at or invitation.revoked_at or invitation.invited_by_user_id != request.state.user.id:
+        raise HTTPException(404, "Pending invitation not found")
+    raw_token = secrets.token_urlsafe(48)
+    invitation.token_hash = token_hash(raw_token)
+    invitation.expires_at = auth_utcnow() + timedelta(days=max(1, settings.invitation_days))
+    response = invitation_response(invitation, db)
+    acceptance_url = f"{settings.public_url.rstrip('/')}/invite/{raw_token}"
+    email_delivery = "not_configured"
+    if smtp_ready():
+        schedule_invitation_email(invitation, request.state.user, acceptance_url, response["project_access"], background_tasks)
+        email_delivery = "queued"
+    security_event(db, "studio_invitation_renewed", request, request.state.user.id, {"invitation_id": invitation.id, "email_delivery": email_delivery})
+    db.commit()
+    return {**response, "expires_at": invitation.expires_at, "status": "pending", "acceptance_url": acceptance_url, "email_delivery": email_delivery}
 
 
 @app.put("/api/settings/team/projects/{project_id}/members/{user_id}")

@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.auth import hash_password, token_hash, utcnow as auth_utcnow
 from app.database import SessionLocal
 from app.main import app
-from app.models import AccountSecurityEvent, AccountToken, BillingEvent, Character, Project, ProjectMembership, Scene, Shot, Timeline, TimelineClip, User, UserSession, UserSubscription
+from app.models import AccountSecurityEvent, AccountToken, BillingEvent, Character, Project, ProjectMembership, Scene, Shot, StudioInvitation, Timeline, TimelineClip, User, UserSession, UserSubscription
 
 
 def setup_admin(client, monkeypatch):
@@ -80,12 +80,38 @@ def test_invitations_roles_and_session_revocation(client, monkeypatch):
     assert manual.status_code == 201
     assert manual.json()["email_delivery"] == "not_configured"
     assert manual.json()["acceptance_url"].startswith("http")
+    manual_path = urlparse(manual.json()["acceptance_url"]).path
+    with SessionLocal() as db:
+        pending = db.get(StudioInvitation, manual.json()["id"])
+        pending.expires_at = auth_utcnow() - timedelta(minutes=1)
+        db.commit()
+    pending_team = client.get("/api/settings/team").json()["invitations"]
+    assert next(item for item in pending_team if item["id"] == manual.json()["id"])["status"] == "expired"
+    monkeypatch.setattr("app.main.settings.smtp_host", "smtp.example.test")
+    renewed = client.post(f"/api/settings/team/invitations/{manual.json()['id']}/resend", headers={"X-Kizuna-CSRF": csrf})
+    assert renewed.status_code == 200
+    assert renewed.json()["status"] == "pending"
+    assert renewed.json()["email_delivery"] == "queued"
+    assert urlparse(renewed.json()["acceptance_url"]).path != manual_path
+    assert client.get(manual_path.replace("/invite/", "/api/auth/invitations/")).status_code == 404
+    with SessionLocal() as db:
+        db.add(User(email="other-admin@example.com", display_name="Other Administrator", password_hash=hash_password("other-admin-password"), role="admin"))
+        db.commit()
+    other_admin = TestClient(app)
+    assert other_admin.post("/api/auth/login", json={"email": "other-admin@example.com", "password": "other-admin-password"}).status_code == 200
+    other_csrf = other_admin.cookies.get("kizuna_csrf")
+    assert other_admin.get("/api/settings/team").json()["invitations"] == []
+    assert other_admin.post(f"/api/settings/team/invitations/{manual.json()['id']}/resend", headers={"X-Kizuna-CSRF": other_csrf}).status_code == 404
+    assert other_admin.delete(f"/api/settings/team/invitations/{manual.json()['id']}", headers={"X-Kizuna-CSRF": other_csrf}).status_code == 404
     invite_path = urlparse(invited.json()["acceptance_url"]).path
     viewer = TestClient(app)
     assert viewer.get(invite_path.replace("/invite/", "/api/auth/invitations/")).status_code == 200
     accepted = viewer.post(invite_path.replace("/invite/", "/api/auth/invitations/"), json={"display_name": "Review Partner", "password": "viewer-secure-password"})
     assert accepted.status_code == 200
     viewer_csrf = viewer.cookies.get("kizuna_csrf")
+    assert viewer.get("/api/settings/team").json()["invitations"] == []
+    assert viewer.post(f"/api/settings/team/invitations/{manual.json()['id']}/resend", headers={"X-Kizuna-CSRF": viewer_csrf}).status_code == 404
+    assert viewer.delete(f"/api/settings/team/invitations/{manual.json()['id']}", headers={"X-Kizuna-CSRF": viewer_csrf}).status_code == 404
     assert viewer.get(f"/api/projects/{project['id']}").status_code == 200
     blocked = viewer.post(f"/api/projects/{project['id']}/characters", headers={"X-Kizuna-CSRF": viewer_csrf}, json={"name": "Blocked Edit", "role": "protagonist", "want": "", "need": "", "contradiction": ""})
     assert blocked.status_code == 403

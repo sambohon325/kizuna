@@ -8,7 +8,8 @@ The service includes a deliberately small publishing and community backend:
 - private-beta applications and triage;
 - support, feedback, feature-request, and bug tickets with reference numbers;
 - configurable social links; and
-- one protected website-administrator screen at `/admin`.
+- one protected website-administrator screen at `/admin`; and
+- an auditable AI operations desk for support and beta intake.
 
 ## Preview locally
 
@@ -39,6 +40,33 @@ KIZUNA_MARKETING_ADMIN_PASSWORD=<a unique password of at least 20 characters>
 KIZUNA_MARKETING_SESSION_SECRET=<at least 32 random bytes represented as hex>
 KIZUNA_MARKETING_COOKIE_SECURE=true
 ```
+
+AI operations defaults to `assist`: the desk prepares work but does not send it. To enable low-risk automatic correspondence after testing, configure:
+
+```text
+KIZUNA_OPS_AUTOMATION_MODE=autopilot
+KIZUNA_OPS_AUTO_CONFIDENCE=85
+KIZUNA_OPS_AI_PROTOCOL=openai
+KIZUNA_OPS_AI_MODEL=<model name>
+KIZUNA_OPS_AI_API_KEY=<server-side secret>
+```
+
+For Anthropic, Google, Ollama, or a custom OpenAI-compatible service, also set `KIZUNA_OPS_AI_ENDPOINT` and use `anthropic`, `google`, `ollama`, or `openai-compatible` as the protocol. Keep `KIZUNA_OPS_AUTOMATION_MODE=assist` while verifying a new provider.
+
+Automatic email requires the existing Kizuna SMTP settings:
+
+```text
+KIZUNA_SMTP_HOST=<smtp host>
+KIZUNA_SMTP_PORT=587
+KIZUNA_SMTP_USERNAME=<mailbox user>
+KIZUNA_SMTP_PASSWORD=<server-side secret>
+KIZUNA_SMTP_FROM_EMAIL=<verified sender address>
+KIZUNA_SMTP_FROM_NAME=Kizuna Studio
+KIZUNA_SMTP_STARTTLS=true
+KIZUNA_SMTP_SSL=false
+```
+
+See [`docs/AI_OPERATIONS.md`](../docs/AI_OPERATIONS.md) for the autonomy policy, account-management plan, hard escalation rules, and rollout sequence.
 
 Optional social links appear only when configured:
 

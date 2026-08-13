@@ -50,6 +50,8 @@ def test_beta_applications_and_ticket_triage():
     overview = admin.get("/api/admin/overview").json()
     assert len(overview["beta"]) == 1
     assert len(overview["tickets"]) == 1
+    assert len(overview["ops"]) == 2
+    assert all(item["agent"] in {"Beta Coordinator", "Support Concierge"} for item in overview["ops"])
     application_id = overview["beta"][0]["id"]
     ticket_id = overview["tickets"][0]["id"]
     assert admin.put(f"/api/admin/beta/{application_id}", headers={"X-Kizuna-CSRF": csrf}, json={"status": "reviewing", "notes": "Strong guided-flow candidate."}).status_code == 200
@@ -59,6 +61,37 @@ def test_beta_applications_and_ticket_triage():
     updated = admin.get("/api/admin/overview").json()
     assert updated["beta"][0]["status"] == "reviewing"
     assert updated["tickets"][0]["status"] == "investigating"
+
+
+def test_ops_desk_escalates_sensitive_work_and_can_send_an_approved_reply(monkeypatch):
+    public = TestClient(app)
+    ticket = public.post("/api/tickets", json={"email": "owner@example.com", "category": "account", "severity": "blocking", "subject": "Unauthorized account access", "description": "I believe my account was hacked and need the ownership changed immediately.", "environment": "Windows 11"})
+    assert ticket.status_code == 201
+    assert ticket.json()["automation"] == "queued"
+
+    admin, csrf = admin_client()
+    overview = admin.get("/api/admin/overview").json()
+    run = next(item for item in overview["ops"] if item["entity_type"] == "ticket")
+    assert run["needs_human"] is True
+    assert run["risk"] == "high"
+    assert run["status"] == "needs_review"
+    assert "passwords" in run["draft_response"]
+
+    monkeypatch.setattr("marketing.main.send_text", lambda *args, **kwargs: (True, "sent"))
+    sent = admin.post(f"/api/admin/ops/{run['id']}/execute", headers={"X-Kizuna-CSRF": csrf}, json={"response": "We secured your request for specialist review. Do not send credentials."})
+    assert sent.status_code == 200
+    assert sent.json()["status"] == "completed"
+
+
+def test_beta_agent_enforces_original_work_boundary():
+    public = TestClient(app)
+    response = public.post("/api/beta", json={"name": "Fan Creator", "email": "fan@example.com", "creator_type": "Writer", "experience": "beginner", "project_summary": "I want to make fan fiction using a copyrighted character from an existing franchise.", "desired_outcome": "Generate the series."})
+    assert response.status_code == 201
+    assert response.json()["automation"] == "queued"
+    admin, _ = admin_client()
+    run = next(item for item in admin.get("/api/admin/overview").json()["ops"] if item["entity_type"] == "beta")
+    assert run["classification"] == "originality review"
+    assert run["needs_human"] is True
 
 
 def test_public_config_and_admin_protection():

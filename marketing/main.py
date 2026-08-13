@@ -11,12 +11,15 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import DateTime, Integer, String, Text, create_engine, select
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+
+from marketing.mailer import ready as mail_ready, send_text
+from marketing.ops_agent import OpsDecision, decide_beta, decide_support, may_auto_execute, provider_status
 
 
 ROOT = Path(__file__).resolve().parent
@@ -95,6 +98,42 @@ class SupportTicket(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=db_now, onupdate=db_now)
 
 
+class OpsRun(Base):
+    __tablename__ = "ops_runs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(30), index=True)
+    entity_id: Mapped[int] = mapped_column(Integer, index=True)
+    agent: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(30), index=True)
+    classification: Mapped[str] = mapped_column(String(80))
+    risk: Mapped[str] = mapped_column(String(20), index=True)
+    confidence: Mapped[float] = mapped_column(Float, default=0)
+    summary: Mapped[str] = mapped_column(Text)
+    recommended_action: Mapped[str] = mapped_column(Text)
+    draft_response: Mapped[str] = mapped_column(Text)
+    actions_json: Mapped[str] = mapped_column(Text, default="[]")
+    needs_human: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    auto_executed: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider: Mapped[str] = mapped_column(String(160), default="local-policy")
+    provider_error: Mapped[str] = mapped_column(Text, default="")
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=db_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=db_now, onupdate=db_now)
+
+
+class OpsDelivery(Base):
+    __tablename__ = "ops_deliveries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(Integer, index=True)
+    channel: Mapped[str] = mapped_column(String(30), default="email")
+    recipient: Mapped[str] = mapped_column(String(320))
+    subject: Mapped[str] = mapped_column(String(180))
+    status: Mapped[str] = mapped_column(String(30), index=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=db_now)
+
+
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
@@ -115,6 +154,19 @@ def post_dict(item: BlogPost, include_body: bool = False) -> dict:
     if include_body:
         result["body"] = item.body
     return result
+
+
+def ops_dict(item: OpsRun) -> dict:
+    return {
+        "id": item.id, "entity_type": item.entity_type, "entity_id": item.entity_id,
+        "agent": item.agent, "status": item.status, "classification": item.classification,
+        "risk": item.risk, "confidence": item.confidence, "summary": item.summary,
+        "recommended_action": item.recommended_action, "draft_response": item.draft_response,
+        "actions": json.loads(item.actions_json or "[]"), "needs_human": item.needs_human,
+        "auto_executed": item.auto_executed, "provider": item.provider,
+        "provider_error": item.provider_error, "input_tokens": item.input_tokens,
+        "output_tokens": item.output_tokens, "created_at": item.created_at, "updated_at": item.updated_at,
+    }
 
 
 def slugify(value: str) -> str:
@@ -188,7 +240,7 @@ class BetaInput(BaseModel):
     @classmethod
     def valid_email(cls, value: str) -> str:
         normalized = value.strip().casefold()
-        if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized):
             raise ValueError("Enter a valid email address")
         return normalized
 
@@ -217,6 +269,10 @@ class BetaTriageInput(BaseModel):
 class TicketTriageInput(BaseModel):
     status: str = Field(pattern="^(open|investigating|resolved|closed)$")
     notes: str = Field(default="", max_length=5000)
+
+
+class OpsExecuteInput(BaseModel):
+    response: str = Field(default="", max_length=6000)
 
 
 app = FastAPI(title="Kizuna Public Site", docs_url=None, redoc_url=None, openapi_url=None)
@@ -281,8 +337,79 @@ def public_post(slug: str, db: Session = Depends(db_session)):
     return post_dict(item, include_body=True)
 
 
+def store_ops_run(db: Session, entity_type: str, entity_id: int, decision: OpsDecision) -> OpsRun:
+    item = OpsRun(
+        entity_type=entity_type, entity_id=entity_id, agent=decision.agent,
+        status="needs_review" if decision.needs_human else "prepared",
+        classification=decision.classification, risk=decision.risk, confidence=decision.confidence,
+        summary=decision.summary, recommended_action=decision.recommended_action,
+        draft_response=decision.draft_response, actions_json=json.dumps(decision.actions),
+        needs_human=decision.needs_human, provider=decision.provider,
+        provider_error=decision.provider_error, input_tokens=decision.input_tokens,
+        output_tokens=decision.output_tokens,
+    )
+    db.add(item); db.flush()
+    return item
+
+
+def deliver_run(db: Session, run: OpsRun, email: str, subject: str, response_text: str = "") -> bool:
+    body = response_text.strip() or run.draft_response
+    sent, note = send_text(email, subject, body)
+    db.add(OpsDelivery(run_id=run.id, recipient=email, subject=subject, status="sent" if sent else "failed", error="" if sent else note))
+    if sent:
+        run.status = "auto_completed" if run.auto_executed else "completed"
+    return sent
+
+
+def process_beta_record(db: Session, item: BetaApplication, force: bool = False) -> OpsRun:
+    existing = db.scalar(select(OpsRun).where(OpsRun.entity_type == "beta", OpsRun.entity_id == item.id).order_by(OpsRun.id.desc()))
+    if existing and not force:
+        return existing
+    decision = decide_beta({"experience": item.experience, "creator_type": item.creator_type, "project_summary": item.project_summary, "desired_outcome": item.desired_outcome, "hardware": item.hardware})
+    run = store_ops_run(db, "beta", item.id, decision)
+    if may_auto_execute(decision):
+        run.auto_executed = True
+        if deliver_run(db, run, item.email, "We received your Kizuna beta application"):
+            item.status = "reviewing"
+        else:
+            run.auto_executed = False
+    db.commit(); db.refresh(run)
+    return run
+
+
+def process_ticket_record(db: Session, item: SupportTicket, force: bool = False) -> OpsRun:
+    existing = db.scalar(select(OpsRun).where(OpsRun.entity_type == "ticket", OpsRun.entity_id == item.id).order_by(OpsRun.id.desc()))
+    if existing and not force:
+        return existing
+    decision = decide_support({"reference": item.reference, "category": item.category, "severity": item.severity, "subject": item.subject, "description": item.description, "page_url": item.page_url, "environment": item.environment})
+    run = store_ops_run(db, "ticket", item.id, decision)
+    if may_auto_execute(decision):
+        run.auto_executed = True
+        if deliver_run(db, run, item.email, f"Kizuna support · {item.reference}"):
+            if item.category == "bug":
+                item.status = "investigating"
+        else:
+            run.auto_executed = False
+    db.commit(); db.refresh(run)
+    return run
+
+
+def process_beta_background(application_id: int) -> None:
+    with SessionLocal() as db:
+        item = db.get(BetaApplication, application_id)
+        if item is not None:
+            process_beta_record(db, item)
+
+
+def process_ticket_background(ticket_id: int) -> None:
+    with SessionLocal() as db:
+        item = db.get(SupportTicket, ticket_id)
+        if item is not None:
+            process_ticket_record(db, item)
+
+
 @app.post("/api/beta", status_code=201)
-def apply_beta(payload: BetaInput, request: Request, db: Session = Depends(db_session)):
+def apply_beta(payload: BetaInput, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(db_session)):
     rate_limit(request, "beta", maximum=4)
     if payload.website:
         return {"received": True}
@@ -290,19 +417,25 @@ def apply_beta(payload: BetaInput, request: Request, db: Session = Depends(db_se
     if existing:
         return {"received": True}
     item = BetaApplication(name=payload.name.strip(), email=payload.email.lower(), creator_type=payload.creator_type.strip(), experience=payload.experience, project_summary=payload.project_summary.strip(), desired_outcome=payload.desired_outcome.strip(), hardware=payload.hardware.strip())
-    db.add(item); db.commit()
-    return {"received": True}
+    db.add(item); db.commit(); db.refresh(item)
+    mode = provider_status()["mode"]
+    if mode != "off":
+        background_tasks.add_task(process_beta_background, item.id)
+    return {"received": True, "automation": "queued" if mode != "off" else "off"}
 
 
 @app.post("/api/tickets", status_code=201)
-def create_ticket(payload: TicketInput, request: Request, db: Session = Depends(db_session)):
+def create_ticket(payload: TicketInput, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(db_session)):
     rate_limit(request, "tickets", maximum=8)
     if payload.company:
         return {"received": True, "reference": "KZ-RECEIVED"}
     reference = f"KZ-{utcnow():%y%m%d}-{secrets.token_hex(3).upper()}"
     item = SupportTicket(reference=reference, email=payload.email.lower(), category=payload.category, severity=payload.severity, subject=payload.subject.strip(), description=payload.description.strip(), page_url=payload.page_url.strip(), environment=payload.environment.strip())
-    db.add(item); db.commit()
-    return {"received": True, "reference": reference}
+    db.add(item); db.commit(); db.refresh(item)
+    mode = provider_status()["mode"]
+    if mode != "off":
+        background_tasks.add_task(process_ticket_background, item.id)
+    return {"received": True, "reference": reference, "automation": "queued" if mode != "off" else "off"}
 
 
 @app.post("/api/admin/login")
@@ -329,11 +462,50 @@ def admin_overview(db: Session = Depends(db_session)):
     posts = db.scalars(select(BlogPost).order_by(BlogPost.updated_at.desc())).all()
     beta = db.scalars(select(BetaApplication).order_by(BetaApplication.created_at.desc()).limit(250)).all()
     tickets = db.scalars(select(SupportTicket).order_by(SupportTicket.created_at.desc()).limit(250)).all()
+    ops = db.scalars(select(OpsRun).order_by(OpsRun.created_at.desc()).limit(300)).all()
     return {
         "posts": [post_dict(item, include_body=True) for item in posts],
         "beta": [{"id": item.id, "name": item.name, "email": item.email, "creator_type": item.creator_type, "experience": item.experience, "project_summary": item.project_summary, "desired_outcome": item.desired_outcome, "hardware": item.hardware, "status": item.status, "notes": item.notes, "created_at": item.created_at} for item in beta],
         "tickets": [{"id": item.id, "reference": item.reference, "email": item.email, "category": item.category, "severity": item.severity, "subject": item.subject, "description": item.description, "page_url": item.page_url, "environment": item.environment, "status": item.status, "notes": item.notes, "created_at": item.created_at, "updated_at": item.updated_at} for item in tickets],
+        "ops": [ops_dict(item) for item in ops],
+        "ops_config": {**provider_status(), "email_ready": mail_ready()},
     }
+
+
+@app.post("/api/admin/ops/run", dependencies=[Depends(require_admin), Depends(require_csrf)])
+def run_ops_desk(db: Session = Depends(db_session)):
+    created = 0
+    for item in db.scalars(select(BetaApplication).order_by(BetaApplication.id)).all():
+        before = db.scalar(select(OpsRun.id).where(OpsRun.entity_type == "beta", OpsRun.entity_id == item.id))
+        process_beta_record(db, item)
+        created += int(before is None)
+    for item in db.scalars(select(SupportTicket).order_by(SupportTicket.id)).all():
+        before = db.scalar(select(OpsRun.id).where(OpsRun.entity_type == "ticket", OpsRun.entity_id == item.id))
+        process_ticket_record(db, item)
+        created += int(before is None)
+    return {"processed": created}
+
+
+@app.post("/api/admin/ops/{run_id}/execute", dependencies=[Depends(require_admin), Depends(require_csrf)])
+def execute_ops_run(run_id: int, payload: OpsExecuteInput, db: Session = Depends(db_session)):
+    run = db.get(OpsRun, run_id)
+    if run is None:
+        raise HTTPException(404, "Operations run not found")
+    if run.status in {"completed", "auto_completed"}:
+        return ops_dict(run)
+    if run.entity_type == "ticket":
+        entity = db.get(SupportTicket, run.entity_id)
+        subject = f"Kizuna support · {entity.reference}" if entity else "Kizuna support"
+    else:
+        entity = db.get(BetaApplication, run.entity_id)
+        subject = "Your Kizuna beta application"
+    if entity is None:
+        raise HTTPException(404, "Related record not found")
+    if not deliver_run(db, run, entity.email, subject, payload.response):
+        db.commit()
+        raise HTTPException(503, "Email delivery is not configured or failed")
+    db.commit(); db.refresh(run)
+    return ops_dict(run)
 
 
 def unique_slug(db: Session, desired: str, item_id: int | None = None) -> str:

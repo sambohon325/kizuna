@@ -99,3 +99,5 @@ See [accounts and production isolation](docs/AUTHENTICATION.md) before exposing 
 The standalone public website lives in [`marketing/`](marketing/README.md). It can be previewed locally without the application database and deployed through Coolify as a separate Dockerfile service whose calls to action point to the authenticated Kizuna app.
 
 The private-beta cohorts, application lifecycle, support-ticket workflow, and next safety milestones are documented in [`docs/BETA_AND_SUPPORT.md`](docs/BETA_AND_SUPPORT.md).
+
+The low-touch support, beta, account, editorial, and social operating model is documented in [`docs/AI_OPERATIONS.md`](docs/AI_OPERATIONS.md).

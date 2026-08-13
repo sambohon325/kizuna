@@ -1,13 +1,28 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Kizuna Site Admin</title><link rel="icon" href="/assets/kizuna-icon.png"><link rel="stylesheet" href="/admin.css?v=1"><link rel="stylesheet" href="/admin-fixes.css?v=1"><script src="/admin.js?v=1" defer></script></head><body>
-<header class="admin-header"><a href="/"><img src="/assets/kizuna-wordmark.png" alt="Kizuna"></a><span>Website admin</span><button type="button" data-logout hidden>Sign out</button></header>
-<main>
-  <section class="login-panel" data-login><p>PRIVATE WEBSITE ADMIN</p><h1>Publish and listen.</h1><form><label>Administrator password<input name="password" type="password" minlength="12" required autocomplete="current-password"></label><button type="submit">Sign in</button><div role="status"></div></form></section>
-  <section class="admin-shell" data-admin hidden>
-    <aside><p>WEBSITE</p><button class="active" data-view="posts">Journal</button><button data-view="beta">Beta applicants <span data-beta-count>0</span></button><button data-view="tickets">Tickets <span data-ticket-count>0</span></button><a href="/" target="_blank">View public site ↗</a></aside>
-    <div class="admin-workspace">
-      <section data-pane="posts"><header><div><p>KIZUNA JOURNAL</p><h1>Posts</h1></div><button class="primary" data-new-post>New post</button></header><div class="post-layout"><div class="item-list" data-post-list></div><form class="editor" data-post-form hidden><input name="id" type="hidden"><div class="editor-head"><h2 data-editor-title>New post</h2><button type="button" data-cancel-post>Close</button></div><label>Title<input name="title" required maxlength="180"></label><div class="field-pair"><label>Slug<input name="slug" maxlength="190" placeholder="Generated from title"></label><label>Category<input name="category" maxlength="80" value="Studio notes"></label></div><label>Short description<textarea name="excerpt" maxlength="500" rows="3"></textarea></label><label>Article<textarea name="body" required minlength="20" maxlength="100000" rows="18" placeholder="Separate paragraphs with a blank line. Start a heading with ## or a quote with >"></textarea></label><div class="field-pair"><label>Author<input name="author" maxlength="120" value="Kizuna Studio"></label><label>Publication<select name="status"><option value="draft">Draft</option><option value="published">Published</option></select></label></div><label class="check"><input name="featured" type="checkbox"> Feature this post</label><div class="editor-actions"><button class="primary" type="submit">Save post</button><button class="danger" type="button" data-delete-post hidden>Delete</button></div><div class="result" role="status"></div></form></div></section>
-      <section data-pane="beta" hidden><header><div><p>PRIVATE BETA</p><h1>Applicants</h1></div><select data-beta-filter><option value="">All statuses</option><option value="new">New</option><option value="reviewing">Reviewing</option><option value="invited">Invited</option><option value="waitlisted">Waitlisted</option><option value="closed">Closed</option></select></header><div class="triage-list" data-beta-list></div></section>
-      <section data-pane="tickets" hidden><header><div><p>SUPPORT</p><h1>Tickets</h1></div><select data-ticket-filter><option value="">All statuses</option><option value="open">Open</option><option value="investigating">Investigating</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></header><div class="triage-list" data-ticket-list></div></section>
-    </div>
-  </section>
-</main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Kizuna Site Admin</title>
+  <link rel="icon" href="/assets/kizuna-icon.png">
+  <link rel="stylesheet" href="/admin.css?v=1">
+  <link rel="stylesheet" href="/admin-fixes.css?v=2">
+  <script src="/admin.js?v=2" defer></script>
+</head>
+<body>
+  <header class="admin-header"><a href="/"><img src="/assets/kizuna-wordmark.png" alt="Kizuna"></a><span>Website admin</span><button type="button" data-logout hidden>Sign out</button></header>
+  <main>
+    <section class="login-panel" data-login><p>PRIVATE WEBSITE ADMIN</p><h1>Publish and listen.</h1><form><label>Administrator password<input name="password" type="password" minlength="12" required autocomplete="current-password"></label><button type="submit">Sign in</button><div role="status"></div></form></section>
+    <section class="admin-shell" data-admin hidden>
+      <aside><p>WEBSITE</p><button class="active" data-view="ops">AI operations <span data-ops-count>0</span></button><button data-view="posts">Journal</button><button data-view="beta">Beta applicants <span data-beta-count>0</span></button><button data-view="tickets">Tickets <span data-ticket-count>0</span></button><a href="/" target="_blank">View public site</a></aside>
+      <div class="admin-workspace">
+        <section data-pane="ops"><header><div><p>AI OPERATIONS DESK</p><h1>What needs attention?</h1></div><button class="primary" data-run-ops>Process new work</button></header><div class="ops-status" data-ops-status></div><div class="ops-summary" data-ops-summary></div><div class="triage-list" data-ops-list></div></section>
+        <section data-pane="posts" hidden><header><div><p>KIZUNA JOURNAL</p><h1>Posts</h1></div><button class="primary" data-new-post>New post</button></header><div class="post-layout"><div class="item-list" data-post-list></div><form class="editor" data-post-form hidden><input name="id" type="hidden"><div class="editor-head"><h2 data-editor-title>New post</h2><button type="button" data-cancel-post>Close</button></div><label>Title<input name="title" required maxlength="180"></label><div class="field-pair"><label>Slug<input name="slug" maxlength="190" placeholder="Generated from title"></label><label>Category<input name="category" maxlength="80" value="Studio notes"></label></div><label>Short description<textarea name="excerpt" maxlength="500" rows="3"></textarea></label><label>Article<textarea name="body" required minlength="20" maxlength="100000" rows="18" placeholder="Separate paragraphs with a blank line. Start a heading with ## or a quote with >"></textarea></label><div class="field-pair"><label>Author<input name="author" maxlength="120" value="Kizuna Studio"></label><label>Publication<select name="status"><option value="draft">Draft</option><option value="published">Published</option></select></label></div><label class="check"><input name="featured" type="checkbox"> Feature this post</label><div class="editor-actions"><button class="primary" type="submit">Save post</button><button class="danger" type="button" data-delete-post hidden>Delete</button></div><div class="result" role="status"></div></form></div></section>
+        <section data-pane="beta" hidden><header><div><p>PRIVATE BETA</p><h1>Applicants</h1></div><select data-beta-filter><option value="">All statuses</option><option value="new">New</option><option value="reviewing">Reviewing</option><option value="invited">Invited</option><option value="waitlisted">Waitlisted</option><option value="closed">Closed</option></select></header><div class="triage-list" data-beta-list></div></section>
+        <section data-pane="tickets" hidden><header><div><p>SUPPORT</p><h1>Tickets</h1></div><select data-ticket-filter><option value="">All statuses</option><option value="open">Open</option><option value="investigating">Investigating</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></header><div class="triage-list" data-ticket-list></div></section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

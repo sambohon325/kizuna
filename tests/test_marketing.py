@@ -126,3 +126,16 @@ def test_public_config_and_admin_protection():
     assert client.get("/api/does-not-exist").status_code == 404
     assert client.get("/admin").status_code == 200
     assert client.get("/blog/a-future-post").status_code == 200
+
+
+def test_public_help_agent_is_grounded_and_source_linked():
+    client = TestClient(app)
+    result = client.post("/api/help/ask", json={"question": "How do I choose how much AI help I want?"})
+    assert result.status_code == 200
+    assert result.json()["grounded"] is True
+    assert result.json()["sources"]
+    source = result.json()["sources"][0]
+    assert source["source_path"].startswith("/docs/")
+    assert client.get(source["source_path"]).status_code == 200
+    assert client.get("/api/help/search", params={"q": "AI Crew approvals"}).json()["results"]
+    assert client.get("/docs/NOT_PUBLISHED.md").status_code == 404

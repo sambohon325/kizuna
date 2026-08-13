@@ -92,5 +92,10 @@ document.querySelector('#help-nav').onclick=()=>openHelpCenter();
 document.querySelector('#help-close').onclick=closeWorkspace;
 document.querySelector('#help-search').oninput=renderHelpCenter;
 document.querySelector('#restart-tour').onclick=startTour;
+document.querySelector('#help-agent-form').onsubmit=async event=>{
+  event.preventDefault();const question=document.querySelector('#help-agent-question').value.trim(),host=document.querySelector('#help-agent-answer');if(question.length<3)return;
+  host.hidden=false;host.innerHTML='<p>Reading the published Kizuna manuals…</p>';
+  try{const result=await api('/api/help/ask',{method:'POST',body:JSON.stringify({question})});host.innerHTML=`<b>${result.grounded?'Answer from Kizuna Help':'No published answer found'}</b><p>${safe(result.answer)}</p>${result.sources.length?`<div>${result.sources.map(source=>`<button type="button" data-help-source="${safe(source.id)}"><span>${safe(source.title)}</span><small>${safe(source.section)}</small></button>`).join('')}</div>`:''}`;document.querySelectorAll('[data-help-source]').forEach(button=>button.onclick=()=>{const source=result.sources.find(item=>item.id===button.dataset.helpSource);document.querySelector('#help-search').value=source.section;renderHelpCenter();});}catch(error){host.innerHTML=`<b>Help is temporarily unavailable</b><p>${safe(error.message)}</p>`;}
+};
 tourMarkup();
 if(new URLSearchParams(location.search).get('popout')!=='1'&&localStorage.getItem('kizuna-studio-tour-v1')!=='complete')window.addEventListener('load',()=>setTimeout(startTour,650),{once:true});

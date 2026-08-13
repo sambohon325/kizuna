@@ -100,6 +100,10 @@
   }
   document.querySelector('#beta-form')?.addEventListener('submit', event => { event.preventDefault(); submitPublicForm(event.currentTarget, '/api/beta', 'Thank you. Your beta application has been received.'); });
   document.querySelector('#ticket-form')?.addEventListener('submit', event => { event.preventDefault(); submitPublicForm(event.currentTarget, '/api/tickets', 'Your ticket has been received.'); });
+  document.querySelector('#public-help-form')?.addEventListener('submit', async event => {
+    event.preventDefault();const form=event.currentTarget,host=form.querySelector('[data-public-help-answer]'),button=form.querySelector('button');host.hidden=false;host.innerHTML='<p>Reading the Kizuna manuals…</p>';button.disabled=true;
+    try{const response=await fetch('/api/help/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:form.elements.question.value.trim()})}),result=await response.json();if(!response.ok)throw new Error(result.detail||'Help is temporarily unavailable.');host.innerHTML=`<b>${result.grounded?'Answer from Kizuna Help':'No published answer found'}</b><p>${escapeHTML(result.answer)}</p>${result.sources.length?`<div>${result.sources.map(source=>`<a href="${escapeHTML(source.source_path)}" target="_blank" rel="noopener"><span>${escapeHTML(source.title)}</span><small>${escapeHTML(source.section)} ↗</small></a>`).join('')}</div>`:''}`;}catch(error){host.innerHTML=`<b>Help is temporarily unavailable</b><p>${escapeHTML(error.message)}</p>`;}finally{button.disabled=false;}
+  });
 
   const socialLabels = {instagram:'Instagram',youtube:'YouTube',tiktok:'TikTok',x:'X',linkedin:'LinkedIn',discord:'Discord'};
   const socialHost = document.querySelector('[data-social-links]');

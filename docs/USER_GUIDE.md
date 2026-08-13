@@ -123,5 +123,6 @@ Large originals and renders can remain on user-controlled storage while Kizuna k
 - Select **Why this?** for a short explanation of why Kizuna recommends that action.
 - Open **AI** from the bottom production dock for contextual help.
 - Open **Studio → Help** to search the full manual.
+- Ask the **Help Agent** for an answer grounded in the published manuals, then open its source links for the complete guidance.
 - Open **Studio → Activity** when background work is delayed or failed.
 - Move to Intermediate or Advanced only when the current task needs deeper controls.

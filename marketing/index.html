@@ -13,9 +13,9 @@
   <title>Kizuna — AI-assisted storytelling</title>
   <link rel="icon" type="image/png" href="/assets/kizuna-icon.png">
   <link rel="stylesheet" href="/marketing.css?v=1">
-  <link rel="stylesheet" href="/community.css?v=1">
+  <link rel="stylesheet" href="/community.css?v=2">
   <script src="/config.js"></script>
-  <script src="/marketing.js?v=1" defer></script>
+  <script src="/marketing.js?v=2" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -30,6 +30,7 @@
       <a href="#anime">Anime Studio</a>
       <a href="#roadmap">Roadmap</a>
       <a href="#journal">Journal</a>
+      <a href="#help">Help</a>
       <a href="#values">Our approach</a>
     </nav>
     <div class="header-actions">
@@ -172,6 +173,11 @@
       <form class="public-form reveal" id="beta-form"><h3>Beta application</h3><div class="form-pair"><label>Your name<input name="name" required maxlength="160"></label><label>Email<input name="email" type="email" required maxlength="320"></label></div><div class="form-pair"><label>What best describes you?<select name="creator_type"><option>Independent creator</option><option>Writer</option><option>Animator / artist</option><option>Producer / director</option><option>Studio or team</option><option>Educator / researcher</option></select></label><label>Production experience<select name="experience"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="professional">Professional</option></select></label></div><label>What original project would you explore?<textarea name="project_summary" required minlength="20" maxlength="5000" rows="5"></textarea></label><label>What would make the beta valuable to you?<textarea name="desired_outcome" maxlength="3000" rows="3"></textarea></label><label>Computer or production setup <span>Optional</span><input name="hardware" maxlength="500" placeholder="Windows, Mac, Linux, GPU, creative tools…"></label><label class="honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label><label class="consent"><input type="checkbox" required> I agree that Kizuna may contact me about beta participation and this application.</label><button class="button" type="submit">Apply for beta <span>↗</span></button><div class="form-result" role="status"></div></form>
     </section>
 
+    <section class="public-help section" id="help">
+      <div class="public-help-copy reveal"><p class="eyebrow">KIZUNA HELP CENTER</p><h2>Ask first.<br>Stay in your flow.</h2><p>The Help Agent answers from Kizuna's published manuals—not from guesses. Every answer shows the guidance it used, and if the manuals do not cover something, it tells you plainly.</p><div class="help-boundaries"><span><b>Grounded answers</b>Product workflow, anime craft, AI Crew, rendering, storage, originality, and studio setup.</span><span><b>Human support when needed</b>Account, billing, security, legal, and unresolved technical issues become support tickets.</span></div></div>
+      <form class="public-help-agent reveal" id="public-help-form"><label>What would you like to do?<textarea name="question" required minlength="3" maxlength="500" rows="3" placeholder="How do I create a review animatic before final rendering?"></textarea></label><button class="button" type="submit">Ask Help Agent <span>↗</span></button><div class="public-help-answer" data-public-help-answer hidden aria-live="polite"></div></form>
+    </section>
+
     <section class="support section" id="support">
       <div class="support-copy reveal"><p class="eyebrow">SUPPORT & FEEDBACK</p><h2>Found something?<br>Tell us clearly.</h2><p>Report a bug, share product feedback, request a feature, or ask for help. You will receive a reference number you can keep for follow-up.</p><div class="report-guidance"><span><b>For bugs</b>Tell us what you expected, what happened, and how to reproduce it.</span><span><b>For urgent security issues</b>Do not include passwords, secret keys, private story files, or personal data in this form.</span></div></div>
       <form class="public-form reveal" id="ticket-form"><h3>Create a support ticket</h3><div class="form-pair"><label>Email<input name="email" type="email" required maxlength="320"></label><label>Type<select name="category"><option value="bug">Bug</option><option value="account">Account help</option><option value="billing">Billing question</option><option value="feature">Feature request</option><option value="feedback">General feedback</option><option value="other">Other</option></select></label></div><div class="form-pair"><label>Impact<select name="severity"><option value="low">Low — small inconvenience</option><option value="normal" selected>Normal — work can continue</option><option value="high">High — major workflow blocked</option><option value="blocking">Blocking — cannot use Kizuna</option></select></label><label>Page or workspace <span>Optional</span><input name="page_url" maxlength="1000" placeholder="Writer’s Room, Timeline, URL…"></label></div><label>Short summary<input name="subject" required minlength="4" maxlength="180"></label><label>What happened?<textarea name="description" required minlength="20" maxlength="8000" rows="6" placeholder="Steps, expected result, actual result, and anything that changed…"></textarea></label><label>Device and browser <span>Optional</span><input name="environment" maxlength="1000" placeholder="Windows 11 · Chrome · NVIDIA 4070"></label><label class="honeypot" aria-hidden="true">Company<input name="company" tabindex="-1" autocomplete="off"></label><label class="consent"><input type="checkbox" required> I understand this form must not contain passwords, API keys, or confidential media.</label><button class="button" type="submit">Submit ticket <span>↗</span></button><div class="form-result" role="status"></div></form>
@@ -185,7 +191,7 @@
 
   <footer class="site-footer">
     <div class="footer-brand"><img src="/assets/kizuna-wordmark.png" alt="Kizuna"><p>AI-assisted storytelling.<br>Human-directed worlds.</p></div>
-    <nav aria-label="Footer navigation"><a href="#platform">Platform</a><a href="#anime">Anime Studio</a><a href="#roadmap">Roadmap</a><a href="#journal">Journal</a><a href="#beta">Private beta</a><a href="#support">Support</a><a href="#values">Our approach</a><a data-app-link="login" href="https://app.kizuna.com/login">Sign in</a></nav>
+    <nav aria-label="Footer navigation"><a href="#platform">Platform</a><a href="#anime">Anime Studio</a><a href="#roadmap">Roadmap</a><a href="#journal">Journal</a><a href="#help">Help</a><a href="#beta">Private beta</a><a href="#support">Support</a><a href="#values">Our approach</a><a data-app-link="login" href="https://app.kizuna.com/login">Sign in</a></nav>
     <div class="social-links" data-social-links aria-label="Kizuna social media"></div>
     <div class="footer-meta"><span>© <span data-year></span> Kizuna</span><span>Made for original stories.</span></div>
   </footer>

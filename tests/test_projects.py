@@ -5,6 +5,29 @@ def test_health(client):
     assert len(response.headers["X-Kizuna-Request-ID"]) == 32
 
 
+def test_help_agent_answers_only_from_published_kizuna_guidance(client):
+    search = client.get("/api/help/search", params={"q": "render farm computers"})
+    assert search.status_code == 200
+    assert search.json()["results"]
+    assert all(item["source_path"].startswith("/docs/") for item in search.json()["results"])
+
+    answer = client.post("/api/help/ask", json={"question": "How do I render across connected computers?"})
+    assert answer.status_code == 200
+    assert answer.json()["grounded"] is True
+    assert answer.json()["sources"]
+    assert any("render" in source["title"].lower() or "node" in source["title"].lower() or "user guide" in source["title"].lower() for source in answer.json()["sources"])
+
+    unknown = client.post("/api/help/ask", json={"question": "How do I operate a submarine espresso reactor?"})
+    assert unknown.status_code == 200
+    assert unknown.json()["grounded"] is False
+    assert unknown.json()["sources"] == []
+
+    document = client.get(answer.json()["sources"][0]["source_path"])
+    assert document.status_code == 200
+    assert "text/markdown" in document.headers["content-type"]
+    assert client.get("/docs/SECRET_INTERNAL_PLAN.md").status_code == 404
+
+
 def test_structured_request_logs_redact_one_time_tokens():
     from starlette.requests import Request
     from app.main import request_log_path

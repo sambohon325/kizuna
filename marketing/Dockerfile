@@ -2,6 +2,7 @@ FROM python:3.13-slim
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY app ./app
+COPY docs ./docs
 COPY marketing ./marketing
 RUN pip install --no-cache-dir .
 RUN mkdir -p /data

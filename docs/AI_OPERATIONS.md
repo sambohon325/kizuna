@@ -114,6 +114,6 @@ Before expanding Autopilot, measure:
 
 1. **Current:** support and beta triage, audit trail, provider routing, safe fallback, admin operations desk, and signed beta invitations.
 2. **Next:** SMTP delivery verification, inbound reply threading, scheduled worker, Account Steward lifecycle reminders, and daily digest.
-3. **Then:** searchable help center and retrieval-assisted answers grounded only in published Kizuna documentation.
-4. **Then:** editorial calendar, social connectors, fact approval, and scheduled publishing.
+3. **Current:** searchable help center and retrieval-assisted answers grounded only in published Kizuna documentation.
+4. **Next:** editorial calendar, social connectors, fact approval, and scheduled publishing.
 5. **Before scale:** named administrators, MFA, immutable audit export, Redis job queue and limits, privacy retention/deletion, monitoring, incident playbooks, and provider cost budgets.

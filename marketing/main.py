@@ -11,7 +11,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -21,6 +21,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 from marketing.mailer import ready as mail_ready, send_text
 from marketing.ops_agent import OpsDecision, decide_beta, decide_support, may_auto_execute, provider_status
 from marketing.account_steward import AccountStewardError, BETA_AUTO_INVITE, provision_beta, readiness as steward_readiness, request_id as steward_request_id
+from app.help_center import DOCS_ROOT, PUBLISHED_DOCS, answer_help, search_help
 
 
 ROOT = Path(__file__).resolve().parent
@@ -49,6 +50,10 @@ def db_now() -> datetime:
 
 class Base(DeclarativeBase):
     pass
+
+
+class HelpQuestionInput(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
 
 
 class BlogPost(Base):
@@ -352,6 +357,24 @@ def public_post(slug: str, db: Session = Depends(db_session)):
     if item is None:
         raise HTTPException(404, "Article not found")
     return post_dict(item, include_body=True)
+
+
+@app.get("/api/help/search")
+def public_help_search(q: str = Query(min_length=2, max_length=200), limit: int = Query(default=8, ge=1, le=12)):
+    return {"query": q, "results": search_help(q, max(1, min(limit, 12)))}
+
+
+@app.post("/api/help/ask")
+def public_help_answer(payload: HelpQuestionInput, request: Request):
+    rate_limit(request, "help", maximum=30)
+    return answer_help(payload.question)
+
+
+@app.get("/docs/{document}", include_in_schema=False)
+def public_help_document(document: str):
+    if document not in PUBLISHED_DOCS:
+        raise HTTPException(404, "Help document not found")
+    return FileResponse(DOCS_ROOT / document, media_type="text/markdown; charset=utf-8")
 
 
 def store_ops_run(db: Session, entity_type: str, entity_id: int, decision: OpsDecision) -> OpsRun:

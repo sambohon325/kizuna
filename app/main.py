@@ -59,6 +59,7 @@ from app.editor_agent import EditorAgentError, create_editor_proposal
 from app.email_delivery import send_email, smtp_ready
 from app.billing import ACTIVE_SUBSCRIPTION_STATUSES, stripe_ready, stripe_request, stripe_timestamp, verify_stripe_event
 from app.signup_protection import turnstile_ready, verify_turnstile
+from app.help_center import DOCS_ROOT, PUBLISHED_DOCS, answer_help, search_help
 from app.auth import CSRF_COOKIE, SESSION_COOKIE, create_session, hash_password, normalize_email, project_for_path, project_for_render_uri, project_membership, public_path, request_identity, safe_render_path, token_hash, user_project_ids, utcnow as auth_utcnow, verify_password
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
@@ -102,6 +103,10 @@ class AuthSetupInput(BaseModel):
     display_name: str = Field(min_length=1, max_length=160)
     password: str = Field(min_length=12, max_length=256)
     bootstrap_key: str = Field(default="", max_length=512)
+
+
+class HelpQuestionInput(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
 
 
 class AuthLoginInput(BaseModel):
@@ -5584,6 +5589,23 @@ async def upload_master_segment(worker_id: int, segment_id: int, request: Reques
             job.status = "segments-ready"
     db.commit(); db.refresh(segment)
     return segment
+
+
+@app.get("/api/help/search")
+def help_search(q: str = Query(min_length=2, max_length=200), limit: int = Query(default=8, ge=1, le=12)):
+    return {"query": q, "results": search_help(q, limit)}
+
+
+@app.post("/api/help/ask")
+def help_answer(payload: HelpQuestionInput):
+    return answer_help(payload.question)
+
+
+@app.get("/docs/{document}", include_in_schema=False)
+def published_help_document(document: str):
+    if document not in PUBLISHED_DOCS:
+        raise HTTPException(404, "Help document not found")
+    return FileResponse(DOCS_ROOT / document, media_type="text/markdown; charset=utf-8")
 
 
 @app.get("/", include_in_schema=False)

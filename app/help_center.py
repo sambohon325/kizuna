@@ -25,6 +25,7 @@ PUBLISHED_DOCS = {
     "KIZUNA_NODE.md": "Assets & finishing",
     "INTEGRATIONS.md": "Studio setup",
     "EDITORIAL_STUDIO.md": "Studio setup",
+    "OPERATIONS_DIGEST.md": "Studio setup",
     "MULTI_WINDOW.md": "Studio setup",
     "COMPLIANCE.md": "Originality & rights",
     "PROFESSIONAL_VERIFICATION.md": "Originality & rights",

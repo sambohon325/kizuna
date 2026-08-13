@@ -23,6 +23,7 @@ from marketing.ops_agent import OpsDecision, decide_beta, decide_support, may_au
 from marketing.account_steward import AccountStewardError, BETA_AUTO_INVITE, provision_beta, readiness as steward_readiness, request_id as steward_request_id
 from app.help_center import DOCS_ROOT, PUBLISHED_DOCS, answer_help, search_help
 from marketing.editorial_agent import create_editorial_draft
+from marketing.operations_digest import build_digest
 
 
 ROOT = Path(__file__).resolve().parent
@@ -41,6 +42,7 @@ SOCIALS = {
     "linkedin": os.getenv("KIZUNA_SOCIAL_LINKEDIN", ""),
     "discord": os.getenv("KIZUNA_SOCIAL_DISCORD", ""),
 }
+DIGEST_EMAIL = os.getenv("KIZUNA_OPERATIONS_DIGEST_EMAIL", "").strip().casefold()
 SESSION_COOKIE = "kizuna_marketing_admin"
 CSRF_COOKIE = "kizuna_marketing_csrf"
 
@@ -178,6 +180,22 @@ class OpsDelivery(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=db_now)
 
 
+class OperationsDigest(Base):
+    __tablename__ = "operations_digests"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime, index=True)
+    period_end: Mapped[datetime] = mapped_column(DateTime, index=True)
+    subject: Mapped[str] = mapped_column(String(180))
+    body: Mapped[str] = mapped_column(Text)
+    snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(30), default="prepared", index=True)
+    recipient: Mapped[str] = mapped_column(String(320), default="")
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=db_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=db_now, onupdate=db_now)
+
+
 class AccountProvisioning(Base):
     __tablename__ = "account_provisioning"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -240,6 +258,15 @@ def ops_dict(item: OpsRun) -> dict:
         "auto_executed": item.auto_executed, "provider": item.provider,
         "provider_error": item.provider_error, "input_tokens": item.input_tokens,
         "output_tokens": item.output_tokens, "created_at": item.created_at, "updated_at": item.updated_at,
+    }
+
+
+def digest_dict(item: OperationsDigest) -> dict:
+    return {
+        "id": item.id, "period_start": item.period_start, "period_end": item.period_end,
+        "subject": item.subject, "body": item.body, "snapshot": item.snapshot,
+        "status": item.status, "recipient": item.recipient, "sent_at": item.sent_at,
+        "error": item.error, "created_at": item.created_at, "updated_at": item.updated_at,
     }
 
 
@@ -347,6 +374,10 @@ class TicketTriageInput(BaseModel):
 
 class OpsExecuteInput(BaseModel):
     response: str = Field(default="", max_length=6000)
+
+
+class DigestSendInput(BaseModel):
+    body: str = Field(default="", max_length=30_000)
 
 
 app = FastAPI(title="Kizuna Public Site", docs_url=None, redoc_url=None, openapi_url=None)
@@ -590,6 +621,7 @@ def admin_overview(db: Session = Depends(db_session)):
     tickets = db.scalars(select(SupportTicket).order_by(SupportTicket.created_at.desc()).limit(250)).all()
     ops = db.scalars(select(OpsRun).order_by(OpsRun.created_at.desc()).limit(300)).all()
     provisioning = db.scalars(select(AccountProvisioning).order_by(AccountProvisioning.created_at.desc()).limit(250)).all()
+    digests = db.scalars(select(OperationsDigest).order_by(OperationsDigest.created_at.desc()).limit(31)).all()
     return {
         "posts": [post_dict(item, include_body=True) for item in posts],
         "campaigns": [campaign_dict(item) for item in campaigns],
@@ -597,8 +629,49 @@ def admin_overview(db: Session = Depends(db_session)):
         "tickets": [{"id": item.id, "reference": item.reference, "email": item.email, "category": item.category, "severity": item.severity, "subject": item.subject, "description": item.description, "page_url": item.page_url, "environment": item.environment, "status": item.status, "notes": item.notes, "created_at": item.created_at, "updated_at": item.updated_at} for item in tickets],
         "ops": [ops_dict(item) for item in ops],
         "ops_config": {**provider_status(), "email_ready": mail_ready()},
+        "digests": [digest_dict(item) for item in digests],
+        "digest_config": {"email_ready": mail_ready(), "recipient_ready": bool(DIGEST_EMAIL), "recipient_hint": (DIGEST_EMAIL[:1] + "***@" + DIGEST_EMAIL.split("@", 1)[1]) if "@" in DIGEST_EMAIL else ""},
         "account_steward": {**steward_readiness(), "records": [{"application_id": item.application_id, "status": item.status, "invitation_id": item.invitation_id, "cohort": item.cohort, "expires_at": item.expires_at, "access_ends_at": item.access_ends_at, "email_delivery": item.email_delivery, "error": item.error} for item in provisioning]},
     }
+
+
+@app.post("/api/admin/digests", dependencies=[Depends(require_admin), Depends(require_csrf)])
+def prepare_operations_digest(db: Session = Depends(db_session)):
+    period_end = utcnow()
+    period_start = period_end - timedelta(hours=24)
+    tickets = db.scalars(select(SupportTicket).where(SupportTicket.status.in_(["open", "investigating"]))).all()
+    beta = db.scalars(select(BetaApplication).where(BetaApplication.status.in_(["new", "reviewing", "invited", "waitlisted"]))).all()
+    ops = db.scalars(select(OpsRun).where((OpsRun.updated_at >= period_start) | (OpsRun.needs_human.is_(True) & (OpsRun.status == "needs_review")))).all()
+    campaigns = db.scalars(select(EditorialCampaign).where((EditorialCampaign.updated_at >= period_start) | EditorialCampaign.status.in_(["prepared", "needs_review", "blocked", "approved"]))).all()
+    draft = build_digest(
+        period_start=period_start, period_end=period_end,
+        tickets=[{"category": item.category, "severity": item.severity, "status": item.status} for item in tickets],
+        beta=[{"status": item.status} for item in beta],
+        ops=[ops_dict(item) for item in ops], campaigns=[campaign_dict(item) for item in campaigns],
+    )
+    item = OperationsDigest(period_start=period_start, period_end=period_end, subject=draft.subject, body=draft.body, snapshot=draft.snapshot)
+    db.add(item); db.commit(); db.refresh(item)
+    return digest_dict(item)
+
+
+@app.post("/api/admin/digests/{digest_id}/send", dependencies=[Depends(require_admin), Depends(require_csrf)])
+def send_operations_digest(digest_id: int, payload: DigestSendInput, db: Session = Depends(db_session)):
+    item = db.get(OperationsDigest, digest_id)
+    if item is None:
+        raise HTTPException(404, "Operations digest not found")
+    if item.status == "sent":
+        return digest_dict(item)
+    if not DIGEST_EMAIL:
+        raise HTTPException(503, "Set KIZUNA_OPERATIONS_DIGEST_EMAIL before sending digests")
+    body = payload.body.strip() or item.body
+    sent, note = send_text(DIGEST_EMAIL, item.subject, body)
+    item.body, item.recipient = body, DIGEST_EMAIL
+    item.status, item.error = ("sent", "") if sent else ("failed", note)
+    item.sent_at = utcnow() if sent else None
+    db.commit(); db.refresh(item)
+    if not sent:
+        raise HTTPException(503, "Digest email delivery failed")
+    return digest_dict(item)
 
 
 @app.post("/api/admin/beta/{application_id}/invite", dependencies=[Depends(require_admin), Depends(require_csrf)])

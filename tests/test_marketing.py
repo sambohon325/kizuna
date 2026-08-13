@@ -70,6 +70,36 @@ def test_editorial_studio_builds_fact_grounded_campaigns_and_gates_claims():
     assert client.post(f"/api/admin/editorial/campaigns/{confidential.json()['id']}/approve", headers={"X-Kizuna-CSRF": csrf}).status_code == 409
 
 
+def test_daily_digest_summarizes_private_operations_and_requires_manual_delivery(monkeypatch):
+    public = TestClient(app)
+    public.post("/api/tickets", json={"email": "private.creator@example.com", "category": "bug", "severity": "blocking", "subject": "Cannot finish export", "description": "My private production title is Moon Harbor and the export has stopped twice.", "environment": "Windows 11"})
+    public.post("/api/beta", json={"name": "New Creator", "email": "beta.private@example.com", "creator_type": "Animator", "experience": "beginner", "project_summary": "An original story about a traveling lantern maker and a town that has forgotten the moon.", "desired_outcome": "Test guided story development."})
+    admin, csrf = admin_client()
+
+    created = admin.post("/api/admin/digests", headers={"X-Kizuna-CSRF": csrf}, json={})
+    assert created.status_code == 200
+    digest = created.json()
+    assert digest["status"] == "prepared"
+    assert digest["snapshot"]["blocked_customers"] == 1
+    assert digest["snapshot"]["urgent_decisions"] >= 1
+    assert "private.creator@example.com" not in digest["body"]
+    assert "Moon Harbor" not in digest["body"]
+    assert admin.post(f"/api/admin/digests/{digest['id']}/send", headers={"X-Kizuna-CSRF": csrf}, json={"body": digest["body"]}).status_code == 503
+
+    delivered = []
+    monkeypatch.setattr("marketing.main.DIGEST_EMAIL", "owner@example.com")
+    monkeypatch.setattr("marketing.main.send_text", lambda to, subject, body: (delivered.append((to, subject, body)) or True, "sent"))
+    sent = admin.post(f"/api/admin/digests/{digest['id']}/send", headers={"X-Kizuna-CSRF": csrf}, json={"body": digest["body"] + "\n\nReviewed by owner."})
+    assert sent.status_code == 200
+    assert sent.json()["status"] == "sent"
+    assert sent.json()["sent_at"]
+    assert delivered[0][0] == "owner@example.com"
+    assert "Reviewed by owner." in delivered[0][2]
+    overview = admin.get("/api/admin/overview").json()
+    assert overview["digests"][0]["status"] == "sent"
+    assert overview["digest_config"]["recipient_hint"] == "o***@example.com"
+
+
 def test_beta_applications_and_ticket_triage():
     public = TestClient(app)
     beta_payload = {"name": "Beta Creator", "email": "creator@example.com", "creator_type": "Independent creator", "experience": "beginner", "project_summary": "An original short about memory and a disappearing city.", "desired_outcome": "Test the guided workflow.", "hardware": "Windows"}

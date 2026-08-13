@@ -61,7 +61,7 @@ This slice creates an approved campaign and a Journal draft but does not silentl
 
 ### Operations Producer
 
-Planned as the coordinating layer. It will send one digest rather than many notifications:
+The first Operations Producer slice is implemented in the marketing administrator. It prepares one private digest rather than many notifications:
 
 - urgent decisions requiring action;
 - customers at risk of being blocked;
@@ -70,6 +70,8 @@ Planned as the coordinating layer. It will send one digest rather than many noti
 - content awaiting factual approval;
 - AI and email cost; and
 - automatic actions completed since the last digest.
+
+The owner can review and edit the digest before sending it to a configured private operations mailbox. Customer contact information and private request text are excluded. Automated scheduling remains disabled until production delivery and redaction have been verified.
 
 ## Autonomy levels
 
@@ -115,7 +117,9 @@ Before expanding Autopilot, measure:
 ## Implementation sequence
 
 1. **Current:** support and beta triage, audit trail, provider routing, safe fallback, admin operations desk, and signed beta invitations.
-2. **Next:** SMTP delivery verification, inbound reply threading, scheduled worker, Account Steward lifecycle reminders, and daily digest.
-3. **Current:** searchable help center and retrieval-assisted answers grounded only in published Kizuna documentation.
-4. **Next:** editorial calendar, social connectors, fact approval, and scheduled publishing.
-5. **Before scale:** named administrators, MFA, immutable audit export, Redis job queue and limits, privacy retention/deletion, monitoring, incident playbooks, and provider cost budgets.
+2. **Current:** manually reviewed daily operations digest with delivery history and privacy minimization.
+3. **Next:** SMTP delivery verification, inbound reply threading, scheduled worker, and Account Steward lifecycle reminders.
+4. **Current:** searchable help center and retrieval-assisted answers grounded only in published Kizuna documentation.
+5. **Current:** factual-brief editorial calendar with campaign and Journal drafts.
+6. **Next:** social connectors, scheduled publishing, and delivery receipts.
+7. **Before scale:** named administrators, MFA, immutable audit export, Redis job queue and limits, privacy retention/deletion, monitoring, incident playbooks, and provider cost budgets.

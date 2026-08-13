@@ -11,6 +11,7 @@ The service includes a deliberately small publishing and community backend:
 - configurable social links; and
 - one protected website-administrator screen at `/admin`; and
 - an auditable AI operations desk for support and beta intake.
+- a privacy-minimized daily operations digest with manual email delivery.
 
 ## Preview locally
 
@@ -65,7 +66,10 @@ KIZUNA_SMTP_FROM_EMAIL=<verified sender address>
 KIZUNA_SMTP_FROM_NAME=Kizuna Studio
 KIZUNA_SMTP_STARTTLS=true
 KIZUNA_SMTP_SSL=false
+KIZUNA_OPERATIONS_DIGEST_EMAIL=<private owner or operations mailbox>
 ```
+
+The digest is prepared from queue counts, risk states, action history, and token totals. It does not include customer email addresses or private request text. Sending remains a separate manual action in the administrator; unattended scheduling is not enabled in this slice.
 
 ### Connect private-beta invitations
 

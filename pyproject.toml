@@ -26,7 +26,7 @@ dev = [
 testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
-include = ["app*", "worker*", "scanner*"]
+include = ["app*", "worker*", "scanner*", "marketing*"]
 exclude = ["work*", "outputs*", "tests*"]
 
 [tool.setuptools.package-data]

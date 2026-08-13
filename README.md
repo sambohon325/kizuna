@@ -95,3 +95,7 @@ See [picture and audio editing](docs/EDITING.md) for tactile edit controls.
 See [database migrations](docs/DATABASE_MIGRATIONS.md) for local upgrades, existing-database adoption, and Coolify startup behavior.
 See [self-hosted compliance scanners](docs/COMPLIANCE_SCANNERS.md) for lawful corpus ingestion and scanner protocol details, and [production domain and access](docs/DEPLOYMENT_DOMAIN.md) for `kizuna.technology` deployment guidance.
 See [accounts and production isolation](docs/AUTHENTICATION.md) before exposing any Kizuna deployment to the internet.
+
+The standalone public website lives in [`marketing/`](marketing/README.md). It can be previewed locally without the application database and deployed through Coolify as a separate Dockerfile service whose calls to action point to the authenticated Kizuna app.
+
+The private-beta cohorts, application lifecycle, support-ticket workflow, and next safety milestones are documented in [`docs/BETA_AND_SUPPORT.md`](docs/BETA_AND_SUPPORT.md).

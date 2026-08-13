@@ -6,6 +6,8 @@ __pycache__/
 .env
 anime_studio.db
 test_anime_studio.db
+test_marketing.db
+marketing/data/
 data/
 renders/
 storage/

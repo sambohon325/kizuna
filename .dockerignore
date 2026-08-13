@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.env
+data
+marketing/data
+renders
+storage
+scanner-corpus
+tmp
+work
+test_*.db

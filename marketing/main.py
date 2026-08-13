@@ -1,0 +1,410 @@
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import os
+import re
+import secrets
+import time
+from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import DateTime, Integer, String, Text, create_engine, select
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+
+
+ROOT = Path(__file__).resolve().parent
+DATA_DIR = Path(os.getenv("KIZUNA_MARKETING_DATA_DIR", ROOT / "data")).resolve()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATABASE_URL = os.getenv("KIZUNA_MARKETING_DATABASE_URL", f"sqlite:///{(DATA_DIR / 'marketing.db').as_posix()}")
+ADMIN_PASSWORD = os.getenv("KIZUNA_MARKETING_ADMIN_PASSWORD", "")
+SESSION_SECRET = os.getenv("KIZUNA_MARKETING_SESSION_SECRET", "")
+COOKIE_SECURE = os.getenv("KIZUNA_MARKETING_COOKIE_SECURE", "true").lower() in {"1", "true", "yes"}
+APP_URL = os.getenv("KIZUNA_APP_URL", "https://app.kizuna.com").rstrip("/")
+SOCIALS = {
+    "instagram": os.getenv("KIZUNA_SOCIAL_INSTAGRAM", ""),
+    "youtube": os.getenv("KIZUNA_SOCIAL_YOUTUBE", ""),
+    "tiktok": os.getenv("KIZUNA_SOCIAL_TIKTOK", ""),
+    "x": os.getenv("KIZUNA_SOCIAL_X", ""),
+    "linkedin": os.getenv("KIZUNA_SOCIAL_LINKEDIN", ""),
+    "discord": os.getenv("KIZUNA_SOCIAL_DISCORD", ""),
+}
+SESSION_COOKIE = "kizuna_marketing_admin"
+CSRF_COOKIE = "kizuna_marketing_csrf"
+
+
+def db_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class BlogPost(Base):
+    __tablename__ = "blog_posts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(180))
+    slug: Mapped[str] = mapped_column(String(190), unique=True, index=True)
+    excerpt: Mapped[str] = mapped_column(String(500), default="")
+    body: Mapped[str] = mapped_column(Text)
+    author: Mapped[str] = mapped_column(String(120), default="Kizuna Studio")
+    category: Mapped[str] = mapped_column(String(80), default="Studio notes")
+    status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
+    featured: Mapped[bool] = mapped_column(default=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=db_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=db_now, onupdate=db_now)
+
+
+class BetaApplication(Base):
+    __tablename__ = "beta_applications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    creator_type: Mapped[str] = mapped_column(String(80))
+    experience: Mapped[str] = mapped_column(String(40))
+    project_summary: Mapped[str] = mapped_column(Text)
+    desired_outcome: Mapped[str] = mapped_column(Text, default="")
+    hardware: Mapped[str] = mapped_column(String(500), default="")
+    status: Mapped[str] = mapped_column(String(30), default="new", index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=db_now)
+
+
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reference: Mapped[str] = mapped_column(String(24), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    category: Mapped[str] = mapped_column(String(40))
+    severity: Mapped[str] = mapped_column(String(20))
+    subject: Mapped[str] = mapped_column(String(180))
+    description: Mapped[str] = mapped_column(Text)
+    page_url: Mapped[str] = mapped_column(String(1000), default="")
+    environment: Mapped[str] = mapped_column(String(1000), default="")
+    status: Mapped[str] = mapped_column(String(30), default="open", index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=db_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=db_now, onupdate=db_now)
+
+
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+Base.metadata.create_all(engine)
+
+
+def db_session():
+    with SessionLocal() as db:
+        yield db
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def post_dict(item: BlogPost, include_body: bool = False) -> dict:
+    result = {"id": item.id, "title": item.title, "slug": item.slug, "excerpt": item.excerpt, "author": item.author, "category": item.category, "status": item.status, "featured": item.featured, "published_at": item.published_at, "created_at": item.created_at, "updated_at": item.updated_at}
+    if include_body:
+        result["body"] = item.body
+    return result
+
+
+def slugify(value: str) -> str:
+    value = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+    return value[:180] or f"post-{secrets.token_hex(4)}"
+
+
+def session_signature(expires: int) -> str:
+    return hmac.new(SESSION_SECRET.encode(), str(expires).encode(), hashlib.sha256).hexdigest()
+
+
+def require_admin(admin_session: str | None = Cookie(default=None, alias=SESSION_COOKIE)) -> None:
+    if not admin_session or not SESSION_SECRET:
+        raise HTTPException(401, "Administrator sign-in required")
+    try:
+        expires_text, supplied = admin_session.split(".", 1)
+        expires = int(expires_text)
+    except (ValueError, TypeError):
+        raise HTTPException(401, "Administrator sign-in required")
+    if expires < int(time.time()) or not hmac.compare_digest(supplied, session_signature(expires)):
+        raise HTTPException(401, "Administrator sign-in required")
+
+
+def require_csrf(request: Request, csrf_cookie: str | None = Cookie(default=None, alias=CSRF_COOKIE)) -> None:
+    supplied = request.headers.get("X-Kizuna-CSRF", "")
+    if not supplied or not csrf_cookie or not secrets.compare_digest(supplied, csrf_cookie):
+        raise HTTPException(403, "Security token missing or expired")
+
+
+attempts: dict[str, deque[float]] = defaultdict(deque)
+
+
+def rate_limit(request: Request, bucket: str, maximum: int = 6, seconds: int = 3600) -> None:
+    address = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip() or (request.client.host if request.client else "unknown")
+    key = hashlib.sha256(f"{bucket}:{address}".encode()).hexdigest()
+    now = time.time()
+    entries = attempts[key]
+    while entries and entries[0] < now - seconds:
+        entries.popleft()
+    if len(entries) >= maximum:
+        raise HTTPException(429, "Please wait before submitting again")
+    entries.append(now)
+
+
+class AdminLogin(BaseModel):
+    password: str = Field(min_length=12, max_length=256)
+
+
+class PostInput(BaseModel):
+    title: str = Field(min_length=3, max_length=180)
+    slug: str = Field(default="", max_length=190)
+    excerpt: str = Field(default="", max_length=500)
+    body: str = Field(min_length=20, max_length=100_000)
+    author: str = Field(default="Kizuna Studio", max_length=120)
+    category: str = Field(default="Studio notes", max_length=80)
+    status: str = Field(default="draft", pattern="^(draft|published)$")
+    featured: bool = False
+
+
+class BetaInput(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    email: str = Field(min_length=3, max_length=320)
+    creator_type: str = Field(min_length=2, max_length=80)
+    experience: str = Field(pattern="^(beginner|intermediate|professional)$")
+    project_summary: str = Field(min_length=20, max_length=5000)
+    desired_outcome: str = Field(default="", max_length=3000)
+    hardware: str = Field(default="", max_length=500)
+    website: str = Field(default="", max_length=200)
+
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, value: str) -> str:
+        normalized = value.strip().casefold()
+        if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
+            raise ValueError("Enter a valid email address")
+        return normalized
+
+
+class TicketInput(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    category: str = Field(pattern="^(bug|account|billing|feature|feedback|other)$")
+    severity: str = Field(default="normal", pattern="^(low|normal|high|blocking)$")
+    subject: str = Field(min_length=4, max_length=180)
+    description: str = Field(min_length=20, max_length=8000)
+    page_url: str = Field(default="", max_length=1000)
+    environment: str = Field(default="", max_length=1000)
+    company: str = Field(default="", max_length=200)
+
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, value: str) -> str:
+        return BetaInput.valid_email(value)
+
+
+class BetaTriageInput(BaseModel):
+    status: str = Field(pattern="^(new|reviewing|invited|waitlisted|closed)$")
+    notes: str = Field(default="", max_length=5000)
+
+
+class TicketTriageInput(BaseModel):
+    status: str = Field(pattern="^(open|investigating|resolved|closed)$")
+    notes: str = Field(default="", max_length=5000)
+
+
+app = FastAPI(title="Kizuna Public Site", docs_url=None, redoc_url=None, openapi_url=None)
+app.mount("/assets", StaticFiles(directory=ROOT.parent / "app" / "static" / "assets"), name="assets")
+
+
+def public_url(value: str) -> str:
+    value = value.strip()
+    return value if value.startswith(("https://", "http://")) else ""
+
+
+@app.middleware("http")
+async def public_safety(request: Request, call_next):
+    content_length = request.headers.get("content-length", "0")
+    if request.method in {"POST", "PUT", "PATCH"}:
+        try:
+            too_large = int(content_length) > 200_000
+        except ValueError:
+            too_large = True
+        if too_large:
+            return JSONResponse({"detail": "Request is too large"}, status_code=413)
+
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; img-src 'self' data:; style-src 'self'; "
+        "script-src 'self'; connect-src 'self'; frame-ancestors 'self'; "
+        "base-uri 'self'; form-action 'self'"
+    )
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/config.js")
+def public_config():
+    payload = {
+        "appUrl": public_url(APP_URL) or "https://app.kizuna.com",
+        "socials": {key: clean for key, value in SOCIALS.items() if (clean := public_url(value))},
+    }
+    source = "window.KIZUNA_MARKETING=" + json.dumps(payload, separators=(",", ":")) + ";"
+    return Response(source, media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/blog")
+def public_posts(db: Session = Depends(db_session)):
+    posts = db.scalars(select(BlogPost).where(BlogPost.status == "published").order_by(BlogPost.featured.desc(), BlogPost.published_at.desc(), BlogPost.id.desc())).all()
+    return [post_dict(item) for item in posts]
+
+
+@app.get("/api/blog/{slug}")
+def public_post(slug: str, db: Session = Depends(db_session)):
+    item = db.scalar(select(BlogPost).where(BlogPost.slug == slug, BlogPost.status == "published"))
+    if item is None:
+        raise HTTPException(404, "Article not found")
+    return post_dict(item, include_body=True)
+
+
+@app.post("/api/beta", status_code=201)
+def apply_beta(payload: BetaInput, request: Request, db: Session = Depends(db_session)):
+    rate_limit(request, "beta", maximum=4)
+    if payload.website:
+        return {"received": True}
+    existing = db.scalar(select(BetaApplication).where(BetaApplication.email == payload.email.lower(), BetaApplication.status.in_(["new", "reviewing", "invited", "waitlisted"])))
+    if existing:
+        return {"received": True}
+    item = BetaApplication(name=payload.name.strip(), email=payload.email.lower(), creator_type=payload.creator_type.strip(), experience=payload.experience, project_summary=payload.project_summary.strip(), desired_outcome=payload.desired_outcome.strip(), hardware=payload.hardware.strip())
+    db.add(item); db.commit()
+    return {"received": True}
+
+
+@app.post("/api/tickets", status_code=201)
+def create_ticket(payload: TicketInput, request: Request, db: Session = Depends(db_session)):
+    rate_limit(request, "tickets", maximum=8)
+    if payload.company:
+        return {"received": True, "reference": "KZ-RECEIVED"}
+    reference = f"KZ-{utcnow():%y%m%d}-{secrets.token_hex(3).upper()}"
+    item = SupportTicket(reference=reference, email=payload.email.lower(), category=payload.category, severity=payload.severity, subject=payload.subject.strip(), description=payload.description.strip(), page_url=payload.page_url.strip(), environment=payload.environment.strip())
+    db.add(item); db.commit()
+    return {"received": True, "reference": reference}
+
+
+@app.post("/api/admin/login")
+def admin_login(payload: AdminLogin, response: Response, request: Request):
+    rate_limit(request, "admin-login", maximum=8, seconds=900)
+    if not ADMIN_PASSWORD or not SESSION_SECRET:
+        raise HTTPException(503, "Marketing administration is not configured")
+    if not secrets.compare_digest(payload.password, ADMIN_PASSWORD):
+        raise HTTPException(401, "Invalid administrator password")
+    expires = int((datetime.now(timezone.utc) + timedelta(hours=12)).timestamp())
+    csrf = secrets.token_urlsafe(32)
+    response.set_cookie(SESSION_COOKIE, f"{expires}.{session_signature(expires)}", max_age=43200, httponly=True, secure=COOKIE_SECURE, samesite="strict", path="/")
+    response.set_cookie(CSRF_COOKIE, csrf, max_age=43200, httponly=False, secure=COOKIE_SECURE, samesite="strict", path="/")
+    return {"signed_in": True, "csrf": csrf}
+
+
+@app.post("/api/admin/logout", status_code=204, dependencies=[Depends(require_admin), Depends(require_csrf)])
+def admin_logout(response: Response):
+    response.delete_cookie(SESSION_COOKIE, path="/"); response.delete_cookie(CSRF_COOKIE, path="/")
+
+
+@app.get("/api/admin/overview", dependencies=[Depends(require_admin)])
+def admin_overview(db: Session = Depends(db_session)):
+    posts = db.scalars(select(BlogPost).order_by(BlogPost.updated_at.desc())).all()
+    beta = db.scalars(select(BetaApplication).order_by(BetaApplication.created_at.desc()).limit(250)).all()
+    tickets = db.scalars(select(SupportTicket).order_by(SupportTicket.created_at.desc()).limit(250)).all()
+    return {
+        "posts": [post_dict(item, include_body=True) for item in posts],
+        "beta": [{"id": item.id, "name": item.name, "email": item.email, "creator_type": item.creator_type, "experience": item.experience, "project_summary": item.project_summary, "desired_outcome": item.desired_outcome, "hardware": item.hardware, "status": item.status, "notes": item.notes, "created_at": item.created_at} for item in beta],
+        "tickets": [{"id": item.id, "reference": item.reference, "email": item.email, "category": item.category, "severity": item.severity, "subject": item.subject, "description": item.description, "page_url": item.page_url, "environment": item.environment, "status": item.status, "notes": item.notes, "created_at": item.created_at, "updated_at": item.updated_at} for item in tickets],
+    }
+
+
+def unique_slug(db: Session, desired: str, item_id: int | None = None) -> str:
+    base = slugify(desired)
+    candidate, index = base, 2
+    while db.scalar(select(BlogPost.id).where(BlogPost.slug == candidate, BlogPost.id != item_id)) is not None:
+        candidate, index = f"{base}-{index}", index + 1
+    return candidate
+
+
+@app.post("/api/admin/posts", status_code=201, dependencies=[Depends(require_admin), Depends(require_csrf)])
+def create_post(payload: PostInput, db: Session = Depends(db_session)):
+    item = BlogPost(title=payload.title.strip(), slug=unique_slug(db, payload.slug or payload.title), excerpt=payload.excerpt.strip(), body=payload.body.strip(), author=payload.author.strip(), category=payload.category.strip(), status=payload.status, featured=payload.featured, published_at=utcnow() if payload.status == "published" else None)
+    db.add(item); db.commit(); db.refresh(item)
+    return post_dict(item, include_body=True)
+
+
+@app.put("/api/admin/posts/{post_id}", dependencies=[Depends(require_admin), Depends(require_csrf)])
+def update_post(post_id: int, payload: PostInput, db: Session = Depends(db_session)):
+    item = db.get(BlogPost, post_id)
+    if item is None: raise HTTPException(404, "Post not found")
+    was_published = item.status == "published"
+    item.title, item.slug, item.excerpt, item.body = payload.title.strip(), unique_slug(db, payload.slug or payload.title, item.id), payload.excerpt.strip(), payload.body.strip()
+    item.author, item.category, item.status, item.featured = payload.author.strip(), payload.category.strip(), payload.status, payload.featured
+    if payload.status == "published" and not was_published: item.published_at = utcnow()
+    db.commit()
+    return post_dict(item, include_body=True)
+
+
+@app.delete("/api/admin/posts/{post_id}", status_code=204, dependencies=[Depends(require_admin), Depends(require_csrf)])
+def delete_post(post_id: int, db: Session = Depends(db_session)):
+    item = db.get(BlogPost, post_id)
+    if item is None: raise HTTPException(404, "Post not found")
+    db.delete(item); db.commit()
+
+
+@app.put("/api/admin/beta/{application_id}", dependencies=[Depends(require_admin), Depends(require_csrf)])
+def triage_beta(application_id: int, payload: BetaTriageInput, db: Session = Depends(db_session)):
+    item = db.get(BetaApplication, application_id)
+    if item is None: raise HTTPException(404, "Application not found")
+    item.status, item.notes = payload.status, payload.notes.strip(); db.commit()
+    return {"updated": True}
+
+
+@app.put("/api/admin/tickets/{ticket_id}", dependencies=[Depends(require_admin), Depends(require_csrf)])
+def triage_ticket(ticket_id: int, payload: TicketTriageInput, db: Session = Depends(db_session)):
+    item = db.get(SupportTicket, ticket_id)
+    if item is None: raise HTTPException(404, "Ticket not found")
+    item.status, item.notes = payload.status, payload.notes.strip(); db.commit()
+    return {"updated": True}
+
+
+def static_file_endpoint(path: Path):
+    def serve_file():
+        return FileResponse(path)
+    return serve_file
+
+
+for filename in ("marketing.css", "community.css", "marketing.js", "admin.css", "admin-fixes.css", "admin.js", "robots.txt", "sitemap.xml"):
+    path = ROOT / filename
+    if path.exists():
+        app.add_api_route(f"/{filename}", static_file_endpoint(path), methods=["GET"], include_in_schema=False)
+
+
+@app.get("/admin", include_in_schema=False)
+def admin_page():
+    return FileResponse(ROOT / "admin.html")
+
+
+@app.get("/{path:path}", include_in_schema=False)
+def marketing_page(path: str):
+    if path.startswith("api/"):
+        raise HTTPException(404, "Not found")
+    return FileResponse(ROOT / "index.html")

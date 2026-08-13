@@ -15,13 +15,14 @@ from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Qu
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, create_engine, select
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from marketing.mailer import ready as mail_ready, send_text
 from marketing.ops_agent import OpsDecision, decide_beta, decide_support, may_auto_execute, provider_status
 from marketing.account_steward import AccountStewardError, BETA_AUTO_INVITE, provision_beta, readiness as steward_readiness, request_id as steward_request_id
 from app.help_center import DOCS_ROOT, PUBLISHED_DOCS, answer_help, search_help
+from marketing.editorial_agent import create_editorial_draft
 
 
 ROOT = Path(__file__).resolve().parent
@@ -56,6 +57,16 @@ class HelpQuestionInput(BaseModel):
     question: str = Field(min_length=3, max_length=500)
 
 
+class EditorialCampaignInput(BaseModel):
+    brief_title: str = Field(min_length=4, max_length=180)
+    content_type: str = Field(default="education", pattern="^(education|product|milestone|customer|incident|partnership|policy)$")
+    approved_facts: str = Field(min_length=20, max_length=20000)
+    audience: str = Field(min_length=3, max_length=300)
+    goal: str = Field(min_length=10, max_length=3000)
+    call_to_action: str = Field(default="Learn more at kizuna.technology.", max_length=500)
+    scheduled_at: datetime | None = None
+
+
 class BlogPost(Base):
     __tablename__ = "blog_posts"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -68,6 +79,33 @@ class BlogPost(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     featured: Mapped[bool] = mapped_column(default=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=db_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=db_now, onupdate=db_now)
+
+
+class EditorialCampaign(Base):
+    __tablename__ = "editorial_campaigns"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    brief_title: Mapped[str] = mapped_column(String(180))
+    content_type: Mapped[str] = mapped_column(String(30), default="education", index=True)
+    approved_facts: Mapped[str] = mapped_column(Text)
+    audience: Mapped[str] = mapped_column(String(300))
+    goal: Mapped[str] = mapped_column(Text)
+    call_to_action: Mapped[str] = mapped_column(String(500), default="")
+    status: Mapped[str] = mapped_column(String(30), default="draft", index=True)
+    risk: Mapped[str] = mapped_column(String(30), default="low")
+    approval_reason: Mapped[str] = mapped_column(Text, default="")
+    title: Mapped[str] = mapped_column(String(180), default="")
+    excerpt: Mapped[str] = mapped_column(String(500), default="")
+    blog_body: Mapped[str] = mapped_column(Text, default="")
+    social_variants: Mapped[dict] = mapped_column(JSON, default=dict)
+    provider: Mapped[str] = mapped_column(String(160), default="local-editorial")
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    provider_error: Mapped[str] = mapped_column(Text, default="")
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    journal_post_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=db_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=db_now, onupdate=db_now)
 
@@ -176,6 +214,20 @@ def post_dict(item: BlogPost, include_body: bool = False) -> dict:
     if include_body:
         result["body"] = item.body
     return result
+
+
+def campaign_dict(item: EditorialCampaign) -> dict:
+    return {
+        "id": item.id, "brief_title": item.brief_title, "content_type": item.content_type,
+        "approved_facts": item.approved_facts, "audience": item.audience, "goal": item.goal,
+        "call_to_action": item.call_to_action, "status": item.status, "risk": item.risk,
+        "approval_reason": item.approval_reason, "title": item.title, "excerpt": item.excerpt,
+        "blog_body": item.blog_body, "social_variants": item.social_variants,
+        "provider": item.provider, "input_tokens": item.input_tokens, "output_tokens": item.output_tokens,
+        "provider_error": item.provider_error, "scheduled_at": item.scheduled_at,
+        "approved_at": item.approved_at, "journal_post_id": item.journal_post_id,
+        "created_at": item.created_at, "updated_at": item.updated_at,
+    }
 
 
 def ops_dict(item: OpsRun) -> dict:
@@ -533,12 +585,14 @@ def admin_logout(response: Response):
 @app.get("/api/admin/overview", dependencies=[Depends(require_admin)])
 def admin_overview(db: Session = Depends(db_session)):
     posts = db.scalars(select(BlogPost).order_by(BlogPost.updated_at.desc())).all()
+    campaigns = db.scalars(select(EditorialCampaign).order_by(EditorialCampaign.created_at.desc()).limit(250)).all()
     beta = db.scalars(select(BetaApplication).order_by(BetaApplication.created_at.desc()).limit(250)).all()
     tickets = db.scalars(select(SupportTicket).order_by(SupportTicket.created_at.desc()).limit(250)).all()
     ops = db.scalars(select(OpsRun).order_by(OpsRun.created_at.desc()).limit(300)).all()
     provisioning = db.scalars(select(AccountProvisioning).order_by(AccountProvisioning.created_at.desc()).limit(250)).all()
     return {
         "posts": [post_dict(item, include_body=True) for item in posts],
+        "campaigns": [campaign_dict(item) for item in campaigns],
         "beta": [{"id": item.id, "name": item.name, "email": item.email, "creator_type": item.creator_type, "experience": item.experience, "project_summary": item.project_summary, "desired_outcome": item.desired_outcome, "hardware": item.hardware, "status": item.status, "notes": item.notes, "created_at": item.created_at} for item in beta],
         "tickets": [{"id": item.id, "reference": item.reference, "email": item.email, "category": item.category, "severity": item.severity, "subject": item.subject, "description": item.description, "page_url": item.page_url, "environment": item.environment, "status": item.status, "notes": item.notes, "created_at": item.created_at, "updated_at": item.updated_at} for item in tickets],
         "ops": [ops_dict(item) for item in ops],
@@ -605,6 +659,52 @@ def unique_slug(db: Session, desired: str, item_id: int | None = None) -> str:
     while db.scalar(select(BlogPost.id).where(BlogPost.slug == candidate, BlogPost.id != item_id)) is not None:
         candidate, index = f"{base}-{index}", index + 1
     return candidate
+
+
+@app.post("/api/admin/editorial/campaigns", status_code=201, dependencies=[Depends(require_admin), Depends(require_csrf)])
+def create_editorial_campaign(payload: EditorialCampaignInput, db: Session = Depends(db_session)):
+    draft = create_editorial_draft(payload.brief_title, payload.approved_facts, payload.audience, payload.goal, payload.call_to_action, payload.content_type)
+    item = EditorialCampaign(
+        brief_title=payload.brief_title.strip(), content_type=payload.content_type,
+        approved_facts=payload.approved_facts.strip(), audience=payload.audience.strip(), goal=payload.goal.strip(),
+        call_to_action=payload.call_to_action.strip(), status="blocked" if draft.risk == "blocked" else "needs_review" if draft.needs_approval else "prepared",
+        risk=draft.risk, approval_reason=draft.rationale, title=draft.title, excerpt=draft.excerpt,
+        blog_body=draft.blog_body, social_variants=draft.social, provider=draft.provider,
+        input_tokens=draft.input_tokens, output_tokens=draft.output_tokens, provider_error=draft.provider_error,
+        scheduled_at=payload.scheduled_at.replace(tzinfo=None) if payload.scheduled_at and payload.scheduled_at.tzinfo else payload.scheduled_at,
+    )
+    db.add(item); db.commit(); db.refresh(item)
+    return campaign_dict(item)
+
+
+@app.post("/api/admin/editorial/campaigns/{campaign_id}/approve", dependencies=[Depends(require_admin), Depends(require_csrf)])
+def approve_editorial_campaign(campaign_id: int, db: Session = Depends(db_session)):
+    item = db.get(EditorialCampaign, campaign_id)
+    if item is None:
+        raise HTTPException(404, "Editorial campaign not found")
+    if item.status == "blocked":
+        raise HTTPException(409, "Remove confidential or unannounced material and create a new factual brief")
+    item.status, item.approved_at = "approved", utcnow()
+    db.commit(); db.refresh(item)
+    return campaign_dict(item)
+
+
+@app.post("/api/admin/editorial/campaigns/{campaign_id}/journal-draft", dependencies=[Depends(require_admin), Depends(require_csrf)])
+def create_campaign_journal_draft(campaign_id: int, db: Session = Depends(db_session)):
+    item = db.get(EditorialCampaign, campaign_id)
+    if item is None:
+        raise HTTPException(404, "Editorial campaign not found")
+    if item.status != "approved":
+        raise HTTPException(409, "Approve the campaign facts and copy before creating publishing assets")
+    if item.journal_post_id:
+        post = db.get(BlogPost, item.journal_post_id)
+        if post is not None:
+            return post_dict(post, include_body=True)
+    post = BlogPost(title=item.title, slug=unique_slug(db, item.title), excerpt=item.excerpt, body=item.blog_body, author="Kizuna Studio", category="Studio notes", status="draft", featured=False)
+    db.add(post); db.flush()
+    item.journal_post_id, item.status = post.id, "ready"
+    db.commit(); db.refresh(post)
+    return post_dict(post, include_body=True)
 
 
 @app.post("/api/admin/posts", status_code=201, dependencies=[Depends(require_admin), Depends(require_csrf)])

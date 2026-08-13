@@ -38,6 +38,38 @@ def test_blog_drafts_and_publishing():
     assert client.post("/api/admin/posts", json={"title": "No CSRF", "body": "This body is long enough to validate."}).status_code == 403
 
 
+def test_editorial_studio_builds_fact_grounded_campaigns_and_gates_claims():
+    client, csrf = admin_client()
+    educational = {
+        "brief_title": "Why Kizuna Help answers show their sources",
+        "content_type": "education",
+        "approved_facts": "The Help Agent searches a curated set of published Kizuna manuals.\nEach grounded answer includes source sections.\nIt reports when the library does not contain an answer.",
+        "audience": "Creators learning the Kizuna workflow",
+        "goal": "Explain how grounded help reduces confusion without inventing product instructions.",
+        "call_to_action": "Explore the Help Center at kizuna.technology.",
+    }
+    created = client.post("/api/admin/editorial/campaigns", headers={"X-Kizuna-CSRF": csrf}, json=educational)
+    assert created.status_code == 201
+    campaign = created.json()
+    assert campaign["status"] == "prepared"
+    assert set(campaign["social_variants"]) == {"x", "linkedin", "instagram", "tiktok", "youtube"}
+    assert client.post(f"/api/admin/editorial/campaigns/{campaign['id']}/journal-draft", headers={"X-Kizuna-CSRF": csrf}).status_code == 409
+    approved = client.post(f"/api/admin/editorial/campaigns/{campaign['id']}/approve", headers={"X-Kizuna-CSRF": csrf})
+    assert approved.json()["status"] == "approved"
+    journal = client.post(f"/api/admin/editorial/campaigns/{campaign['id']}/journal-draft", headers={"X-Kizuna-CSRF": csrf})
+    assert journal.status_code == 200
+    assert journal.json()["status"] == "draft"
+    assert client.get("/api/blog").json() == []
+
+    sensitive = client.post("/api/admin/editorial/campaigns", headers={"X-Kizuna-CSRF": csrf}, json={**educational, "brief_title": "New partnership pricing launch", "content_type": "partnership"})
+    assert sensitive.status_code == 201
+    assert sensitive.json()["status"] == "needs_review"
+    confidential = client.post("/api/admin/editorial/campaigns", headers={"X-Kizuna-CSRF": csrf}, json={**educational, "brief_title": "Internal only unannounced work", "approved_facts": "This confidential roadmap item is internal only and must not be announced publicly."})
+    assert confidential.status_code == 201
+    assert confidential.json()["status"] == "blocked"
+    assert client.post(f"/api/admin/editorial/campaigns/{confidential.json()['id']}/approve", headers={"X-Kizuna-CSRF": csrf}).status_code == 409
+
+
 def test_beta_applications_and_ticket_triage():
     public = TestClient(app)
     beta_payload = {"name": "Beta Creator", "email": "creator@example.com", "creator_type": "Independent creator", "experience": "beginner", "project_summary": "An original short about memory and a disappearing city.", "desired_outcome": "Test the guided workflow.", "hardware": "Windows"}

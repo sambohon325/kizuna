@@ -5,6 +5,7 @@ This directory is a standalone public site for Kizuna. It does not connect to th
 The service includes a deliberately small publishing and community backend:
 
 - public journal posts with draft/publish controls;
+- a factual-brief Editorial Studio that prepares coordinated Journal and social drafts;
 - private-beta applications and triage;
 - support, feedback, feature-request, and bug tickets with reference numbers;
 - configurable social links; and
@@ -100,6 +101,8 @@ KIZUNA_SOCIAL_X=https://...
 KIZUNA_SOCIAL_LINKEDIN=https://...
 KIZUNA_SOCIAL_DISCORD=https://...
 ```
+
+The configured URLs are public profile links, not publishing credentials. Editorial Studio currently prepares and approves platform-specific copy but does not post to external accounts. Keep credentials out of these variables; connector authorization will use separate, revocable secrets when that layer is implemented.
 
 If the deployed app remains on the `.technology` domain, set `KIZUNA_APP_URL=https://app.kizuna.technology` instead. No source-code change is required.
 

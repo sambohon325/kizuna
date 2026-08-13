@@ -46,16 +46,18 @@ Password resets remain user-controlled through one-time links. Ownership transfe
 
 ### Growth and Editorial Studio
 
-Planned after support and account lifecycle are stable. It will:
+The first editorial slice is implemented in the marketing administrator. It:
 
 - turn approved product milestones into blog and social drafts;
 - maintain an editorial calendar;
 - reuse one approved factual source across platform-specific posts;
 - check originality, rights, confidentiality, and unsupported claims;
-- schedule low-risk evergreen material; and
+- stores a target date and approval state for low-risk evergreen material; and
 - measure useful engagement without optimizing for outrage or deceptive claims.
 
 Product announcements, pricing, partnerships, customer stories, incident communications, and legal/policy claims require approval. Routine educational posts may be scheduled automatically after the source material and voice rules are approved.
+
+This slice creates an approved campaign and a Journal draft but does not silently publish or connect to external social accounts. Connector authorization, per-channel delivery receipts, retries, revocation, and scheduled execution remain next steps.
 
 ### Operations Producer
 

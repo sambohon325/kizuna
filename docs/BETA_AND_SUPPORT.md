@@ -14,7 +14,7 @@ The public beta application records:
 
 Repeated active applications from the same normalized email are acknowledged without creating duplicates. The administrator can move an applicant through `new`, `reviewing`, `invited`, `waitlisted`, and `closed`, with private notes.
 
-The form is an application, not automatic access. This lets Kizuna invite small cohorts based on the workflows being tested and the support capacity available. The Anime Studio trial remains a separate protected signup system.
+The form is an application, not automatic access. Approved low-risk applicants can now receive a single-use invitation through the signed Account Steward bridge. The app sends the invitation, owns the token, creates the beta entitlement, and gives the new creator a starter production. The public Anime Studio trial remains a separate protected signup system.
 
 ## Implemented ticket intake
 
@@ -29,7 +29,7 @@ Administrators triage tickets through `open`, `investigating`, `resolved`, and `
 - Per-network in-memory limits slow repeated submissions and login attempts.
 - Admin mutations require both a valid signed session and a matching CSRF token.
 - Blog articles are stored as plain text with limited paragraph, heading, and quote presentation; administrators cannot publish arbitrary HTML or scripts.
-- Beta and ticket records do not grant application access or change production entitlements.
+- Marketing records cannot directly change production entitlements. The app accepts access requests only through the separately configured signed Account Steward endpoint.
 
 These controls are suitable for a controlled preview, not a large public launch. A privacy policy must define collection purpose, retention, deletion requests, contact practices, and subprocessors before public intake opens.
 
@@ -67,7 +67,7 @@ Do not treat the public marketing form as the launch gate. Public trial signup s
 
 1. Add SMTP confirmations and internal notifications without exposing submitted details in logs.
 2. Add Cloudflare Turnstile and Redis-backed rate limits shared across replicas and restarts.
-3. Link an accepted beta record to a single-use Anime Studio invitation while preserving separate databases through a narrow signed service call.
+3. Add Account Steward onboarding reminders, entitlement-expiry notices, and lifecycle reporting.
 4. Add named marketing administrators, MFA, roles, and immutable admin audit events.
 5. Add ticket replies, requester-visible status lookup using a separate secret, and a searchable known-issues page.
 6. Add configurable retention, export, and deletion workflows for privacy requests.

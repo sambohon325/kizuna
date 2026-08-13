@@ -128,6 +128,26 @@ class StudioInvitation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class BetaInvitation(Base):
+    __tablename__ = "beta_invitations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_request_id: Mapped[str] = mapped_column(String(80), unique=True)
+    source_application_id: Mapped[str] = mapped_column(String(80), index=True)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    display_name: Mapped[str] = mapped_column(String(160), default="")
+    experience: Mapped[str] = mapped_column(String(32), default="beginner")
+    creator_type: Mapped[str] = mapped_column(String(80), default="Independent creator")
+    cohort: Mapped[str] = mapped_column(String(80), default="private-beta")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    access_ends_at: Mapped[datetime] = mapped_column(DateTime)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Project(Base):
     __tablename__ = "projects"
 

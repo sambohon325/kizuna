@@ -82,7 +82,7 @@ def request_identity(request: Request, db: Session) -> tuple[User | None, UserSe
 
 
 def public_path(path: str) -> bool:
-    return path in PUBLIC_EXACT or path.startswith(PUBLIC_PREFIXES) or path.startswith(("/delivery/", "/invite/", "/reset-password/", "/verify-email/", "/api/auth/invitations/", "/api/auth/password/reset/", "/api/auth/verify/"))
+    return path in PUBLIC_EXACT or path.startswith(PUBLIC_PREFIXES) or path.startswith(("/delivery/", "/invite/", "/beta-invite/", "/reset-password/", "/verify-email/", "/api/auth/invitations/", "/api/auth/beta-invitations/", "/api/auth/password/reset/", "/api/auth/verify/", "/api/internal/account-steward/"))
 
 
 def has_membership(db: Session, user_id: int, project_id: int) -> bool:

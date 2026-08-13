@@ -20,6 +20,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 
 from marketing.mailer import ready as mail_ready, send_text
 from marketing.ops_agent import OpsDecision, decide_beta, decide_support, may_auto_execute, provider_status
+from marketing.account_steward import AccountStewardError, BETA_AUTO_INVITE, provision_beta, readiness as steward_readiness, request_id as steward_request_id
 
 
 ROOT = Path(__file__).resolve().parent
@@ -132,6 +133,22 @@ class OpsDelivery(Base):
     status: Mapped[str] = mapped_column(String(30), index=True)
     error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=db_now)
+
+
+class AccountProvisioning(Base):
+    __tablename__ = "account_provisioning"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    application_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    request_id: Mapped[str] = mapped_column(String(80), unique=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    invitation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cohort: Mapped[str] = mapped_column(String(80), default="")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    access_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    email_delivery: Mapped[str] = mapped_column(String(30), default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=db_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=db_now, onupdate=db_now)
 
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
@@ -361,6 +378,34 @@ def deliver_run(db: Session, run: OpsRun, email: str, subject: str, response_tex
     return sent
 
 
+def beta_record_dict(item: BetaApplication) -> dict:
+    return {"id": item.id, "name": item.name, "email": item.email, "creator_type": item.creator_type, "experience": item.experience, "project_summary": item.project_summary, "desired_outcome": item.desired_outcome, "hardware": item.hardware}
+
+
+def provision_beta_account(db: Session, item: BetaApplication) -> AccountProvisioning:
+    record = db.scalar(select(AccountProvisioning).where(AccountProvisioning.application_id == item.id))
+    if record is None:
+        record = AccountProvisioning(application_id=item.id, request_id=steward_request_id(item.id, item.email))
+        db.add(record); db.flush()
+    if record.status == "invited":
+        return record
+    record.status, record.error = "processing", ""
+    db.commit()
+    try:
+        result = provision_beta(beta_record_dict(item))
+        record.status = "invited"
+        record.invitation_id = result.get("id")
+        record.cohort = str(result.get("cohort", ""))
+        record.expires_at = datetime.fromisoformat(str(result["expires_at"]).replace("Z", "+00:00")).replace(tzinfo=None) if result.get("expires_at") else None
+        record.access_ends_at = datetime.fromisoformat(str(result["access_ends_at"]).replace("Z", "+00:00")).replace(tzinfo=None) if result.get("access_ends_at") else None
+        record.email_delivery = str(result.get("email_delivery", ""))
+        item.status = "invited"
+    except (AccountStewardError, ValueError, TypeError) as exc:
+        record.status, record.error = "failed", str(exc)[:1000]
+    db.commit(); db.refresh(record)
+    return record
+
+
 def process_beta_record(db: Session, item: BetaApplication, force: bool = False) -> OpsRun:
     existing = db.scalar(select(OpsRun).where(OpsRun.entity_type == "beta", OpsRun.entity_id == item.id).order_by(OpsRun.id.desc()))
     if existing and not force:
@@ -368,11 +413,16 @@ def process_beta_record(db: Session, item: BetaApplication, force: bool = False)
     decision = decide_beta({"experience": item.experience, "creator_type": item.creator_type, "project_summary": item.project_summary, "desired_outcome": item.desired_outcome, "hardware": item.hardware})
     run = store_ops_run(db, "beta", item.id, decision)
     if may_auto_execute(decision):
-        run.auto_executed = True
-        if deliver_run(db, run, item.email, "We received your Kizuna beta application"):
-            item.status = "reviewing"
+        if BETA_AUTO_INVITE:
+            provisioning = provision_beta_account(db, item)
+            run.auto_executed = provisioning.status == "invited"
+            run.status = "auto_completed" if run.auto_executed else "prepared"
         else:
-            run.auto_executed = False
+            run.auto_executed = True
+            if deliver_run(db, run, item.email, "We received your Kizuna beta application"):
+                item.status = "reviewing"
+            else:
+                run.auto_executed = False
     db.commit(); db.refresh(run)
     return run
 
@@ -463,13 +513,31 @@ def admin_overview(db: Session = Depends(db_session)):
     beta = db.scalars(select(BetaApplication).order_by(BetaApplication.created_at.desc()).limit(250)).all()
     tickets = db.scalars(select(SupportTicket).order_by(SupportTicket.created_at.desc()).limit(250)).all()
     ops = db.scalars(select(OpsRun).order_by(OpsRun.created_at.desc()).limit(300)).all()
+    provisioning = db.scalars(select(AccountProvisioning).order_by(AccountProvisioning.created_at.desc()).limit(250)).all()
     return {
         "posts": [post_dict(item, include_body=True) for item in posts],
         "beta": [{"id": item.id, "name": item.name, "email": item.email, "creator_type": item.creator_type, "experience": item.experience, "project_summary": item.project_summary, "desired_outcome": item.desired_outcome, "hardware": item.hardware, "status": item.status, "notes": item.notes, "created_at": item.created_at} for item in beta],
         "tickets": [{"id": item.id, "reference": item.reference, "email": item.email, "category": item.category, "severity": item.severity, "subject": item.subject, "description": item.description, "page_url": item.page_url, "environment": item.environment, "status": item.status, "notes": item.notes, "created_at": item.created_at, "updated_at": item.updated_at} for item in tickets],
         "ops": [ops_dict(item) for item in ops],
         "ops_config": {**provider_status(), "email_ready": mail_ready()},
+        "account_steward": {**steward_readiness(), "records": [{"application_id": item.application_id, "status": item.status, "invitation_id": item.invitation_id, "cohort": item.cohort, "expires_at": item.expires_at, "access_ends_at": item.access_ends_at, "email_delivery": item.email_delivery, "error": item.error} for item in provisioning]},
     }
+
+
+@app.post("/api/admin/beta/{application_id}/invite", dependencies=[Depends(require_admin), Depends(require_csrf)])
+def invite_beta_applicant(application_id: int, db: Session = Depends(db_session)):
+    item = db.get(BetaApplication, application_id)
+    if item is None:
+        raise HTTPException(404, "Application not found")
+    decision = db.scalar(select(OpsRun).where(OpsRun.entity_type == "beta", OpsRun.entity_id == item.id).order_by(OpsRun.id.desc()))
+    if decision is None:
+        decision = process_beta_record(db, item)
+    if decision.needs_human or decision.risk != "low":
+        raise HTTPException(409, "Resolve the application review before issuing account access")
+    record = provision_beta_account(db, item)
+    if record.status != "invited":
+        raise HTTPException(503, record.error or "Account invitation could not be created")
+    return {"application_id": item.id, "status": record.status, "invitation_id": record.invitation_id, "cohort": record.cohort, "expires_at": record.expires_at, "access_ends_at": record.access_ends_at, "email_delivery": record.email_delivery}
 
 
 @app.post("/api/admin/ops/run", dependencies=[Depends(require_admin), Depends(require_csrf)])

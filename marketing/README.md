@@ -66,6 +66,28 @@ KIZUNA_SMTP_STARTTLS=true
 KIZUNA_SMTP_SSL=false
 ```
 
+### Connect private-beta invitations
+
+The marketing administrator can now invite an approved, low-risk applicant directly into the app. The app sends the one-time link itself; the marketing service never receives or stores the signup token. Add the following to the marketing service:
+
+```text
+KIZUNA_ACCOUNT_STEWARD_URL=https://app.kizuna.technology/api/internal/account-steward/beta-invitations
+KIZUNA_ACCOUNT_STEWARD_SECRET=<the same random secret used by the app, at least 32 characters>
+KIZUNA_BETA_AUTO_INVITE=false
+KIZUNA_BETA_COHORT=private-beta
+```
+
+Add the matching secret and inviter identity to the application service:
+
+```text
+KIZUNA_ACCOUNT_STEWARD_SECRET=<the same random secret>
+KIZUNA_ACCOUNT_STEWARD_ADMIN_EMAIL=<an active Kizuna administrator email>
+KIZUNA_BETA_INVITATION_DAYS=7
+KIZUNA_BETA_ACCESS_DAYS=90
+```
+
+Keep `KIZUNA_BETA_AUTO_INVITE=false` for the first cohort. The marketing admin will show **Invite to beta** only when the connection is ready. After invitation delivery and account acceptance have been verified repeatedly, Autopilot may invite only applications that the Beta Coordinator classifies as low risk. Known-property and fan-fiction requests remain blocked.
+
 See [`docs/AI_OPERATIONS.md`](../docs/AI_OPERATIONS.md) for the autonomy policy, account-management plan, hard escalation rules, and rollout sequence.
 
 Optional social links appear only when configured:

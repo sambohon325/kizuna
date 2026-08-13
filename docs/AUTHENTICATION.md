@@ -25,6 +25,12 @@ The marketing call to action opens `https://app.kizuna.technology/signup`. Once 
 
 Configure the policy with `KIZUNA_TRIAL_DAYS`, `KIZUNA_TRIAL_EXPORT_SECONDS`, and `KIZUNA_TRIAL_WATERMARK`. Trial enforcement does not depend on browser controls.
 
+## Private-beta invitations
+
+The marketing Beta Coordinator and app Account Steward communicate through one narrow HMAC-signed endpoint. Requests expire after a short clock-skew window and use an idempotent request identifier. Configure the same `KIZUNA_ACCOUNT_STEWARD_SECRET` in both services, set `KIZUNA_ACCOUNT_STEWARD_URL` in marketing, and set `KIZUNA_ACCOUNT_STEWARD_ADMIN_EMAIL` to an active app administrator.
+
+The app generates and emails the one-time signup link directly. Marketing receives only invitation status and dates, never the raw token. Acceptance verifies control of the invited mailbox, creates a `beta` account with a configurable access end date, assigns ownership of a starter production, and records creation and acceptance security events. Expired beta accounts become review-only rather than losing their work.
+
 ## Account email and recovery
 
 Kizuna uses standard SMTP rather than a provider-specific SDK. Configure `KIZUNA_SMTP_HOST`, port, username, password, from address, from name, and either STARTTLS or SSL. Keep the password in the deployment secret store. Password-reset and verification links are generated from the configured `KIZUNA_PUBLIC_URL`, expire after `KIZUNA_ACCOUNT_TOKEN_HOURS`, are stored only as hashes, and can be used once. A completed password reset revokes every existing session and records a security event.

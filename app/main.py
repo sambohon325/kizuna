@@ -1,4 +1,6 @@
+import base64
 import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -28,7 +30,7 @@ from app.database import SessionLocal, get_db
 from app.schema_migrations import database_revision, migrate_database
 from app.character_development import compile_reference_brief
 from app.generation import ComfyUIProvider, MockProvider, ProviderError
-from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecurityEvent, AccountToken, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, BillingEvent, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LibraryAsset, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionSourceNote, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, SignupAttempt, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, UserSubscription, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
+from app.models import AIModelRate, AIProviderRoute, AIUsageEvent, AccountSecurityEvent, AccountToken, AnimaticRender, AssetResidency, AssetReview, AssistantMessage, AudioCue, AudioTrack, AuditLedgerEvent, BackgroundAsset, BackgroundJob, BackupSchedule, BetaInvitation, BillingEvent, Character, CharacterDesign, CharacterRelationship, CharacterStoryProfile, ComplianceClearance, CompliancePolicy, ComplianceScan, CompositeRender, CompositionLayer, CrewAction, CrewAssignment, DeliveryLink, DurableJob, DurableJobEvent, GenerationJob, HiveNodeControl, IntegrationProfile, KizunaNode, LibraryAsset, LocationDesign, MasterExportJob, MasterSegment, MediaAsset, MediaCleanupReview, MediaStoragePolicy, MediaTransferJob, NodeEnrollment, ProductionScope, ProductionSourceNote, ProductionWorkflow, ProfessionalIdentity, ProfessionalVerificationEvent, ProfessionalWorkClaim, Project, ProjectBackup, ProjectMembership, ProjectMilestone, PronunciationEntry, RenderWorker, Scene, Shot, ShotComposition, ShotMotionRender, ShotPlan, SignupAttempt, StoragePolicy, StoryboardAsset, StoryboardJob, StoryBrief, StudioInvitation, StudioSpendSettings, StyleProfile, Timeline, TimelineClip, User, UserSession, UserSubscription, VoiceConsent, VoiceProfile, WorkerAssignment, WorkloadPolicy, WorldLocation
 from app.schemas import AIRoutingSettingsRead, AIModelRateInput, AIProviderRouteInput, AIProviderRouteRead, AnimaticRenderRead, AnimatorProposal, AnimatorProposalRequest, AssetReviewRead, AssetReviewUpdate, AssetRightsInput, AssistantMessageRead, AssistantReply, AssistantRequest, AudioCueDuplicateRequest, AudioCueInput, AudioCueRead, AudioCueSplitRequest, AudioStudioRead, BackgroundArtistRequest, BackgroundAssetRead, BackgroundJobRead, BackupScheduleInput, BackupScheduleRead, CharacterDesignerRequest, CharacterDesignInput, CharacterDesignRead, CharacterInput, CharacterRead, CharacterRelationshipInput, CharacterRelationshipRead, CharacterStoryProfileInput, CharacterStoryProfileRead, ComplianceAcknowledgement, ComplianceClearanceInput, ComplianceFindingResolutionInput, ComplianceScanRequest, CompositeRenderRead, CompositionInput, CompositionLayerInput, CompositionLayerRead, CompositorStudioRead, CrewActionRead, CrewAssignmentRead, CrewAssignmentUpdate, CrewDeployRequest, CrewVoiceRequest, DeliveryLinkCreate, DeliveryLinkRead, DirectorProposalRequest, DurableJobRead, EditorProposal, EditorProposalRequest, GenerationJobRead, GenerationRequest, HiveNodeControlInput, IntegrationProfileInput, IntegrationProfileRead, IntegrationSettingsRead, JobCompletion, JobFailure, LibraryAssetRead, LibraryAssetUpdate, LocationDesignInput, LocationDesignRead, MasterExportRead, MasterRenderRequest, MasterSegmentRead, MediaAssetRead, MediaCleanupDecision, MediaStoragePolicyInput, MediaStoragePolicyRead, MediaTransferComplete, MediaTransferRead, MotionRenderRequest, NodeHeartbeatInput, NodeProfileInput, NodeResidencyBatch, ProducerWorkflowRead, ProducerWorkflowRequest, ProductionScopeInput, ProductionScopeRead, ProductionStatusRead, ProfessionalIdentityInput, ProfessionalVerificationDecision, ProfessionalWorkClaimInput, ProjectBackupRead, ProjectCreate, ProjectRead, PronunciationInput, PronunciationRead, RenderWorkerRead, SceneCreate, SceneRead, SceneUpdate, SegmentedExportRequest, ShotCompositionRead, ShotCreate, ShotMotionRenderRead, ShotPlanInput, ShotPlanRead, ShotRead, SpendSettingsInput, StoragePolicyRead, StoragePolicyUpdate, StoryboardJobRead, StoryBriefInput, StoryBriefRead, StoryExpansionRequest, StoryOutlineUpdate, StyleProfileInput, StyleProfileRead, TimelineBuildRequest, TimelineClipUpdate, TimelineOrderUpdate, TimelineRead, VoiceConsentInput, VoiceConsentRead, VoiceProfileInput, VoiceProfileRead, WorkerHeartbeat, WorkerRegistration, WorkerRegistrationResult, WorkloadPolicyInput, WorldLocationInput, WorldLocationRead, WriterProposalRequest
 from app.job_queue import complete_job, enqueue_job, event_dict, fail_job, recover_expired_jobs, request_cancel, retry_job, start_job, update_progress
 from app.media_proxy import execute_media_proxy_job, proxy_spec
@@ -73,7 +75,7 @@ def request_log_path(request: Request) -> str:
     if template:
         return template
     path = request.url.path
-    sensitive_prefixes = ("/delivery/", "/invite/", "/reset-password/", "/verify-email/", "/api/auth/invitations/", "/api/auth/password/reset/", "/api/auth/verify/")
+    sensitive_prefixes = ("/delivery/", "/invite/", "/beta-invite/", "/reset-password/", "/verify-email/", "/api/auth/invitations/", "/api/auth/beta-invitations/", "/api/auth/password/reset/", "/api/auth/verify/")
     for prefix in sensitive_prefixes:
         if path.startswith(prefix):
             return prefix + "[redacted]"
@@ -139,6 +141,16 @@ class InvitationAcceptInput(BaseModel):
     password: str = Field(min_length=12, max_length=256)
 
 
+class BetaInvitationServiceInput(BaseModel):
+    request_id: str = Field(min_length=12, max_length=80, pattern="^[A-Za-z0-9_-]+$")
+    application_id: str = Field(min_length=1, max_length=80, pattern="^[A-Za-z0-9_-]+$")
+    email: str = Field(min_length=3, max_length=320)
+    display_name: str = Field(min_length=1, max_length=160)
+    experience: str = Field(pattern="^(beginner|intermediate|professional)$")
+    creator_type: str = Field(min_length=2, max_length=80)
+    cohort: str = Field(default="private-beta", min_length=2, max_length=80, pattern="^[A-Za-z0-9 _-]+$")
+
+
 class MembershipUpdateInput(BaseModel):
     role: str = Field(pattern="^(owner|editor|viewer|remove)$")
 
@@ -152,7 +164,8 @@ def set_auth_cookies(response: Response, session_token: str, csrf_token: str) ->
 def account_response(user: User) -> dict:
     now = auth_utcnow()
     trial_active = user.account_tier == "trial" and bool(user.trial_ends_at and user.trial_ends_at > now)
-    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role, "account_tier": user.account_tier, "trial_ends_at": user.trial_ends_at, "trial_active": trial_active, "trial_export_seconds": settings.trial_export_seconds if user.account_tier == "trial" else None, "trial_watermarked": user.account_tier == "trial", "email_verified": user.email_verified_at is not None, "email_delivery_ready": smtp_ready()}
+    beta_active = user.account_tier == "beta" and bool(user.trial_ends_at and user.trial_ends_at > now)
+    return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role, "account_tier": user.account_tier, "trial_ends_at": user.trial_ends_at, "trial_active": trial_active, "beta_active": beta_active, "trial_export_seconds": settings.trial_export_seconds if user.account_tier == "trial" else None, "trial_watermarked": user.account_tier == "trial", "email_verified": user.email_verified_at is not None, "email_delivery_ready": smtp_ready()}
 
 
 def request_network_hash(request: Request) -> str:
@@ -216,6 +229,33 @@ def schedule_invitation_email(invitation: StudioInvitation, inviter: User, accep
     background_tasks.add_task(deliver_invitation_email, inviter.id, invitation.id, invitation.email, f"{inviter.display_name} invited you to Kizuna Studio", body)
 
 
+def schedule_beta_invitation_email(invitation: BetaInvitation, acceptance_url: str, background_tasks: BackgroundTasks) -> None:
+    body = f"You have been invited to the Kizuna {invitation.cohort} cohort.\n\nCreate your beta account within {max(1, settings.beta_invitation_days)} day(s):\n{acceptance_url}\n\nYour beta access is currently scheduled through {invitation.access_ends_at:%B %d, %Y}. Kizuna supports original stories only. If you were not expecting this invitation, ignore this message."
+    background_tasks.add_task(deliver_invitation_email, invitation.created_by_user_id, invitation.id, invitation.email, "Your Kizuna private-beta invitation", body)
+
+
+def beta_invitation_token(request_id: str, email: str) -> str:
+    digest = hmac.new(settings.account_steward_secret.encode(), f"beta-invite:{request_id}:{email}".encode(), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode().rstrip("=")
+
+
+async def require_account_steward(request: Request) -> None:
+    if len(settings.account_steward_secret) < 32:
+        raise HTTPException(503, "Account Steward is not configured")
+    timestamp_text = request.headers.get("X-Kizuna-Timestamp", "")
+    supplied = request.headers.get("X-Kizuna-Signature", "").removeprefix("sha256=")
+    try:
+        timestamp = int(timestamp_text)
+    except ValueError:
+        raise HTTPException(401, "Invalid service signature")
+    if abs(int(time.time()) - timestamp) > max(30, settings.account_steward_clock_skew_seconds):
+        raise HTTPException(401, "Service signature expired")
+    body = await request.body()
+    expected = hmac.new(settings.account_steward_secret.encode(), timestamp_text.encode() + b"." + body, hashlib.sha256).hexdigest()
+    if not supplied or not secrets.compare_digest(supplied, expected):
+        raise HTTPException(401, "Invalid service signature")
+
+
 @app.middleware("http")
 async def authenticate_and_authorize(request: Request, call_next):
     if not settings.auth_required:
@@ -236,8 +276,9 @@ async def authenticate_and_authorize(request: Request, call_next):
             csrf = request.headers.get("X-Kizuna-CSRF", "")
             if not csrf or not secrets.compare_digest(token_hash(csrf), session.csrf_hash):
                 return JSONResponse(status_code=403, content={"detail": "Security token missing or expired. Refresh the page and try again."})
-            if user.account_tier == "trial" and user.trial_ends_at and user.trial_ends_at <= auth_utcnow() and not path.startswith("/api/auth/"):
-                return JSONResponse(status_code=status.HTTP_402_PAYMENT_REQUIRED, content={"detail": "Your 7-day Kizuna trial has ended. Your productions remain available to review; upgrade to continue creating or exporting."})
+            if user.account_tier in {"trial", "beta"} and user.trial_ends_at and user.trial_ends_at <= auth_utcnow() and not path.startswith("/api/auth/"):
+                detail = "Your Kizuna beta access has ended. Your productions remain available to review; contact the beta team for next steps." if user.account_tier == "beta" else "Your 7-day Kizuna trial has ended. Your productions remain available to review; upgrade to continue creating or exporting."
+                return JSONResponse(status_code=status.HTTP_402_PAYMENT_REQUIRED, content={"detail": detail})
         admin_settings_path = path.startswith("/api/settings/") and not path.startswith("/api/settings/team")
         if (admin_settings_path or path == "/api/render-farm/status") and user.role != "admin":
             return JSONResponse(status_code=403, content={"detail": "Studio administrator access required"})
@@ -815,6 +856,77 @@ def invitation_response(invitation: StudioInvitation, db: Session) -> dict:
     now = auth_utcnow()
     invitation_status = "accepted" if invitation.accepted_at else "revoked" if invitation.revoked_at else "expired" if invitation.expires_at <= now else "pending"
     return {"id": invitation.id, "email": invitation.email, "display_name": invitation.display_name, "project_access": [{**entry, "project_title": titles.get(entry.get("project_id"), "Production")} for entry in invitation.project_roles], "expires_at": invitation.expires_at, "accepted_at": invitation.accepted_at, "revoked_at": invitation.revoked_at, "created_at": invitation.created_at, "status": invitation_status}
+
+
+def beta_invitation_response(invitation: BetaInvitation) -> dict:
+    now = auth_utcnow()
+    invitation_status = "accepted" if invitation.accepted_at else "revoked" if invitation.revoked_at else "expired" if invitation.expires_at <= now else "pending"
+    return {"id": invitation.id, "email": invitation.email, "display_name": invitation.display_name, "experience": invitation.experience, "creator_type": invitation.creator_type, "cohort": invitation.cohort, "expires_at": invitation.expires_at, "access_ends_at": invitation.access_ends_at, "accepted_at": invitation.accepted_at, "created_at": invitation.created_at, "status": invitation_status}
+
+
+@app.post("/api/internal/account-steward/beta-invitations", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_account_steward)])
+def create_beta_invitation(payload: BetaInvitationServiceInput, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    email = normalize_email(payload.email)
+    if not settings.account_steward_admin_email:
+        raise HTTPException(503, "Account Steward administrator is not configured")
+    administrator = db.scalar(select(User).where(User.email == normalize_email(settings.account_steward_admin_email), User.role == "admin", User.active.is_(True)))
+    if administrator is None:
+        raise HTTPException(503, "Account Steward administrator is unavailable")
+    if db.scalar(select(User.id).where(User.email == email)) is not None:
+        raise HTTPException(409, "An account already uses this email")
+    existing = db.scalar(select(BetaInvitation).where(BetaInvitation.source_request_id == payload.request_id))
+    if existing is not None:
+        if existing.source_application_id != payload.application_id or existing.email != email:
+            raise HTTPException(409, "Account Steward request identifier does not match the original invitation")
+        return {**beta_invitation_response(existing), "email_delivery": "already_queued"}
+    active = db.scalar(select(BetaInvitation).where(BetaInvitation.email == email, BetaInvitation.accepted_at.is_(None), BetaInvitation.revoked_at.is_(None), BetaInvitation.expires_at > auth_utcnow()))
+    if active is not None:
+        raise HTTPException(409, "A beta invitation is already active for this email")
+    if not smtp_ready():
+        raise HTTPException(503, "Account invitation email is not configured")
+    now = auth_utcnow()
+    raw_token = beta_invitation_token(payload.request_id, email)
+    invitation = BetaInvitation(source_request_id=payload.request_id, source_application_id=payload.application_id, email=email, display_name=payload.display_name.strip(), experience=payload.experience, creator_type=payload.creator_type.strip(), cohort=payload.cohort.strip(), token_hash=token_hash(raw_token), created_by_user_id=administrator.id, expires_at=now + timedelta(days=max(1, settings.beta_invitation_days)), access_ends_at=now + timedelta(days=max(1, settings.beta_access_days)))
+    db.add(invitation)
+    db.flush()
+    db.add(AccountSecurityEvent(user_id=administrator.id, event_type="beta_invitation_created", network_hash="", event_metadata={"invitation_id": invitation.id, "source_request_id": payload.request_id, "source_application_id": payload.application_id, "email_hash": token_hash(email), "cohort": invitation.cohort}))
+    db.commit(); db.refresh(invitation)
+    acceptance_url = f"{settings.public_url.rstrip('/')}/beta-invite/{raw_token}"
+    schedule_beta_invitation_email(invitation, acceptance_url, background_tasks)
+    return {**beta_invitation_response(invitation), "email_delivery": "queued"}
+
+
+@app.get("/api/auth/beta-invitations/{invitation_token}")
+def inspect_beta_invitation(invitation_token: str, db: Session = Depends(get_db)):
+    invitation = db.scalar(select(BetaInvitation).where(BetaInvitation.token_hash == token_hash(invitation_token)))
+    if not invitation or invitation.revoked_at or invitation.accepted_at or invitation.expires_at <= auth_utcnow():
+        raise HTTPException(404, "Beta invitation is invalid or expired")
+    return beta_invitation_response(invitation)
+
+
+@app.post("/api/auth/beta-invitations/{invitation_token}")
+def accept_beta_invitation(invitation_token: str, payload: InvitationAcceptInput, request: Request, response: Response, db: Session = Depends(get_db)):
+    invitation = db.scalar(select(BetaInvitation).where(BetaInvitation.token_hash == token_hash(invitation_token)))
+    if not invitation or invitation.revoked_at or invitation.accepted_at or invitation.expires_at <= auth_utcnow():
+        raise HTTPException(404, "Beta invitation is invalid or expired")
+    if db.scalar(select(User.id).where(User.email == invitation.email)) is not None:
+        raise HTTPException(409, "An account already uses this email. Sign in or contact Kizuna support.")
+    now = auth_utcnow()
+    user = User(email=invitation.email, display_name=payload.display_name.strip(), password_hash=hash_password(payload.password), role="creator", account_tier="beta", trial_ends_at=invitation.access_ends_at, last_sign_in_at=now, email_verified_at=now)
+    project = Project(title="My First Production", logline="")
+    project.style_profile = StyleProfile(era_secondary="2020s", visual={"linework": "bold variable ink", "palette": "controlled cinematic", "shading": "two-tone cel"}, direction={"camera": "character-led", "motion": "selective fluidity"}, narrative={"structure": "kishotenketsu", "tone": "hopeful"}, archetypes=["reluctant protagonist", "ideological rival"])
+    db.add_all([user, project])
+    try:
+        db.flush()
+        db.add(ProjectMembership(project_id=project.id, user_id=user.id, role="owner"))
+        invitation.accepted_at = now
+        db.add(AccountSecurityEvent(user_id=user.id, event_type="beta_invitation_accepted", network_hash=request_network_hash(request), event_metadata={"invitation_id": invitation.id, "cohort": invitation.cohort, "experience": invitation.experience, "project_id": project.id}))
+        session_token, csrf_token, _ = create_session(user, db)
+        db.commit()
+    except IntegrityError:
+        db.rollback(); raise HTTPException(409, "This beta invitation can no longer be accepted")
+    set_auth_cookies(response, session_token, csrf_token)
+    return {**account_response(user), "starter_project_id": project.id, "onboarding": {"experience": invitation.experience, "creator_type": invitation.creator_type, "cohort": invitation.cohort}}
 
 
 @app.get("/api/auth/invitations/{invitation_token}")
@@ -5511,6 +5623,11 @@ def setup_page():
 
 @app.get("/invite/{invitation_token}", include_in_schema=False)
 def invitation_page(invitation_token: str):
+    return FileResponse(static_dir / "login.html")
+
+
+@app.get("/beta-invite/{invitation_token}", include_in_schema=False)
+def beta_invitation_page(invitation_token: str):
     return FileResponse(static_dir / "login.html")
 
 

@@ -7,12 +7,13 @@ os.environ["KIZUNA_MARKETING_COOKIE_SECURE"] = "false"
 
 from fastapi.testclient import TestClient
 
-from marketing.main import Base, engine, app
+from marketing.main import Base, attempts, engine, app
 
 
 def setup_function():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
+    attempts.clear()
 
 
 def admin_client() -> tuple[TestClient, str]:
@@ -92,6 +93,26 @@ def test_beta_agent_enforces_original_work_boundary():
     run = next(item for item in admin.get("/api/admin/overview").json()["ops"] if item["entity_type"] == "beta")
     assert run["classification"] == "originality review"
     assert run["needs_human"] is True
+
+
+def test_account_steward_provisions_only_safe_beta_applicants(monkeypatch):
+    public = TestClient(app)
+    safe_payload = {"name": "Original Creator", "email": "original@example.com", "creator_type": "Independent creator", "experience": "intermediate", "project_summary": "An original story about a coastal town that trades memories for shelter.", "desired_outcome": "Test story and character continuity."}
+    assert public.post("/api/beta", json=safe_payload).status_code == 201
+    admin, csrf = admin_client()
+    application = admin.get("/api/admin/overview").json()["beta"][0]
+    monkeypatch.setattr("marketing.main.provision_beta", lambda item: {"id": 77, "cohort": "private-beta", "expires_at": "2026-08-19T12:00:00", "access_ends_at": "2026-11-10T12:00:00", "email_delivery": "queued"})
+    invited = admin.post(f"/api/admin/beta/{application['id']}/invite", headers={"X-Kizuna-CSRF": csrf}, json={})
+    assert invited.status_code == 200
+    assert invited.json()["status"] == "invited"
+    overview = admin.get("/api/admin/overview").json()
+    assert overview["beta"][0]["status"] == "invited"
+    assert overview["account_steward"]["records"][0]["invitation_id"] == 77
+
+    assert public.post("/api/beta", json={"name": "Fan Creator", "email": "blocked@example.com", "creator_type": "Writer", "experience": "beginner", "project_summary": "Fan fiction using a copyrighted character from an existing franchise.", "desired_outcome": "Generate the series."}).status_code == 201
+    blocked_application = next(item for item in admin.get("/api/admin/overview").json()["beta"] if item["email"] == "blocked@example.com")
+    blocked = admin.post(f"/api/admin/beta/{blocked_application['id']}/invite", headers={"X-Kizuna-CSRF": csrf}, json={})
+    assert blocked.status_code == 409
 
 
 def test_public_config_and_admin_protection():

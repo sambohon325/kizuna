@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     bootstrap_admin_key: str = ""
     session_days: int = 7
     invitation_days: int = 7
+    beta_invitation_days: int = 7
+    beta_access_days: int = 90
+    account_steward_secret: str = ""
+    account_steward_admin_email: str = ""
+    account_steward_clock_skew_seconds: int = 300
     account_token_hours: int = 1
     account_email_limit_per_hour: int = 5
     email_verification_required: bool = False

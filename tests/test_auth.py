@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.auth import hash_password, token_hash, utcnow as auth_utcnow
 from app.database import SessionLocal
 from app.main import app
-from app.models import AccountSecurityEvent, AccountToken, BillingEvent, Character, Project, ProjectMembership, Scene, Shot, StudioInvitation, Timeline, TimelineClip, User, UserSession, UserSubscription
+from app.models import AccountSecurityEvent, AccountToken, BetaInvitation, BillingEvent, Character, Project, ProjectMembership, Scene, Shot, StudioInvitation, Timeline, TimelineClip, User, UserSession, UserSubscription
 
 
 def setup_admin(client, monkeypatch):
@@ -169,6 +169,52 @@ def test_trial_signup_and_export_limits(client, monkeypatch):
         db.commit()
     expired = trial.post(f"/api/timelines/{timeline_id}/master-exports", headers={"X-Kizuna-CSRF": trial.cookies.get("kizuna_csrf")}, json={"profile": "preview"})
     assert expired.status_code == 402
+
+
+def test_account_steward_issues_single_use_beta_access(client, monkeypatch):
+    setup_admin(client, monkeypatch)
+    secret = "account-steward-test-secret-that-is-long-enough"
+    delivered = []
+    monkeypatch.setattr("app.main.settings.account_steward_secret", secret)
+    monkeypatch.setattr("app.main.settings.account_steward_admin_email", "owner@example.com")
+    monkeypatch.setattr("app.main.settings.beta_invitation_days", 7)
+    monkeypatch.setattr("app.main.settings.beta_access_days", 90)
+    monkeypatch.setattr("app.main.smtp_ready", lambda: True)
+    monkeypatch.setattr("app.main.schedule_beta_invitation_email", lambda invitation, acceptance_url, background_tasks: delivered.append(acceptance_url))
+    payload = {"request_id": "beta-42-7c4f6a8d2e1b9c30", "application_id": "42", "email": "beta@example.com", "display_name": "Beta Creator", "experience": "beginner", "creator_type": "Independent creator", "cohort": "private-beta"}
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    timestamp = str(int(time.time()))
+    signature = hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+    headers = {"Content-Type": "application/json", "X-Kizuna-Timestamp": timestamp, "X-Kizuna-Signature": f"sha256={signature}"}
+
+    assert TestClient(app).post("/api/internal/account-steward/beta-invitations", content=body, headers={**headers, "X-Kizuna-Signature": "sha256=invalid"}).status_code == 401
+    created = TestClient(app).post("/api/internal/account-steward/beta-invitations", content=body, headers=headers)
+    assert created.status_code == 201
+    assert created.json()["email_delivery"] == "queued"
+    assert "acceptance_url" not in created.json()
+    assert len(delivered) == 1
+    retried = TestClient(app).post("/api/internal/account-steward/beta-invitations", content=body, headers=headers)
+    assert retried.status_code == 201
+    assert retried.json()["id"] == created.json()["id"]
+
+    raw_token = urlparse(delivered[0]).path.rsplit("/", 1)[-1]
+    beta = TestClient(app)
+    inspected = beta.get(f"/api/auth/beta-invitations/{raw_token}")
+    assert inspected.status_code == 200
+    accepted = beta.post(f"/api/auth/beta-invitations/{raw_token}", json={"display_name": "Beta Creator", "password": "beta-secure-password"})
+    assert accepted.status_code == 200
+    assert accepted.json()["account_tier"] == "beta"
+    assert accepted.json()["beta_active"] is True
+    assert beta.get(f"/api/projects/{accepted.json()['starter_project_id']}").status_code == 200
+    assert beta.post(f"/api/auth/beta-invitations/{raw_token}", json={"display_name": "Again", "password": "another-secure-password"}).status_code == 404
+    with SessionLocal() as db:
+        invitation = db.scalar(select(BetaInvitation).where(BetaInvitation.source_application_id == "42"))
+        user = db.scalar(select(User).where(User.email == "beta@example.com"))
+        membership = db.scalar(select(ProjectMembership).where(ProjectMembership.user_id == user.id))
+        assert invitation.accepted_at is not None
+        assert membership.role == "owner"
+        assert db.scalar(select(AccountSecurityEvent).where(AccountSecurityEvent.event_type == "beta_invitation_created")) is not None
+        assert db.scalar(select(AccountSecurityEvent).where(AccountSecurityEvent.event_type == "beta_invitation_accepted")) is not None
 
 
 def test_password_reset_is_generic_single_use_and_revokes_sessions(client, monkeypatch):
